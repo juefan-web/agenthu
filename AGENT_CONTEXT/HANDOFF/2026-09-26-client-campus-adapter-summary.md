@@ -1,7 +1,9 @@
 # 开发者 B 工作总结：React/Tauri 客户端与校园数据适配
 
-日期：2026-09-26  
-分支：`feature/client-tauri-campus-adapter`  
+日期：2026-09-26
+
+分支：`feature/client-tauri-campus-adapter`
+
 提交：`6198e72`、`6abc73b`
 
 ## 1. 工作目标
