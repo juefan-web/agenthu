@@ -91,6 +91,35 @@ context lives under `AGENT_CONTEXT/`.
 | P2-4 | CI only on `main` push | Push triggers cover all branches (D-017) |
 | — | Trailing whitespace in migration | Fixed in `339f5d1471c9_initial_schema.py` |
 
+## Self-check (latest)
+
+Method: lint/type/test, `alembic check`, OpenAPI drift, `git diff --check`, plus a **live-server
+contract smoke** against `/v1` (12/12 checks pass).
+
+### Fixed in this round
+
+- `GET /v1/plans/today` generated a new plan on every read; it now reuses the latest
+  draft/pending plan (`backend/services/planner.latest_open_plan`).
+- CORS: `allow_origins=["*"]` combined with `allow_credentials=True` is invalid for browsers.
+  Defaults are now explicit dev/Tauri origins, and a wildcard automatically disables credentials.
+- `TaskCreate`/`TaskUpdate` accept the client status values (`todo`, `in_progress`, `done`,
+  `cancelled`) in addition to the internal enum names.
+
+### Open (needs a decision or another owner)
+
+- **Auth mechanism mismatch (integration blocker)**: the desktop client issues requests with
+  `credentials: "include"` and **no** `Authorization` header, but the Backend is Bearer-only, so all
+  client calls would return 401. Options: (a) the client stores and sends a Bearer token, or
+  (b) the Backend adds a cookie/session auth mode. This is a cross-boundary ADR with Developer B.
+- **Manual plans with null `task_id` items**: the client `PlanItemSchema.task_id` is a non-null
+  string. `/plans/today` returns generated plans (task ids present); if a manually created draft is
+  ever returned with task-less items, the client Zod parse would fail.
+- **MinIO healthcheck** still uses `curl` and is unverified (the image cannot be pulled here);
+  s3mock is pinned/verified.
+- No rate limiting or request-size limit at the proxy layer (M4 hardening).
+- The 8 client-side performance findings (reqwest client reuse, extra auth probes, duplicate
+  semester requests, serial assignment/calendar fetch, timeout propagation) belong to Developer B.
+
 ## Known Issues
 
 - On Windows, use `127.0.0.1` (not `localhost`) for Redis/Postgres/S3 in local `.env`: async Redis

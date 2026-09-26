@@ -89,6 +89,25 @@ def generate_plan(
     return plan
 
 
+def latest_open_plan(session: Session, user_id: uuid.UUID) -> Plan | None:
+    """Return the most recent draft/pending plan, if any.
+
+    Used by the client-facing ``/plans/today`` so repeated reads reuse the same
+    proposal instead of generating a new plan on every request.
+    """
+
+    stmt = (
+        select(Plan)
+        .where(
+            Plan.user_id == user_id,
+            Plan.status.in_([PlanStatus.DRAFT, PlanStatus.PENDING_CONFIRMATION]),
+        )
+        .order_by(Plan.created_at.desc())
+        .limit(1)
+    )
+    return session.scalar(stmt)
+
+
 def replan(
     session: Session,
     *,

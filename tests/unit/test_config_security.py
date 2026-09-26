@@ -6,6 +6,11 @@ from pydantic import ValidationError
 from backend.config import DEFAULT_SECRET_KEY, Settings
 
 
+def test_default_cors_origins_are_explicit() -> None:
+    settings = Settings()
+    assert "*" not in settings.cors_origins
+
+
 def test_local_environment_allows_default_secret() -> None:
     settings = Settings(environment="local", secret_key=DEFAULT_SECRET_KEY)
     assert settings.is_local

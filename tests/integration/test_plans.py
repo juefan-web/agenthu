@@ -77,6 +77,16 @@ def test_today_plan_generates_when_missing(client, auth_headers) -> None:
     assert len(body["items"]) == 1
 
 
+def test_today_plan_is_idempotent(client, auth_headers) -> None:
+    _make_task(client, auth_headers, title="HW2", days=1)
+    first = client.get("/v1/plans/today", headers=auth_headers).json()
+    second = client.get("/v1/plans/today", headers=auth_headers).json()
+    assert first["id"] == second["id"]
+
+    plans = client.get("/v1/plans", headers=auth_headers).json()
+    assert plans["total"] == 1
+
+
 def test_replan_supersedes_previous_plan(client, auth_headers) -> None:
     _make_task(client, auth_headers, title="HW2", days=1)
     plan = client.post("/v1/plans/generate", json={}, headers=auth_headers).json()

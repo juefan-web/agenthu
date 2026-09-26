@@ -61,7 +61,18 @@ class Settings(BaseSettings):
     max_upload_bytes: int = 50 * 1024 * 1024
 
     # --- CORS --------------------------------------------------------------
-    cors_origins: list[str] = Field(default_factory=lambda: ["*"])
+    # Explicit origins, never "*" together with credentialed requests: browsers
+    # reject `Access-Control-Allow-Origin: *` when credentials are included.
+    # Tauri uses the dev server origin (Vite) and the `tauri://localhost` origin.
+    cors_origins: list[str] = Field(
+        default_factory=lambda: [
+            "http://localhost:1420",
+            "http://127.0.0.1:1420",
+            "tauri://localhost",
+            "http://tauri.localhost",
+        ]
+    )
+    cors_allow_credentials: bool = True
 
     # --- Observability -----------------------------------------------------
     audit_enabled: bool = True

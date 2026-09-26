@@ -4,10 +4,24 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 from backend.models.enums import TaskStatus
 from backend.schemas.common import ORMModel
+
+# Accept both the internal enum names and the client contract values.
+_CLIENT_TASK_STATUS = {
+    "todo": TaskStatus.TODO,
+    "in_progress": TaskStatus.IN_PROGRESS,
+    "done": TaskStatus.COMPLETED,
+    "cancelled": TaskStatus.CANCELLED,
+}
+
+
+def _normalize_task_status(value: object) -> object:
+    if isinstance(value, str):
+        return _CLIENT_TASK_STATUS.get(value.lower(), value.upper())
+    return value
 
 
 class TaskCreate(BaseModel):
@@ -32,6 +46,11 @@ class TaskCreate(BaseModel):
     related_event_ids: list[uuid.UUID] = Field(default_factory=list)
     extra: dict[str, Any] = Field(default_factory=dict)
 
+    @field_validator("status", mode="before")
+    @classmethod
+    def _normalize_status(cls, value: object) -> object:
+        return _normalize_task_status(value)
+
 
 class TaskUpdate(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
@@ -52,6 +71,11 @@ class TaskUpdate(BaseModel):
     priority: int | None = None
     goal_id: uuid.UUID | None = None
     extra: dict[str, Any] | None = None
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def _normalize_status(cls, value: object) -> object:
+        return _normalize_task_status(value)
 
 
 class TaskRead(ORMModel):

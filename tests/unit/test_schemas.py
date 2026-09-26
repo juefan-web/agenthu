@@ -37,6 +37,20 @@ def test_task_create_defaults() -> None:
     assert task.related_event_ids == []
 
 
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("todo", TaskStatus.TODO),
+        ("in_progress", TaskStatus.IN_PROGRESS),
+        ("done", TaskStatus.COMPLETED),
+        ("cancelled", TaskStatus.CANCELLED),
+    ],
+)
+def test_task_status_accepts_client_values(raw: str, expected: TaskStatus) -> None:
+    task = TaskCreate.model_validate({"title": "HW2", "status": raw})
+    assert task.status == expected
+
+
 def test_task_estimated_duration_bounds() -> None:
     with pytest.raises(ValidationError):
         TaskCreate(title="HW2", estimated_duration_minutes=-5)
