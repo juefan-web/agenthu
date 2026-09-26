@@ -1,0 +1,409 @@
+Received: from SY8PR01CU002.outbound.protection.outlook.com (unknown [52.103.72.72])
+	by web4 (Coremail) with SMTP id ywQGZQD3twUOI6pqQNgBAA--.5877S3;
+	Wed, 16 Sep 2026 13:03:13 +0800 (CST)
+ARC-Seal: i=1; a=rsa-sha256; s=arcselector10001; d=microsoft.com; cv=none;
+ b=aUWdDGaQn17EL0ijSL2ABtCJM2kXu2fMcT+sTQE2NQUnXqLmysBvLDg39qqhWcN5DON0P5Yf0TFqeNzlmgkC1qQ31tGr+Ed2S48xaveAGDMJCzYR74GUf3onio313pixPrkLpM7QyOBqeHlAAxEEcjJpMHAQQXOEBUdH/cowHyQ/pPD6/dKivz9jpuhFQJnkc38oJvzJNzzQfxEt9eiBL2vfOSZ1zQHihIA+L38W1eAQLDtfDzrU3LyIT0MV6pXaLUyBAz5YRQ+zcl0b6APz1ll8rA9ZuV5Cra/SDRAezWASM0Z4nJJz7o3Xjhrwudfrp09D4WmfeTpghp9xsiGnug==
+ARC-Message-Signature: i=1; a=rsa-sha256; c=relaxed/relaxed; d=microsoft.com;
+ s=arcselector10001;
+ h=From:Date:Subject:Message-ID:Content-Type:MIME-Version:X-MS-Exchange-AntiSpam-MessageData-ChunkCount:X-MS-Exchange-AntiSpam-MessageData-0:X-MS-Exchange-AntiSpam-MessageData-1;
+ bh=qDxmmDaUxdiOLcpROmLO6eZLQaDBJx8kRgv4pCi538k=;
+ b=Y6qzYw+Kl0p9brjDD2Ckr1trNmRYpnHjRO2Ahdy4ipcRb5fBt7ZDpiV/bmCO/ibHR4Pp63yRxDCAU5tHZxHJQ6yHHPTk+Qx4nw+sDQv700kWSlDxhLo2STUiXJvQ9FGXPIudMWpc0UMjPcbDVMlvXZOKOEGgxwhD2+Vl3lOBzjrv1St6kAVL1DsCaDpy5V77wcfA0P9+KELw+HbBz4gYTOPtBU7AX5yWMWFioTOf+tfAsuQvGGn9Nt2AZz9PrvUu0xDKpE7qAdlBb+20XcAFAwJoUpfv+cwxy2S13N1vrW5epwRXYu7ua3GOlh3gkKtXFL3gocYw5PFOwqvhKb6yCQ==
+ARC-Authentication-Results: i=1; mx.microsoft.com 1; spf=none; dmarc=none;
+ dkim=none; arc=none
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=outlook.com;
+ s=selector1;
+ h=From:Date:Subject:Message-ID:Content-Type:MIME-Version:X-MS-Exchange-SenderADCheck;
+ bh=qDxmmDaUxdiOLcpROmLO6eZLQaDBJx8kRgv4pCi538k=;
+ b=TEWoNOXIGAPec1dCfrZzuLr1mbglTM+NPi7ZIWKtEWg/zyjEfjuRGMqEtAGgDYJPnQ4gpOkz1XMBi9OOPhMOIfl5vOmo4ZB0EGiuPrBG4RNdUx+34WuTBzg/D3TpF0kt94NBS5zMtInrdkSCJ2UvJaE1cvesRwJWQGh889O9W4/HS3+ZpjknPxpTaSBbaCBR+zbSEGiQ4YRQj/nJb2QM7GTQVKKmTio5DeBGR9/JgNMZWCLjcF/uRBDHVa8tBA/swhivJgb5k+QtVyfdF2Uq2aRi+AyMyZKHqaheZYTjE6JyEGlfA/CHYGUUJmIeGuKkHjt3eXxXWBj7MvYfgu7uFw==
+Received: from SY7P300MB0559.AUSP300.PROD.OUTLOOK.COM (2603:10c6:10:28e::14)
+ by SY7P300MB0734.AUSP300.PROD.OUTLOOK.COM (2603:10c6:10:28b::5) with
+ Microsoft SMTP Server (version=TLS1_2,
+ cipher=TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384) id 15.21.428.11; Wed, 16 Sep
+ 2026 05:03:04 +0000
+Received: from SY7P300MB0559.AUSP300.PROD.OUTLOOK.COM
+ ([fe80::9109:e97:c30e:cfa9]) by SY7P300MB0559.AUSP300.PROD.OUTLOOK.COM
+ ([fe80::9109:e97:c30e:cfa9%5]) with mapi id 15.21.0428.008; Wed, 16 Sep 2026
+ 05:03:04 +0000
+From: UNIDY 2002 <UNIDY2002@outlook.com>
+To: =?gb2312?B?ufm8zsDWINfPvqM1Mw==?= <gjl25@mails.tsinghua.edu.cn>
+Subject:
+ =?gb2312?B?UmU6ILnY09ogVEhVIEluZm8gQXBwINfu0MKw5rG+v8vCoaGi0N64xKGiseA=?=
+ =?gb2312?B?0uu689Tat8fJzNK108PNvrXEyfqy+ru3vrO31reiyKjP3tLUvLCyv7fWvLw=?=
+ =?gb2312?B?yvXOyszitcTXydGv?=
+Thread-Topic:
+ =?gb2312?B?udjT2iBUSFUgSW5mbyBBcHAg1+7QwrDmsb6/y8KhoaLQ3rjEoaKx4NLruvM=?=
+ =?gb2312?B?1Nq3x8nM0rXTw82+tcTJ+rL6u7e+s7fWt6LIqM/e0tS8sLK/t9a8vMr1zso=?=
+ =?gb2312?B?zOK1xNfJ0a8=?=
+Thread-Index: AQHdRZEOx0TCy6th2kK/jnweKU1K2bbQpBcG
+Date: Wed, 16 Sep 2026 05:03:04 +0000
+Message-ID:
+ <SY7P300MB055989A8B75E73A6F6653F75B3B92@SY7P300MB0559.AUSP300.PROD.OUTLOOK.COM>
+References: <9F0BDEFF-CC4C-9243-9128-EE960F4573D1@hxcore.ol>
+In-Reply-To: <9F0BDEFF-CC4C-9243-9128-EE960F4573D1@hxcore.ol>
+Accept-Language: zh-SG, en-US
+X-MS-Has-Attach:
+X-MS-TNEF-Correlator:
+x-ms-reactions: allow
+x-ms-exchange-messagesentrepresentingtype: 1
+x-ms-publictraffictype: Email
+x-ms-traffictypediagnostic: SY7P300MB0559:EE_|SY7P300MB0734:EE_
+x-ms-office365-filtering-correlation-id: 01c48cea-684d-4376-ed99-08df13afca7a
+x-microsoft-antispam:
+ BCL:0;ARA:14566002|25010399006|19110799012|8060799015|31061999003|37011999003|15080799012|8062599012|51005399006|24021099003|9400799043|14030799003|1602099012|10035399007|2607281247196008|40105399003|102099032|440099028|3412199025|4302099013;
+x-microsoft-antispam-message-info:
+ =?gb2312?B?TmVZQ3hvTlhqMjhhK0JmMk12aGlIcDBhR1hiVjNLQnM4MVdqYW81azdxR0Ur?=
+ =?gb2312?B?T05QbEorUGJyQ1FUdHlFbmt3d08yZFlwUnlOV3lxeGhmMUc0SjVIdFhVdXlM?=
+ =?gb2312?B?Z2ZtUG1GN2d0cWRkMFk3a09OQy96SkZNYzJUTytoSFZvWENQcVUycXpqSHQx?=
+ =?gb2312?B?dVQ4TFY0UDZnT1NmU1FlSEoybk15K3JVUHZ3QTZuMHZPRFJRcldZL1JXNFRq?=
+ =?gb2312?B?OFMvd1Uvc2pORm9aMmVia096cEVQKytXbmc0dElSTHU5cVVwQmxaaElaTUMy?=
+ =?gb2312?B?MmtlTXFCVlpOZEpGSkNZdjRBVTduOXI5VVA3d3dXcm51K0ZUbmlMc1FLUjV5?=
+ =?gb2312?B?MnNRZENxNzMwcmJQSnNLUnhZSERTemZzWGltaDlQTzRrMFh0Y05STVBhK1c4?=
+ =?gb2312?B?UXVLc08vM2dma0ZDMndPQXRveENONE43dldoNlI4OENwVU5NbXNQaFZ6b0NI?=
+ =?gb2312?B?WGlWQjFtb3FjMmhmMW5yQUd0cmdMWFRNQzZQaVFPY2YyMHNnTXNzeW1SVDhX?=
+ =?gb2312?B?U242cTZtVW13TkdBQkJ2NjNXSzJXeUltVjJmZmJmMlpmd0ZOOGVBaU5pa2Ew?=
+ =?gb2312?B?RTg1WVQyeFdHRWFPTFU0VHluNTBJZWRFbXZ0akhZZ1k5S2N5c3B2SDZUQ3Q1?=
+ =?gb2312?B?enRnZlFDTUhrb1dGaDFaN1lKN3p3MU9WU3R6dWVzdmR5Q3RDUzNPaGtIUDF3?=
+ =?gb2312?B?MmxQendPd3lXczJjKzZYUkNZNEttQ3B2VHlLZ2FuU09uRGNzM1VPRWcyYXp5?=
+ =?gb2312?B?Si80NjFrNWFCOE5lbnBEMlZvK25vdVhISERmcEd2LzI2U28zZDlPV3lUY3hv?=
+ =?gb2312?B?dW01bHBWODUvZ0V4Wnh6MHVVQXl6VnBQQys2a3g5VjlzZUp5c2dTRmVSTWxF?=
+ =?gb2312?B?ejJCaEtUdXFHYU1WVTF6Zmx3NmlyTWtxZVRBK3Y5SEpHdnBMSUc0aGJkNWVB?=
+ =?gb2312?B?dXpVNGxYQzBaWW5KaFZpT21hUHhHa1NlWVRCKzVhSGdZNHYzMzlQNXM5Q0Er?=
+ =?gb2312?B?TXVNSHBSS3lQeXJ3QnNXSkE2REtNbVhmUE1jbE96RC9vZ0NQNHBkTGNKaSti?=
+ =?gb2312?B?QnNrSzljbysxMEt0ckJoaE5DTDRTVFMyRE5ad2JkRE5DL3VlbXEvQUc1Z2l2?=
+ =?gb2312?B?ZysxUEhyWHV3R0NjVkNhNkNOcXJNT1VzS1dNbUlRVlYreXdaMEhUZFlXelBp?=
+ =?gb2312?B?akNGK3RIZ21JbW1xNXJrWThyQ0FBb3ZNVjFncmo5dWVRa21CZStpNytrQ2cz?=
+ =?gb2312?B?cEtZMkVzKy9mTkRjUkZqa0NKT0t2WGZEMnBVWTlVa2s2SjdpbEt0cWxPYW4r?=
+ =?gb2312?B?c1JMVkNlM2p1dExkeXdjNXJoRFFBYzZIVno0NjNuaW10bFB5Rlo1SGU3ampQ?=
+ =?gb2312?B?ZmVnZGxicjJodWJUUlpoQTRDT1o5cnRWNnZXL3oyYVVpREI3UVhWa2ZvZW4x?=
+ =?gb2312?Q?wOIr99CD?=
+x-ms-exchange-antispam-messagedata-chunkcount: 1
+x-ms-exchange-antispam-messagedata-0:
+ =?gb2312?B?eGtLV095Qms4b09CbVFpanBYa3ZuTkgvVGtjbmY0cHkzSkJYRmdFeWRtczlF?=
+ =?gb2312?B?L2twRFhBQWJqc3lkVWMxTWliU0xZQ1NaeUd3aG5DRkdPQzByd09SOHJ4MzZu?=
+ =?gb2312?B?NXc4bFArbXRuejhSaU5yWjk5VHZxczVTK1R5Mm5GY056OWs2RVpTcG1WWDBB?=
+ =?gb2312?B?ajMzTWdmMmoxOVgwSkNPaG9VQXVIYllwWUJOSXM0cWFzRkVvcS8xZnF3cW1h?=
+ =?gb2312?B?YUN1YzdVcG50WWVNdHNpMEEwQ1lWZkFXNGlnNEZXSlJrUU1qRkdkUUhCRGM0?=
+ =?gb2312?B?OFY3ZkRIc3FRL1RMYkRqTUszK2d0THhJa1c0Nnc5b05jbnBPTHBPM3RUMXQ5?=
+ =?gb2312?B?My9HVktiNGQrSW9yUW1laS84eXN4T1IyVmg1TExVTmVCT1NSYXJIWTZUcTJP?=
+ =?gb2312?B?MkR5YXZtclh5eldRV3AzNlhvTk41RG9FbTgxME94V2JiWGQwWFdycy8yVGth?=
+ =?gb2312?B?dWFDeFAxWWFTTzVDRDZsMFVVNUNDNHdvKzBlcDArQWhiYlE5TFNDL0N5QmhF?=
+ =?gb2312?B?K1E1dC9PRFhzbzFDN0QyZTRzeDVDNlVNZ1ZHRkNVcWhkM3RFcjJNMHZMY3dr?=
+ =?gb2312?B?ditiM1U2eFh6eWVqTzA5Z1BBR1Y1VHZiTEkvMzFiZU1PZ3IxNHFLSFJwOXlV?=
+ =?gb2312?B?VHNVWlExYnlnQVc2QjZkQWJtYXViTzVaaTNYc2NSaTVqdk5oTEthak81WUg1?=
+ =?gb2312?B?ZjUvVnZLbXpwaGpkajhMTTFJZms5SFdWK090UHM5czRFT0QycnJEdGwxS2Rz?=
+ =?gb2312?B?OTFEd0ladnZmV0ZJTGdINXh0bjB4UVcwaWxhUW9YUVR0emZMOTk5cEV0VGNp?=
+ =?gb2312?B?Nk94TkluVlJiU1J6Y01zUi81Y2J1bXNGQzNraUg4ZVVkZEEvWUNMbGZrTkVz?=
+ =?gb2312?B?QVdpU29DeHFaSzZjYU1iRGZGNDJKYjlEUzVjc2NiMktBK2ZFNHZ5ZnZMbjk2?=
+ =?gb2312?B?RWVRbVBYM3Q4bko3b091aVhSeFd0bUFIbnJkdlcwa3V1ZXI5K1NER3NvelFt?=
+ =?gb2312?B?MXY0aGh6S01EMEZDMlF1T296YTcwekUxZGw5dTJiZFlWS2ovNlp2WDJkblNz?=
+ =?gb2312?B?ZjZXdlV0czhOMFFzU21IRmQyUVNacTNLVVU2TzdnK2phQ1VqTTR1dlJMZnlq?=
+ =?gb2312?B?VFRKTUJqSjUrOU5IaStzNkFUeWdycGRaZ3RhRkI0b2hrZ1JOVENuV2VrYTg5?=
+ =?gb2312?B?SmFYN2E1VkcvTlhndzRzZUFmeWExZi8venJtekZ2K040ZkNDT0JTNnJBWnZ1?=
+ =?gb2312?B?ZHA4TGk2RXB0RjNGczZ5Tm4yL2lkNm5kajlBY2tvcmJyOVo0UkRNOTArTlFK?=
+ =?gb2312?B?NHBZYWR0TmNNT3J1SElGRGl3V2RTa2xXUlVhRmZuOE1QZ1oxRUxacUVVcmdK?=
+ =?gb2312?B?NDd0THczbStOUDdRVnR0eWlqdEkyMG1Yd01LdDVCK21Nc2UvWjRDNlIyZE5G?=
+ =?gb2312?B?clZ1eHZKV3R1NUJjWjU1ZEUyQjloZnhtVUhERW04R043YlJ0NyszNng2Q2hv?=
+ =?gb2312?B?anE5UTRhci9GZmFWQXd3ZUlHZXlyOHhSVXJiSklpdVhnUXBFcmxrTWtXelRy?=
+ =?gb2312?B?VDhsN1B5MkQzZ1E5cS9IbEpqazZodWlqWCtFUm5CNWNqblJ2NUlldWRmK0lu?=
+ =?gb2312?B?Nno2V1pybEsvRzFGbHNRVEtSaWdWZ1IrNEl4cWZBTmlkUHhKL1lMZVcrSytJ?=
+ =?gb2312?B?RTlXRFFhNkI2VDlPSmZZY0ljWFo0Rk15QlFBUm85VGtPR3l3TDQ3TjVuS1Ra?=
+ =?gb2312?B?S3EzekRmU251R2JQaktoMHQ3TUt4QXhsa0lRbXVIZ1cyTU01R3JacnBxaTF4?=
+ =?gb2312?B?c0dQSnJHMkdUdlJWaFhvY1dLSVVCaDRlYlltYnVwR0tVaUg0S09IWllIZzRQ?=
+ =?gb2312?B?aFY0YytsVjJ0bjVER2xtbkdZRWR2djZ0SmlsNmY5MHRhNmc9PQ==?=
+Content-Type: multipart/alternative;
+	boundary="_000_SY7P300MB055989A8B75E73A6F6653F75B3B92SY7P300MB0559AUSP_"
+MIME-Version: 1.0
+X-OriginatorOrg: outlook.com
+X-MS-Exchange-CrossTenant-AuthAs: Internal
+X-MS-Exchange-CrossTenant-AuthSource: SY7P300MB0559.AUSP300.PROD.OUTLOOK.COM
+X-MS-Exchange-CrossTenant-RMS-PersistedConsumerOrg: 00000000-0000-0000-0000-000000000000
+X-MS-Exchange-CrossTenant-Network-Message-Id: 01c48cea-684d-4376-ed99-08df13afca7a
+X-MS-Exchange-CrossTenant-originalarrivaltime: 16 Sep 2026 05:03:04.6595
+ (UTC)
+X-MS-Exchange-CrossTenant-fromentityheader: Hosted
+X-MS-Exchange-CrossTenant-id: 84df9e7f-e9f6-40af-b435-aaaaaaaaaaaa
+X-MS-Exchange-CrossTenant-rms-persistedconsumerorg: 00000000-0000-0000-0000-000000000000
+X-MS-Exchange-Transport-CrossTenantHeadersStamped: SY7P300MB0734
+X-CM-TRANSID:ywQGZQD3twUOI6pqQNgBAA--.5877S3
+Authentication-Results: web4; spf=pass smtp.mail=unidy2002@outlook.com
+	; dkim=pass header.i=@outlook.com
+X-Coremail-Antispam: 1UD129KBjvJXoWxuFyruF48CF4xCr15Xr4rGrg_yoW5XFW3pr
+	97KrZxtw47JF1rCrW0kF4jyFWFkr95uF929a1DGF9ayr1Igas7t3W2yr15W3WfXa48Ca42
+	vF4kXrsxA3sFvrUanT9S1TB71UUUUU7qnTZGkaVYY2UrUUUUjbIjqfuFe4nvWSU5nxnvy2
+	9KBjDU0xBIdaVrnRJUUUmI8cAvFVCFI7AF0xCrM28CjxkF67xGY2AK021l84ACjcxK6xII
+	jxv20xvE14v26r1j6r1xM28EF7xvwVC0I7IYx2IY6xkF7I0E14v26r1j6r4UM28EF7xvwV
+	C2z280aVAFwI0_Gr1j6F4UJwA2z4x0Y4vEx4A2jsIEc7CjxVAFwI0_Gr1j6F4UJwAa7VCE
+	64xvF2IEb7IF0Fy264xvF2IEb7IF0Fy264kE64k0F2IE7I0Y6sxI4wAac4AC62xK8xCEY4
+	vEwIxC4wAS0I0E0xvYzxvE52x082IY62kv0487McIj6x8ErcxFaVAv8VW8Ww4UJr1UMcvj
+	eVCFs4IE7xkEbVWUJVW8JwACjI8F5VA0II8E6IAqYI8I648v4I1lFcxC0VAYjxAxZF0Ew4
+	CEw7xC0wACY4xI67k04243AVC20s07Mx8GjcxK6IxK0xIIj40E5I8CrwCjxxvEa2IrMxkI
+	ecxEwVCI4VW8WwCY0x0Ix7I2Y4AK64vIr41lcIIF0xvE2Ix0cI8IcVAFwI0_Jr0_JF4lcI
+	IF0xvE2Ix0cI8IcVCY1x0267AKxVWUJVW8JwCYIxAIcVC2z280aVAFwI0_Jr0_Gr1lcIIF
+	0xvEx4A2jsIEc7CjxVAFwI0_Jr0_Gr1l42xK82IYc2Ij64vIr41l42xK82IY6x8ErcxFaV
+	Av8VW8Ww4UJr1UMxCjnVCjjxCrMxC20s026xCaFVCjc4AY6r1j6r4UMI8I3I0E5I8CrVAF
+	wI0_JrI_JrWlx2IqxVCjr7xvwVAFwI0_JrI_JrWlx4CE17CEb7AF67AKxVWUJVWUXwCIc4
+	0Y0x0EwIxGrwCI42IY6xAIw20EY4v20xvaj40_Jr0_JF4l6VACY4xI67k04243AbIYCTnI
+	WIevJa73UjIFyTuYvjfU4uWlUUUUU
+
+--_000_SY7P300MB055989A8B75E73A6F6653F75B3B92SY7P300MB0559AUSP_
+Content-Type: text/plain; charset="gb2312"
+Content-Transfer-Encoding: base64
+
+ufm8zsDWo7oNCg0KxPq6w6OhuNDQu8T6ttSw5sio0+u/qtS00K3S6bXE1tjK06GjDQoNCs7StPqx
+7SBUSFUgSW5mbyDNxbbTytrIqMT6tcQgT25lVEhVINTat8fJzNK108PNvrXEx+m/9s/CyrnTwyBU
+SFUgSW5mbyDP4LnY1+7QwtS0tPrC67340NC2/rTOt9a3oqOsytrIqL3Y1rnI1cbao7oyMDM2IMTq
+IDEyINTCIDMxIMjVoaMNCg0Kwe3N4qOsv7zCx7zTyOsgVEhVIEluZm8gzcW208O0o78NCg0Ky+/R
+uA0KDQoyMDI2IMTqIDkg1MIgMTYgyNUNCg0Ku/HIoU91dGxvb2sgZm9yIEFuZHJvaWQ8aHR0cHM6
+Ly9ha2EubXMvQUFiOXlzZz4NCl9fX19fX19fX19fX19fX19fX19fX19fX19fX19fX19fDQpGcm9t
+OiC5+bzOwNYg18++ozUzIDxnamwyNUBtYWlscy50c2luZ2h1YS5lZHUuY24+DQpTZW50OiBXZWRu
+ZXNkYXksIDE2IFNlcHRlbWJlciAyMDI2IDEyOjA4OjI1DQpUbzogVU5JRFkyMDAyQG91dGxvb2su
+Y29tIDxVTklEWTIwMDJAb3V0bG9vay5jb20+DQpTdWJqZWN0OiC52NPaIFRIVSBJbmZvIEFwcCDX
+7tDCsOaxvr/LwqGhotDeuMShorHg0uu689Tat8fJzNK108PNvrXEyfqy+ru3vrO31reiyKjP3tLU
+vLCyv7fWvLzK9c7KzOK1xNfJ0a8NCg0K0aezpMT6usOjoQ0KDQrO0srHwLTX1Mflu6q089GnvMbL
+47v6v8bRp9PrvLzK9c+1vMYgNTEgsOC1xNGnyfqhow0KDQrO0tTavfHE6rXEyu682bXEs8zQ8sno
+vMbRtcG3o6hydXN0o6m/zszDtPPX99K1yc/KudPDIHRodS1pbmZvLWFwcCwgbGVhcm5Y0+sgdGh1
+LWluZm8tbGliILXEtOa1tbDmsb61xL+qt8UgQVBJINbG1/fBy87StcS/zrPMtPPX99K1IE9uZVRI
+VSBIYXJuZXNzo6zWvNTa09rKudPDzbPSuyBBR0VOVCC83Lm5tffTw8flu6rQxc+it/7O8aGjzazK
+saOsztK808jrwcuyv7fW19S8urTTx+W7qtDFz6K3/s7x1tCy8L3itcTQwrf+zvHE2sjdo6zI59Gh
+v87Qxc+isunRr7XItcihow0KDQpPbmVUSFUg1Nq/zrPM1+nE2rK/us3W3M6n0KG3ts6nytTTw8nn
+x/jW0Lnjyty6w8bAo6zS8rTLztLDx8+jzfvU2s60wLS9q8bkwKnVuc6quPy547e6tcS31reisOax
+vqGjtavKx9PJ09rEv8ewv8nS1NfU08nKudPDtcQgdGh1LWluZm8tbGliINPrIGFwcCC05rW1sta/
+4tbQsr+31tCt0um6zcTayN3S0b6t0c/W2Ln9yrGjrM7Sw8fEv8ewvfbE3LLwveKz9tf2tb3U2tCj
+1LDN+Lu3vrPE2tfU08nKudPDtcS31reisOaxvqOs1NrN4s34u7e+s9TyvLi69c7et6jKudPDoaPO
+0sPHz6PN+8TcvejW+tfu0MKw5rG+tcQgdGh1LWluZm8tYXBwILLWv+Kw79b6veK+9s34wuey49Pr
+z+C52Lf+zvG1xM7KzOKhow0KDQq1q8rHztLXotLitb0gdGh1LWluZm8tYXBwIMq508PByyBCU0wg
+MS4xIExpY2VuY2WjrMfSw7vT0MP3yLfJ+cP3v8nS1NTat8fJzNK108PNvsnPvau4xLDm19TTybfW
+t6Kho7P209qw5siosaO7pL+8wsejrM7Sz/LE+reiy83V4rfi08q8/sfrx/PE+rbUvfbP3sflu6q0
+89Gn0KPE2sq508O1xLjEsOa31reitcTQ7b/JoaMNCg0KudjT2rbU1K2w5rLWv+K1xLG+ye25sc/X
+o6zG5Mq1ztLSstf3uf3LvL+8oaO1q8rHIFRIVSBJbmZvIEFwcCDLxrr1zt63qMrKxeTO0tDCvNPI
+67XE0rvQqbmmxNzKysXko6zI59St19O7r9fpvP7XorLhoaJhZ2VudCDUrdfTu6+y2bXItci5psTc
+o6zS8rTLztK+rbn9yffW2L+8wse+9raoz8jP8sT6vfjQ0NGvzsqhow0KDQrI57n7xPrIz86qsqKy
+u7rPysqjrM7Su+G/vMLH0tS4/MehtbG1xLe9yr3X6davIE9uZVRIVSC5psTc0+vJ58f4o6yyosfS
+vdPK3MT6tcTS4rz7us29qNLpoaMNCg0Kz6PN+8T6vNPS1L+8wsejobbU09ogdGh1LWluZm8tY29t
+bXVuaXR5IMnnx/i21Mflu6rRp8n60MXPorf+zvG1xNe/1L25sc/Xse3KvtPJ1tS1xL600uKjoQ0K
+DQoyMDI2LjkuMTYNCg0KDQo=
+
+--_000_SY7P300MB055989A8B75E73A6F6653F75B3B92SY7P300MB0559AUSP_
+Content-Type: text/html; charset="gb2312"
+Content-Transfer-Encoding: quoted-printable
+
+<html>
+<head>
+<meta http-equiv=3D"Content-Type" content=3D"text/html; charset=3Dgb2312">
+</head>
+<body>
+<div dir=3D"auto" style=3D"font-family: Aptos, Aptos_MSFontService, -apple-=
+system, Roboto, Arial, Helvetica, sans-serif; font-size: 12pt; color: rgb(3=
+3, 33, 33);">
+=B9=F9=BC=CE=C0=D6=A3=BA</div>
+<div dir=3D"auto" style=3D"font-family: Aptos, Aptos_MSFontService, -apple-=
+system, Roboto, Arial, Helvetica, sans-serif; font-size: 12pt; color: rgb(3=
+3, 33, 33);">
+<br>
+</div>
+<div dir=3D"auto" style=3D"font-family: Aptos, Aptos_MSFontService, -apple-=
+system, Roboto, Arial, Helvetica, sans-serif; font-size: 12pt; color: rgb(3=
+3, 33, 33);">
+=C4=FA=BA=C3=A3=A1=B8=D0=D0=BB=C4=FA=B6=D4=B0=E6=C8=A8=D3=EB=BF=AA=D4=B4=D0=
+=AD=D2=E9=B5=C4=D6=D8=CA=D3=A1=A3</div>
+<div dir=3D"auto" style=3D"font-family: Aptos, Aptos_MSFontService, -apple-=
+system, Roboto, Arial, Helvetica, sans-serif; font-size: 12pt; color: rgb(3=
+3, 33, 33);">
+<br>
+</div>
+<div dir=3D"auto" style=3D"font-family: Aptos, Aptos_MSFontService, -apple-=
+system, Roboto, Arial, Helvetica, sans-serif; font-size: 12pt; color: rgb(3=
+3, 33, 33);">
+=CE=D2=B4=FA=B1=ED THU Info =CD=C5=B6=D3=CA=DA=C8=A8=C4=FA=B5=C4 OneTHU =D4=
+=DA=B7=C7=C9=CC=D2=B5=D3=C3=CD=BE=B5=C4=C7=E9=BF=F6=CF=C2=CA=B9=D3=C3 THU I=
+nfo =CF=E0=B9=D8=D7=EE=D0=C2=D4=B4=B4=FA=C2=EB=BD=F8=D0=D0=B6=FE=B4=CE=B7=
+=D6=B7=A2=A3=AC=CA=DA=C8=A8=BD=D8=D6=B9=C8=D5=C6=DA=A3=BA2036 =C4=EA 12 =D4=
+=C2 31 =C8=D5=A1=A3</div>
+<div dir=3D"auto" style=3D"font-family: Aptos, Aptos_MSFontService, -apple-=
+system, Roboto, Arial, Helvetica, sans-serif; font-size: 12pt; color: rgb(3=
+3, 33, 33);">
+<br>
+</div>
+<div dir=3D"auto" style=3D"font-family: Aptos, Aptos_MSFontService, -apple-=
+system, Roboto, Arial, Helvetica, sans-serif; font-size: 12pt; color: rgb(3=
+3, 33, 33);">
+=C1=ED=CD=E2=A3=AC=BF=BC=C2=C7=BC=D3=C8=EB THU Info =CD=C5=B6=D3=C3=B4=A3=
+=BF</div>
+<div dir=3D"auto" style=3D"font-family: Aptos, Aptos_MSFontService, -apple-=
+system, Roboto, Arial, Helvetica, sans-serif; font-size: 12pt; color: rgb(3=
+3, 33, 33);">
+<br>
+</div>
+<div dir=3D"auto" style=3D"font-family: Aptos, Aptos_MSFontService, -apple-=
+system, Roboto, Arial, Helvetica, sans-serif; font-size: 12pt; color: rgb(3=
+3, 33, 33);">
+=CB=EF=D1=B8</div>
+<div dir=3D"auto" style=3D"font-family: Aptos, Aptos_MSFontService, -apple-=
+system, Roboto, Arial, Helvetica, sans-serif; font-size: 12pt; color: rgb(3=
+3, 33, 33);">
+<br>
+</div>
+<div dir=3D"auto" style=3D"font-family: Aptos, Aptos_MSFontService, -apple-=
+system, Roboto, Arial, Helvetica, sans-serif; font-size: 12pt; color: rgb(3=
+3, 33, 33);">
+2026 =C4=EA 9 =D4=C2 16 =C8=D5</div>
+<div id=3D"ms-outlook-mobile-body-separator-line" data-applydefaultfontstyl=
+es=3D"true" dir=3D"auto" style=3D"font-family: Aptos, Aptos_MSFontService, =
+-apple-system, Roboto, Arial, Helvetica, sans-serif; font-size: 12pt;">
+<div style=3D"font-family: Aptos, Aptos_MSFontService, -apple-system, Robot=
+o, Arial, Helvetica, sans-serif; font-size: 12pt;">
+<br>
+</div>
+</div>
+<div id=3D"ms-outlook-mobile-signature" dir=3D"auto" style=3D"font-family: =
+Aptos, Aptos_MSFontService, -apple-system, Roboto, Arial, Helvetica, sans-s=
+erif; font-size: 12pt;">
+<span style=3D"font-family: Aptos, Aptos_MSFontService, -apple-system, Robo=
+to, Arial, Helvetica, sans-serif; font-size: 12pt;">=BB=F1=C8=A1</span><a h=
+ref=3D"https://aka.ms/AAb9ysg" style=3D"font-family: Aptos, Aptos_MSFontSer=
+vice, -apple-system, Roboto, Arial, Helvetica, sans-serif; font-size: 12pt;=
+">Outlook
+ for Android</a></div>
+<hr style=3D"display:inline-block;width:98%" tabindex=3D"-1">
+<div id=3D"divRplyFwdMsg" dir=3D"ltr"><font face=3D"Calibri, sans-serif" st=
+yle=3D"font-size:11pt" color=3D"#000000"><b>From:</b> =B9=F9=BC=CE=C0=D6 =
+=D7=CF=BE=A353 &lt;gjl25@mails.tsinghua.edu.cn&gt;<br>
+<b>Sent:</b> Wednesday, 16 September 2026 12:08:25<br>
+<b>To:</b> UNIDY2002@outlook.com &lt;UNIDY2002@outlook.com&gt;<br>
+<b>Subject:</b> =B9=D8=D3=DA THU Info App =D7=EE=D0=C2=B0=E6=B1=BE=BF=CB=C2=
+=A1=A1=A2=D0=DE=B8=C4=A1=A2=B1=E0=D2=EB=BA=F3=D4=DA=B7=C7=C9=CC=D2=B5=D3=C3=
+=CD=BE=B5=C4=C9=FA=B2=FA=BB=B7=BE=B3=B7=D6=B7=A2=C8=A8=CF=DE=D2=D4=BC=B0=B2=
+=BF=B7=D6=BC=BC=CA=F5=CE=CA=CC=E2=B5=C4=D7=C9=D1=AF</font>
+<div>&nbsp;</div>
+</div>
+<div>
+<div dir=3D"auto" style=3D"font-family:Aptos,Aptos_MSFontService,-apple-sys=
+tem,Roboto,Arial,Helvetica,sans-serif; font-size:12pt; color:rgb(33,33,33)"=
+>
+=D1=A7=B3=A4=C4=FA=BA=C3=A3=A1</div>
+<div dir=3D"auto" style=3D"font-family:Aptos,Aptos_MSFontService,-apple-sys=
+tem,Roboto,Arial,Helvetica,sans-serif; font-size:12pt; color:rgb(33,33,33)"=
+>
+<br>
+</div>
+<div dir=3D"auto" style=3D"font-family:Aptos,Aptos_MSFontService,-apple-sys=
+tem,Roboto,Arial,Helvetica,sans-serif; font-size:12pt; color:rgb(33,33,33)"=
+>
+=CE=D2=CA=C7=C0=B4=D7=D4=C7=E5=BB=AA=B4=F3=D1=A7=BC=C6=CB=E3=BB=FA=BF=C6=D1=
+=A7=D3=EB=BC=BC=CA=F5=CF=B5=BC=C6 51 =B0=E0=B5=C4=D1=A7=C9=FA=A1=A3</div>
+<div dir=3D"auto" style=3D"font-family:Aptos,Aptos_MSFontService,-apple-sys=
+tem,Roboto,Arial,Helvetica,sans-serif; font-size:12pt; color:rgb(33,33,33)"=
+>
+<br>
+</div>
+<div dir=3D"auto" style=3D"font-family:Aptos,Aptos_MSFontService,-apple-sys=
+tem,Roboto,Arial,Helvetica,sans-serif; font-size:12pt; color:rgb(33,33,33)"=
+>
+=CE=D2=D4=DA=BD=F1=C4=EA=B5=C4=CA=EE=BC=D9=B5=C4=B3=CC=D0=F2=C9=E8=BC=C6=D1=
+=B5=C1=B7=A3=A8rust=A3=A9=BF=CE=CC=C3=B4=F3=D7=F7=D2=B5=C9=CF=CA=B9=D3=C3 t=
+hu-info-app, learnX=D3=EB thu-info-lib =B5=C4=B4=E6=B5=B5=B0=E6=B1=BE=B5=C4=
+=BF=AA=B7=C5 API =D6=C6=D7=F7=C1=CB=CE=D2=B5=C4=BF=CE=B3=CC=B4=F3=D7=F7=D2=
+=B5 OneTHU Harness=A3=AC=D6=BC=D4=DA=D3=DA=CA=B9=D3=C3=CD=B3=D2=BB AGENT =
+=BC=DC=B9=B9=B5=F7=D3=C3=C7=E5=BB=AA=D0=C5=CF=A2=B7=FE=CE=F1=A1=A3=CD=AC=CA=
+=B1=A3=AC=CE=D2=BC=D3=C8=EB=C1=CB=B2=BF=B7=D6=D7=D4=BC=BA=B4=D3=C7=E5=BB=AA=
+=D0=C5=CF=A2=B7=FE=CE=F1=D6=D0=B2=F0=BD=E2=B5=C4=D0=C2=B7=FE=CE=F1=C4=DA=C8=
+=DD=A3=AC=C8=E7=D1=A1=BF=CE=D0=C5=CF=A2=B2=E9=D1=AF=B5=C8=B5=C8=A1=A3</div>
+<div dir=3D"auto" style=3D"font-family:Aptos,Aptos_MSFontService,-apple-sys=
+tem,Roboto,Arial,Helvetica,sans-serif; font-size:12pt; color:rgb(33,33,33)"=
+>
+<br>
+</div>
+<div dir=3D"auto" style=3D"font-family:Aptos,Aptos_MSFontService,-apple-sys=
+tem,Roboto,Arial,Helvetica,sans-serif; font-size:12pt; color:rgb(33,33,33)"=
+>
+OneTHU =D4=DA=BF=CE=B3=CC=D7=E9=C4=DA=B2=BF=BA=CD=D6=DC=CE=A7=D0=A1=B7=B6=
+=CE=A7=CA=D4=D3=C3=C9=E7=C7=F8=D6=D0=B9=E3=CA=DC=BA=C3=C6=C0=A3=AC=D2=F2=B4=
+=CB=CE=D2=C3=C7=CF=A3=CD=FB=D4=DA=CE=B4=C0=B4=BD=AB=C6=E4=C0=A9=D5=B9=CE=AA=
+=B8=FC=B9=E3=B7=BA=B5=C4=B7=D6=B7=A2=B0=E6=B1=BE=A1=A3=B5=AB=CA=C7=D3=C9=D3=
+=DA=C4=BF=C7=B0=BF=C9=D2=D4=D7=D4=D3=C9=CA=B9=D3=C3=B5=C4 thu-info-lib =D3=
+=EB app =B4=E6=B5=B5=B2=D6=BF=E2=D6=D0=B2=BF=B7=D6=D0=AD=D2=E9=BA=CD=C4=DA=
+=C8=DD=D2=D1=BE=AD=D1=CF=D6=D8=B9=FD=CA=B1=A3=AC=CE=D2=C3=C7=C4=BF=C7=B0=BD=
+=F6=C4=DC=B2=F0=BD=E2=B3=F6=D7=F6=B5=BD=D4=DA=D0=A3=D4=B0=CD=F8=BB=B7=BE=B3=
+=C4=DA=D7=D4=D3=C9=CA=B9=D3=C3=B5=C4=B7=D6=B7=A2=B0=E6=B1=BE=A3=AC=D4=DA=CD=
+=E2=CD=F8=BB=B7=BE=B3=D4=F2=BC=B8=BA=F5=CE=DE=B7=A8=CA=B9=D3=C3=A1=A3=CE=D2=
+=C3=C7=CF=A3=CD=FB=C4=DC=BD=E8=D6=FA=D7=EE=D0=C2=B0=E6=B1=BE=B5=C4 thu-info=
+-app =B2=D6=BF=E2=B0=EF=D6=FA=BD=E2=BE=F6=CD=F8=C2=E7=B2=E3=D3=EB=CF=E0=B9=
+=D8=B7=FE=CE=F1=B5=C4=CE=CA=CC=E2=A1=A3</div>
+<div dir=3D"auto" style=3D"font-family:Aptos,Aptos_MSFontService,-apple-sys=
+tem,Roboto,Arial,Helvetica,sans-serif; font-size:12pt; color:rgb(33,33,33)"=
+>
+<br>
+</div>
+<div dir=3D"auto" style=3D"font-family:Aptos,Aptos_MSFontService,-apple-sys=
+tem,Roboto,Arial,Helvetica,sans-serif; font-size:12pt; color:rgb(33,33,33)"=
+>
+=B5=AB=CA=C7=CE=D2=D7=A2=D2=E2=B5=BD thu-info-app =CA=B9=D3=C3=C1=CB BSL 1.=
+1 Licence=A3=AC=C7=D2=C3=BB=D3=D0=C3=F7=C8=B7=C9=F9=C3=F7=BF=C9=D2=D4=D4=DA=
+=B7=C7=C9=CC=D2=B5=D3=C3=CD=BE=C9=CF=BD=AB=B8=C4=B0=E6=D7=D4=D3=C9=B7=D6=B7=
+=A2=A1=A3=B3=F6=D3=DA=B0=E6=C8=A8=B1=A3=BB=A4=BF=BC=C2=C7=A3=AC=CE=D2=CF=F2=
+=C4=FA=B7=A2=CB=CD=D5=E2=B7=E2=D3=CA=BC=FE=C7=EB=C7=F3=C4=FA=B6=D4=BD=F6=CF=
+=DE=C7=E5=BB=AA=B4=F3=D1=A7=D0=A3=C4=DA=CA=B9=D3=C3=B5=C4=B8=C4=B0=E6=B7=D6=
+=B7=A2=B5=C4=D0=ED=BF=C9=A1=A3</div>
+<div dir=3D"auto" style=3D"font-family:Aptos,Aptos_MSFontService,-apple-sys=
+tem,Roboto,Arial,Helvetica,sans-serif; font-size:12pt; color:rgb(33,33,33)"=
+>
+<br>
+</div>
+<div dir=3D"auto" style=3D"font-family:Aptos,Aptos_MSFontService,-apple-sys=
+tem,Roboto,Arial,Helvetica,sans-serif; font-size:12pt; color:rgb(33,33,33)"=
+>
+=B9=D8=D3=DA=B6=D4=D4=AD=B0=E6=B2=D6=BF=E2=B5=C4=B1=BE=C9=ED=B9=B1=CF=D7=A3=
+=AC=C6=E4=CA=B5=CE=D2=D2=B2=D7=F7=B9=FD=CB=BC=BF=BC=A1=A3=B5=AB=CA=C7 THU I=
+nfo App =CB=C6=BA=F5=CE=DE=B7=A8=CA=CA=C5=E4=CE=D2=D0=C2=BC=D3=C8=EB=B5=C4=
+=D2=BB=D0=A9=B9=A6=C4=DC=CA=CA=C5=E4=A3=AC=C8=E7=D4=AD=D7=D3=BB=AF=D7=E9=BC=
+=FE=D7=A2=B2=E1=A1=A2agent =D4=AD=D7=D3=BB=AF=B2=D9=B5=C8=B5=C8=B9=A6=C4=DC=
+=A3=AC=D2=F2=B4=CB=CE=D2=BE=AD=B9=FD=C9=F7=D6=D8=BF=BC=C2=C7=BE=F6=B6=A8=CF=
+=C8=CF=F2=C4=FA=BD=F8=D0=D0=D1=AF=CE=CA=A1=A3</div>
+<div dir=3D"auto" style=3D"font-family:Aptos,Aptos_MSFontService,-apple-sys=
+tem,Roboto,Arial,Helvetica,sans-serif; font-size:12pt; color:rgb(33,33,33)"=
+>
+<br>
+</div>
+<div dir=3D"auto" style=3D"font-family:Aptos,Aptos_MSFontService,-apple-sys=
+tem,Roboto,Arial,Helvetica,sans-serif; font-size:12pt; color:rgb(33,33,33)"=
+>
+=C8=E7=B9=FB=C4=FA=C8=CF=CE=AA=B2=A2=B2=BB=BA=CF=CA=CA=A3=AC=CE=D2=BB=E1=BF=
+=BC=C2=C7=D2=D4=B8=FC=C7=A1=B5=B1=B5=C4=B7=BD=CA=BD=D7=E9=D6=AF OneTHU =B9=
+=A6=C4=DC=D3=EB=C9=E7=C7=F8=A3=AC=B2=A2=C7=D2=BD=D3=CA=DC=C4=FA=B5=C4=D2=E2=
+=BC=FB=BA=CD=BD=A8=D2=E9=A1=A3</div>
+<div dir=3D"auto" style=3D"font-family:Aptos,Aptos_MSFontService,-apple-sys=
+tem,Roboto,Arial,Helvetica,sans-serif; font-size:12pt; color:rgb(33,33,33)"=
+>
+<br>
+</div>
+<div dir=3D"auto" style=3D"font-family:Aptos,Aptos_MSFontService,-apple-sys=
+tem,Roboto,Arial,Helvetica,sans-serif; font-size:12pt; color:rgb(33,33,33)"=
+>
+=CF=A3=CD=FB=C4=FA=BC=D3=D2=D4=BF=BC=C2=C7=A3=A1=B6=D4=D3=DA thu-info-commu=
+nity =C9=E7=C7=F8=B6=D4=C7=E5=BB=AA=D1=A7=C9=FA=D0=C5=CF=A2=B7=FE=CE=F1=B5=
+=C4=D7=BF=D4=BD=B9=B1=CF=D7=B1=ED=CA=BE=D3=C9=D6=D4=B5=C4=BE=B4=D2=E2=A3=A1=
+</div>
+<div dir=3D"auto" style=3D"font-family:Aptos,Aptos_MSFontService,-apple-sys=
+tem,Roboto,Arial,Helvetica,sans-serif; font-size:12pt; color:rgb(33,33,33)"=
+>
+<br>
+</div>
+<div dir=3D"auto" style=3D"font-family:Aptos,Aptos_MSFontService,-apple-sys=
+tem,Roboto,Arial,Helvetica,sans-serif; font-size:12pt; color:rgb(33,33,33)"=
+>
+2026.9.16</div>
+<div dir=3D"auto" style=3D"font-family:Aptos,Aptos_MSFontService,-apple-sys=
+tem,Roboto,Arial,Helvetica,sans-serif; font-size:12pt; color:rgb(33,33,33)"=
+>
+<br>
+</div>
+<div dir=3D"auto" style=3D"font-family:Aptos,Aptos_MSFontService,-apple-sys=
+tem,Roboto,Arial,Helvetica,sans-serif; font-size:12pt; color:rgb(33,33,33)"=
+>
+<br>
+</div>
+</div>
+</body>
+</html>
+
+--_000_SY7P300MB055989A8B75E73A6F6653F75B3B92SY7P300MB0559AUSP_--

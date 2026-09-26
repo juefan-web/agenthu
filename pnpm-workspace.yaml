@@ -1,0 +1,6 @@
+packages:
+  - apps/*
+  - packages/*
+  - vendor/onethu/*
+allowBuilds:
+  esbuild: true

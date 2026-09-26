@@ -1,0 +1,53 @@
+:root { font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; color: #1f2933; background: #f5f7f7; font-synthesis: none; }
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; }
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: .55; }
+.shell { display: grid; grid-template-columns: 188px minmax(0, 1fr); min-height: 100vh; }
+.sidebar { display: flex; flex-direction: column; padding: 25px 12px 16px; color: #ebf5f3; background: #183e3c; }
+.brand { padding: 0 14px 28px; font-size: 21px; font-weight: 750; }
+nav { display: grid; gap: 3px; }
+.nav-item { border: 0; border-radius: 5px; background: transparent; color: #cae0dc; padding: 10px 14px; text-align: left; }
+.nav-item:hover, .nav-item.active { background: #2b5b56; color: white; }
+.sidebar-footer { display: flex; align-items: center; gap: 8px; margin-top: auto; padding: 12px 14px; color: #afccc7; font-size: 12px; }
+.status-dot { width: 7px; height: 7px; border-radius: 50%; background: #b8bdb9; flex: none; }
+.status-dot.ready { background: #9ee29f; }
+.content { min-width: 0; padding: 28px clamp(20px, 4vw, 58px) 64px; }
+.topbar { display: flex; align-items: end; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-bottom: 26px; }
+.eyebrow { color: #677879; font-size: 11px; font-weight: 700; margin: 0 0 5px; }
+h1, h2, p { margin-top: 0; }
+h1 { font-size: 29px; margin-bottom: 0; }
+h2 { font-size: 17px; margin: 0; }
+.top-actions, .section-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; }
+.pending-count, .section-meta { color: #697c7b; font-size: 12px; }
+.workspace-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px 30px; }
+.workspace-section { min-width: 0; border-top: 1px solid #cfd8d7; padding-top: 14px; }
+.workspace-section.wide { grid-column: 1 / -1; }
+.section-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 16px; }
+.inline-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; gap: 10px; }
+label { display: grid; gap: 5px; color: #4d5e60; font-size: 12px; }
+input, select, textarea { width: 100%; min-width: 0; border: 1px solid #c8d3d1; border-radius: 4px; background: white; color: #1f2933; padding: 9px 10px; outline-color: #28766c; }
+textarea { resize: vertical; }
+.primary-button, .ghost-button { border-radius: 4px; padding: 9px 13px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.primary-button { border: 1px solid #28766c; color: white; background: #28766c; }
+.primary-button:hover:not(:disabled) { background: #1d5d56; }
+.ghost-button { border: 1px solid #b9c7c5; background: transparent; color: #315652; }
+.ghost-button:hover:not(:disabled) { background: #e9f0ef; }
+.section-actions { margin-top: 16px; }
+.notice { margin: 0 0 20px; padding: 11px 13px; border-left: 3px solid #bc8542; background: #fbf5e9; color: #614a2c; font-size: 13px; line-height: 1.5; }
+.error-text { color: #a03d38; font-size: 13px; line-height: 1.5; }
+.empty-state { color: #778587; font-size: 13px; padding: 16px 0; }
+.connected-message { color: #366b60; font-size: 13px; }
+.task-list, .plan-list { border-top: 1px solid #e0e6e4; }
+.task-row, .plan-row { display: flex; justify-content: space-between; gap: 16px; padding: 13px 2px; border-bottom: 1px solid #e0e6e4; font-size: 13px; }
+.task-row div, .plan-row div { display: grid; gap: 4px; min-width: 0; }
+.task-row strong, .plan-row strong { font-weight: 600; overflow-wrap: anywhere; }
+.task-row span, .plan-row span, .plan-row time { color: #788686; font-size: 12px; }
+.plan-row time { min-width: 46px; }
+.status-label { white-space: nowrap; }
+.focus-workspace { max-width: 660px; }
+.focus-workspace p { color: #617272; font-size: 13px; }
+.note-label { margin: 18px 0; max-width: 520px; }
+@media (max-width: 860px) { .workspace-grid { grid-template-columns: 1fr; } .workspace-section.wide { grid-column: auto; } }
+@media (max-width: 650px) { .shell { grid-template-columns: 1fr; } .sidebar { padding: 14px 16px; } .brand { padding: 0 0 10px; } nav { display: flex; } .nav-item { text-align: center; flex: 1; } .sidebar-footer { display: none; } .content { padding: 20px 16px 48px; } .inline-form { grid-template-columns: 1fr; } }

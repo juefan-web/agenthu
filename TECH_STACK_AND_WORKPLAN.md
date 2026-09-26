@@ -40,18 +40,20 @@
 
 | 平台 | 选型 | 第一阶段范围 |
 | --- | --- | --- |
-| Android / Windows | Flutter + Dart | 共用领域模型、API 客户端和状态管理；Android 偏通知与采集，Windows 偏资料、任务和 Focus。 |
-| 状态管理 | Riverpod | 将远程状态、Current State 和本地草稿区分开，避免页面直接持有业务逻辑。 |
-| API 客户端 | OpenAPI 生成 Dart 类型，再补少量手写封装 | API 变更通过契约检查发现，不在两端复制模型定义。 |
-| 本地缓存 | SQLite/Drift | 支持离线草稿、待上传 Event 和最近 Current State；Backend 仍是事实来源。 |
-| 本地敏感数据 | 平台安全存储 | Token、刷新凭据和本地密钥不能进入普通文件或日志。 |
+| Android / Windows | React + TypeScript + Vite + Tauri 2 + Rust | 共用 WebView 前端；Windows 优先承载资料、任务和 Focus，Android 复用同一套页面与契约。 |
+| 远程状态 | TanStack Query | 统一管理 Backend Current State、Task、Plan 和 Focus 请求，页面不直接拼接请求。 |
+| 本地状态 | Zustand | 管理登录、Focus、当前上下文和 UI 草稿；校园数据通过 `CampusAdapter` 暴露。 |
+| API / 运行时契约 | OpenAPI 生成类型 + Zod | Backend 响应在客户端边界运行时校验，Event/Task/Plan/Focus 契约位于 `packages/contracts`。 |
+| 本地缓存与队列 | SQLite（Tauri host） | 保存待同步 Event、同步游标和 Focus 草稿；Backend 仍是事实来源。 |
+| 本地敏感数据 | Tauri Stronghold | Session/Cookie 与密钥进入 Stronghold；默认不保存校园密码，验证码只存在内存。 |
+| 校园数据 | vendored `@onethu/core` + Tauri `CampusAdapter` | React 不直接导入 OneTHU；首期只接课程、作业、课表和校历。 |
 
 ### 2.3 工程与运行
 
 - 本地环境：Docker Compose，包含 Backend、Worker、PostgreSQL、Redis、MinIO。
-- 代码质量：Ruff、Pyright、pytest；Flutter 使用 `dart format`、`flutter analyze` 和 widget/integration test。
+- 代码质量：Backend 使用 Ruff、Pyright、pytest；客户端使用 TypeScript、Vitest、Testing Library、Playwright 与 `cargo test`。
 - 契约检查：提交时生成并校验 OpenAPI；关键 Event、权限和状态迁移有契约测试。
-- CI：GitHub Actions 执行格式化、静态检查、单元测试、API 集成测试和 Flutter 构建检查。
+- CI：GitHub Actions 执行格式化、静态检查、单元测试、API 集成测试和 Tauri 构建检查。
 - 观测：结构化日志、OpenTelemetry trace、Sentry 错误上报；日志默认脱敏，不记录原始聊天、音频和敏感位置数据。
 - 部署：Backend API 与 Worker 使用容器；PostgreSQL、对象存储和 Redis 优先使用托管服务，先不引入 Kubernetes。
 
@@ -74,7 +76,7 @@
 
 ### 第一版必须冻结的接口
 
-1. `Event`：`id`、`type`、`timestamp`、`source`、`user_id`、`data`、`context`、`provenance`。
+1. 客户端上报 `Event`：`client_event_id`、`type`、`occurred_at`、`source`、`data`、`context`、`provenance`；Backend 注入 `user_id` 和服务端 ID。
 2. `Task`：任务来源、截止时间、估计时长、状态、关联 Goal 和关联 Event。
 3. `CurrentState`：当前时间、活动 Context、待办、可用时间、最近状态和版本号。
 4. `Memory`：层级、内容、来源 Event/文档、置信度、创建/更新时间、用户修正状态。
@@ -97,16 +99,17 @@
 
 开发者 A 不负责页面视觉和客户端本地状态；客户端需要的数据必须通过契约交付。
 
-### 开发者 B：Client / Study + Time 产品负责人
+### 开发者 B：Client / Study + Time / Campus Adapter 负责人
 
 负责用户从资料到 Focus 的完整使用路径：
 
-- 建立 Flutter Android/Windows 工程、导航、认证流程、Riverpod 状态层和 OpenAPI 客户端。
+- 建立 React/Tauri Android/Windows 工程、导航、认证流程、Zustand/TanStack Query 状态层和 OpenAPI 客户端。
+- vendor 固定版本的 OneTHU core，建立 Tauri transport、CampusAdapter、2FA/会话恢复和 Event 映射；React 页面不得直接调用校园接口。
 - 实现课程/资料、作业与 Deadline 导入页面，以及 Task/Current State 展示。
 - 实现计划确认、Focus 开始/暂停/完成、实际耗时和偏差反馈。
 - 实现 Agent 建议的原因、引用位置、权限确认和失败状态展示。
-- 实现本地草稿、离线待同步 Event、冲突提示和敏感数据安全存储。
-- 编写 widget/integration test，并用固定 API fixtures 验证端到端用户路径。
+- 实现本地草稿、SQLite 离线待同步 Event、冲突提示和 Stronghold 敏感数据存储。
+- 编写 Vitest/Testing Library/Playwright 测试，并用 OneTHU/API fixtures 验证端到端用户路径。
 
 开发者 B 不直接修改数据库 schema 或 Agent 内部决策；需要新字段时提交契约变更请求给开发者 A。
 
@@ -122,10 +125,10 @@
 ### M0：工程基线（1 周）
 
 - A：Backend 骨架、数据库迁移、健康检查、CI、Docker Compose。
-- B：Flutter 骨架、认证壳、导航、API client 生成和测试框架。
+- B：React/Tauri 骨架、认证壳、导航、Zod 契约和测试框架。
 - 共同：冻结核心 schema、权限等级和错误格式。
 
-验收：本地一条命令启动服务；CI 通过；客户端能登录并读取空的 Current State。
+验收：本地一条命令启动服务；CI 通过；客户端能登录、恢复校园会话并读取空的 Current State。
 
 ### M1：Event / Task / Current State（1-2 周）
 
@@ -167,6 +170,6 @@
 
 - 不在第一阶段引入 Kafka、Kubernetes 或独立向量数据库。
 - 不让 Android 与 Windows 直接互相同步。
-- 不让客户端直接调用模型、校园 API 或数据库。
+- 不让 React 页面直接调用模型、校园 API 或数据库；校园请求只能经 Tauri `CampusAdapter`。
 - 不把未经验证的模型总结直接写成永久 Memory。
 - 不在没有权限确认的情况下执行对外沟通、删除或其他不可逆动作。
