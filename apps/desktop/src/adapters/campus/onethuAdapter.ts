@@ -96,11 +96,11 @@ export class OneThuCampusAdapter implements CampusAdapter {
   }
 
   async login(input: LoginInput): Promise<SessionStatus> {
-    const status = await this.options.auth.login(input);
-    if (status.state === "ready" || status.state === "need-2fa") {
-      this.options.session.injectCredentials(input.username, input.password);
-    }
-    return this.applyStatus(status);
+    return this.applyStatus(await this.options.auth.login(input));
+  }
+
+  async send2fa(method: string): Promise<SessionStatus> {
+    return this.applyStatus(await this.options.auth.send2fa(method));
   }
 
   async verify2fa(input: Verify2FAInput): Promise<SessionStatus> {
@@ -113,33 +113,45 @@ export class OneThuCampusAdapter implements CampusAdapter {
   }
 
   async getCourses(): Promise<CampusCourse[]> {
+    return this.read(async () => {
     const { session } = this.options;
     requireReady(session);
     const semester = await session.learn.getCurrentSemester();
     return (await session.learn.getCourseList(semester.id)).map(mapCourse);
+    });
   }
 
   async getAssignments(): Promise<CampusAssignment[]> {
+    return this.read(async () => {
     const { session } = this.options;
     requireReady(session);
     const semester = await session.learn.getCurrentSemester();
     const courses = await session.learn.getCourseList(semester.id);
     return (await session.learn.getAllHomework(courses.map((course) => course.id))).map(mapAssignment);
+    });
   }
 
   async getSchedule(range: DateRange): Promise<CampusScheduleEntry[]> {
+    return this.read(async () => {
     const { session } = this.options;
     requireReady(session);
     return (await session.info.getSchedule(range.start, range.end)).map(mapSchedule);
+    });
   }
 
   async getAcademicCalendar(): Promise<CampusCalendar> {
+    return this.read(async () => {
     const { session } = this.options;
     requireReady(session);
     return mapCalendar(await session.learn.getCalendarData());
+    });
   }
 
   async collectSnapshot(): Promise<CampusSnapshot> {
+    return this.read(() => this.collectOnce());
+  }
+
+  private async collectOnce(): Promise<CampusSnapshot> {
     const fetchedAt = new Date().toISOString();
     try {
       requireReady(this.options.session);
@@ -172,6 +184,28 @@ export class OneThuCampusAdapter implements CampusAdapter {
     } catch (error) {
       if (error instanceof AuthRequiredError) throw new CampusAuthError();
       throw error;
+    }
+  }
+
+  private recovery: Promise<SessionStatus> | undefined;
+
+  private async read<T>(operation: () => Promise<T>): Promise<T> {
+    requireReady(this.options.session);
+    try {
+      return await operation();
+    } catch (error) {
+      if (!(error instanceof AuthRequiredError || error instanceof CampusAuthError)) throw error;
+      this.recovery ??= this.restore().finally(() => { this.recovery = undefined; });
+      if ((await this.recovery).state !== "ready") throw new CampusAuthError();
+      try {
+        return await operation();
+      } catch (retryError) {
+        if (retryError instanceof AuthRequiredError || retryError instanceof CampusAuthError) {
+          this.options.session.reset();
+          throw new CampusAuthError();
+        }
+        throw retryError;
+      }
     }
   }
 

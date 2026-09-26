@@ -3,17 +3,17 @@ import {
   HttpClient,
   InfoClient,
   LearnClient,
-  MemoryCookieJar,
   webvpnWrap,
 } from "@onethu/core";
 import { OneThuCampusAdapter } from "./onethuAdapter";
-import { TauriCampusAuthGateway } from "./tauriAuthGateway";
+import { createTauriAuthGateway } from "./tauriAuthGateway";
 import { tauriFetch } from "./tauriTransport";
 
 export function createCampusRuntime() {
   const http = new HttpClient({
     fetch: (url, init) => tauriFetch(url, init),
-    jar: new MemoryCookieJar(),
+    // Cookies stay in Rust; the vendor jar is intentionally inert.
+    jar: { getCookies: () => [], setFromResponse() {}, setRaw() {}, serialize: () => "[]", hydrate() {}, clear() {} },
   });
   http.webVPNEncoder = webvpnWrap;
   const learn = new LearnClient(http);
@@ -24,7 +24,7 @@ export function createCampusRuntime() {
     info,
     fetchLike: (url, init) => tauriFetch(url, init),
   });
-  const auth = new TauriCampusAuthGateway();
+  const auth = createTauriAuthGateway();
   return {
     session,
     adapter: new OneThuCampusAdapter({ session, auth }),

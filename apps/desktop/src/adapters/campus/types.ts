@@ -2,7 +2,7 @@ import type { EventEnvelope } from "@agenthu/contracts";
 
 export type SessionStatus =
   | { state: "idle"; username: null }
-  | { state: "need-2fa"; username: string; methods: string[] }
+  | { state: "need-2fa"; username: string; methods: string[]; codeSent?: boolean; selectedMethod?: string }
   | { state: "ready"; username: string }
   | { state: "error"; username: string | null; message: string };
 
@@ -80,6 +80,7 @@ export interface CampusSnapshot {
 export interface CampusAuthGateway {
   restore(): Promise<SessionStatus>;
   login(input: LoginInput): Promise<SessionStatus>;
+  send2fa(method: string): Promise<SessionStatus>;
   verify2fa(input: Verify2FAInput): Promise<SessionStatus>;
   logout(): Promise<void>;
 }
@@ -87,6 +88,7 @@ export interface CampusAuthGateway {
 export interface CampusAdapter {
   restore(): Promise<SessionStatus>;
   login(input: LoginInput): Promise<SessionStatus>;
+  send2fa(method: string): Promise<SessionStatus>;
   verify2fa(input: Verify2FAInput): Promise<SessionStatus>;
   logout(): Promise<void>;
   getCourses(): Promise<CampusCourse[]>;

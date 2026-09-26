@@ -4,7 +4,7 @@ interface NativeResponse {
   status: number;
   headers: Record<string, string>;
   body: string;
-  final_url?: string;
+  finalUrl: string;
 }
 
 export function isTauriRuntime(): boolean {
@@ -27,7 +27,7 @@ function bodyToString(body: BodyInit | null | undefined): string | undefined {
 }
 
 export async function tauriFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
-  if (!isTauriRuntime()) return fetch(input, init);
+  if (!isTauriRuntime()) throw new Error("校园请求需要 Tauri 客户端");
   const url = input instanceof Request ? input.url : input.toString();
   const headers = new Headers(init.headers);
   if ((init.body instanceof URLSearchParams || init.body instanceof FormData) && !headers.has("Content-Type")) {
@@ -43,6 +43,8 @@ export async function tauriFetch(input: RequestInfo | URL, init: RequestInit = {
     },
   });
   const responseHeaders = new Headers(native.headers);
-  if (native.final_url) responseHeaders.set("x-onethu-final-url", native.final_url);
-  return new Response([204, 205, 304].includes(native.status) ? null : native.body, { status: native.status, headers: responseHeaders });
+  responseHeaders.set("x-onethu-final-url", native.finalUrl);
+  const response = new Response([204, 205, 304].includes(native.status) ? null : native.body, { status: native.status, headers: responseHeaders });
+  Object.defineProperty(response, "url", { value: native.finalUrl });
+  return response;
 }

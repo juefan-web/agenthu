@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { FocusSession, Task } from "@agenthu/contracts";
 import { createCampusRuntime } from "./adapters/campus/runtime";
 import type { SessionStatus } from "./adapters/campus/types";
+import { CampusAuthError } from "./adapters/campus/types";
 import { isTauriRuntime } from "./adapters/campus/tauriTransport";
 import { BackendClient } from "./backend/client";
 import { createFocusDraftStore } from "./focus/draft";
@@ -23,6 +24,7 @@ function errorText(error: unknown): string {
 }
 
 function applySession(status: SessionStatus): void {
+  useSessionStore.getState().setTwoFactor(status.state === "need-2fa" ? status.methods : [], status.state === "need-2fa" && !!status.codeSent, status.state === "need-2fa" ? status.selectedMethod : undefined);
   useSessionStore.getState().setStatus(
     status.state,
     status.username,
@@ -75,6 +77,7 @@ export default function App() {
       void queryClient.invalidateQueries();
     },
     onError: (error) => {
+      if (error instanceof CampusAuthError) applySession({ state: "error", username: null, message: error.message });
       void queue.list().then((events) => setPending(events.length));
       setNotice(`同步未完成，事件留在本地队列：${errorText(error)}`);
     },
@@ -141,22 +144,38 @@ export default function App() {
 }
 
 function CampusConnection({ onError }: { onError: (error: unknown) => void }) {
-  const { status, message } = useSessionStore();
+  const { status, message, methods, codeSent, selectedMethod } = useSessionStore();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [method, setMethod] = useState("totp");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
+  const [trustDevice, setTrustDevice] = useState(false);
+  const activeMethod = methods.includes(method) ? method : methods[0] ?? "";
 
   async function login(event: FormEvent) {
     event.preventDefault(); setBusy(true);
-    try { applySession(await campus.login({ username, password })); setPassword(""); }
+    const input = { username, password }; setPassword("");
+    try { applySession(await campus.login(input)); }
     catch (error) { onError(error); }
     finally { setBusy(false); }
   }
   async function verify(event: FormEvent) {
     event.preventDefault(); setBusy(true);
-    try { applySession(await campus.verify2fa({ method, code, trustDevice: false })); setCode(""); }
+    const input = { method: selectedMethod, code, trustDevice }; setCode("");
+    try { applySession(await campus.verify2fa(input)); }
+    catch (error) { onError(error); }
+    finally { setBusy(false); }
+  }
+  async function sendCode() {
+    setBusy(true);
+    try { applySession(await campus.send2fa(activeMethod)); }
+    catch (error) { onError(error); }
+    finally { setBusy(false); }
+  }
+  async function cancel() {
+    setBusy(true);
+    try { await campus.logout(); useSessionStore.getState().reset(); setCode(""); }
     catch (error) { onError(error); }
     finally { setBusy(false); }
   }
@@ -165,9 +184,10 @@ function CampusConnection({ onError }: { onError: (error: unknown) => void }) {
   return <>
     {message && <p className="error-text" role="alert">{message}</p>}
     {status === "need-2fa" ? <form className="inline-form" onSubmit={(event) => void verify(event)}>
-      <label>验证方式<select value={method} onChange={(event) => setMethod(event.target.value)}><option value="totp">TOTP</option><option value="mobile">短信</option><option value="wechat">企业微信</option></select></label>
-      <label>验证码<input value={code} onChange={(event) => setCode(event.target.value)} autoComplete="one-time-code" required /></label>
-      <button className="primary-button" disabled={busy}>验证</button>
+      <label>验证方式<select value={codeSent ? selectedMethod : activeMethod} disabled={busy || codeSent} onChange={(event) => setMethod(event.target.value)}>{methods.map((item) => <option key={item} value={item}>{({ totp: "TOTP", mobile: "短信", wechat: "企业微信" } as Record<string, string>)[item] ?? item}</option>)}</select></label>
+      {!codeSent && <button type="button" className="primary-button" disabled={busy || !activeMethod} onClick={() => void sendCode()}>{activeMethod === "totp" ? "使用验证器" : "发送验证码"}</button>}
+      {codeSent && <><label>验证码<input value={code} onChange={(event) => setCode(event.target.value)} autoComplete="one-time-code" required /></label><label className="checkbox-label"><input type="checkbox" checked={trustDevice} onChange={(event) => setTrustDevice(event.target.checked)} />信任此设备</label><button className="primary-button" disabled={busy}>验证</button></>}
+      <button type="button" className="ghost-button" onClick={() => void cancel()}>取消</button>
     </form> : <form className="inline-form" onSubmit={(event) => void login(event)}>
       <label>学号<input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" required /></label>
       <label>密码<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required /></label>

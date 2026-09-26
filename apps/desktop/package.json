@@ -13,6 +13,7 @@
   "dependencies": {
     "@agenthu/contracts": "workspace:*",
     "@onethu/core": "workspace:*",
+    "@onethu/info-lib": "workspace:*",
     "@tanstack/react-query": "^5.66.8",
     "@tauri-apps/api": "^2.4.1",
     "react": "^19.1.0",
