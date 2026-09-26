@@ -67,6 +67,9 @@ context lives under `AGENT_CONTEXT/`.
   image) and `quay.io/minio/minio` requires auth. MinIO remains the default backend; `s3mock`
   (`docker compose --profile s3mock`) is available where MinIO cannot be pulled. This does not
   affect the code path, which depends only on the `ObjectStorage` interface.
+  s3mock specifics: image is **pinned** (`adobe/s3mock:5.2.3`, not `latest`) so CI does not drift;
+  the healthcheck uses **`wget`** (the image has no `curl`) against **`/favicon.ico`** (the root path
+  is an unauthenticated ListBuckets that may return 403). CI mirrors the same readiness probe.
 - **Documentation mismatch (needs a coordinated decision)**: `TECH_STACK_AND_WORKPLAN.md` states the
   client is Flutter generated from OpenAPI, but the real client is React/Tauri with hand-written Zod
   contracts (`packages/contracts`). The Backend now conforms to the real client (see D-009), but the

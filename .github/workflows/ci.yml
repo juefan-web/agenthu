@@ -60,7 +60,9 @@ jobs:
       - name: Wait for S3Mock
         run: |
           for i in $(seq 1 30); do
-            curl -sf http://127.0.0.1:9090/ >/dev/null && exit 0
+            # /favicon.ico is S3Mock's readiness endpoint; the root path is an
+            # unauthenticated ListBuckets that may return 403.
+            curl -sf http://127.0.0.1:9090/favicon.ico >/dev/null && exit 0
             sleep 2
           done
           echo "S3Mock did not become ready" && exit 1

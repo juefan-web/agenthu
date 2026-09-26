@@ -54,8 +54,11 @@ services:
   # Alternate S3-compatible storage for environments where the MinIO image is
   # unavailable. Enable with: docker compose --profile s3mock up -d db redis s3mock
   # and set S3_ENDPOINT_URL=http://localhost:9090.
+  # Image is pinned (not `latest`) so CI does not drift with upstream releases.
+  # The image ships `wget` but not `curl`, and `/favicon.ico` is the documented
+  # readiness endpoint (the root path is an unauthenticated ListBuckets).
   s3mock:
-    image: adobe/s3mock:latest
+    image: ${S3MOCK_IMAGE:-adobe/s3mock:5.2.3}
     profiles: ["s3mock"]
     environment:
       COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS: agenthu
@@ -64,7 +67,7 @@ services:
     ports:
       - "9090:9090"
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:9090/ >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:9090/favicon.ico || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 30
