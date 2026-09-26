@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (lint, types, tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      DATABASE_URL: postgresql+psycopg://agenthu:agenthu@localhost:5432/agenthu
+      TEST_DATABASE_URL: postgresql+psycopg://agenthu:agenthu@localhost:5432/agenthu_test
+      REDIS_URL: redis://localhost:6379/0
+      STORAGE_BACKEND: memory
+      SECRET_KEY: ci-test-secret-key-not-for-production
+      S3_ENDPOINT_URL: http://localhost:9000
+      S3_ACCESS_KEY: agenthu
+      S3_SECRET_KEY: agenthu123
+      S3_BUCKET: agenthu
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Create virtualenv and install dependencies
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/pip install -e ".[dev]"
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
+
+      - name: Start backing services
+        run: docker compose up -d db redis minio
+
+      - name: Wait for PostgreSQL
+        run: |
+          for i in $(seq 1 30); do
+            docker compose exec -T db pg_isready -U agenthu -d agenthu && exit 0
+            sleep 2
+          done
+          echo "PostgreSQL did not become ready" && exit 1
+
+      - name: Ruff lint
+        run: ruff check .
+
+      - name: Ruff format check
+        run: ruff format --check .
+
+      - name: Pyright
+        run: pyright
+
+      - name: Apply migrations from zero
+        run: |
+          alembic upgrade head
+          alembic downgrade base
+          alembic upgrade head
+
+      - name: Export OpenAPI contract
+        run: python -m backend.scripts.export_openapi --output openapi.json
+
+      - name: Run tests
+        run: pytest
