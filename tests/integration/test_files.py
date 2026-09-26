@@ -4,6 +4,8 @@ import hashlib
 
 import pytest
 
+from backend.config import Settings
+
 pytestmark = pytest.mark.integration
 
 _CONTENT = b"%PDF-1.4 synthetic test document"
@@ -11,7 +13,7 @@ _CONTENT = b"%PDF-1.4 synthetic test document"
 
 def test_file_upload_download_and_delete(client, auth_headers) -> None:
     upload = client.post(
-        "/api/v1/files",
+        "/v1/files",
         files={"file": ("notes.pdf", _CONTENT, "application/pdf")},
         headers=auth_headers,
     )
@@ -22,24 +24,24 @@ def test_file_upload_download_and_delete(client, auth_headers) -> None:
     assert body["checksum_sha256"] == hashlib.sha256(_CONTENT).hexdigest()
     assert body["storage_backend"] == "memory"
 
-    listing = client.get("/api/v1/files", headers=auth_headers)
+    listing = client.get("/v1/files", headers=auth_headers)
     assert listing.json()["total"] == 1
 
-    download = client.get(f"/api/v1/files/{body['id']}/download", headers=auth_headers)
+    download = client.get(f"/v1/files/{body['id']}/download", headers=auth_headers)
     assert download.status_code == 200
     assert download.content == _CONTENT
 
-    signed = client.get(f"/api/v1/files/{body['id']}/signed-url", headers=auth_headers)
+    signed = client.get(f"/v1/files/{body['id']}/signed-url", headers=auth_headers)
     assert signed.status_code == 200
     assert signed.json()["url"].startswith("memory://")
 
-    assert client.delete(f"/api/v1/files/{body['id']}", headers=auth_headers).status_code == 204
-    assert client.get(f"/api/v1/files/{body['id']}", headers=auth_headers).status_code == 404
+    assert client.delete(f"/v1/files/{body['id']}", headers=auth_headers).status_code == 204
+    assert client.get(f"/v1/files/{body['id']}", headers=auth_headers).status_code == 404
 
 
 def test_empty_upload_is_rejected(client, auth_headers) -> None:
     response = client.post(
-        "/api/v1/files",
+        "/v1/files",
         files={"file": ("empty.txt", b"", "text/plain")},
         headers=auth_headers,
     )
@@ -47,13 +49,27 @@ def test_empty_upload_is_rejected(client, auth_headers) -> None:
     assert response.json()["error"]["code"] == "validation_error"
 
 
+def test_oversized_upload_is_rejected(client, auth_headers, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "backend.api.v1.files.get_settings",
+        lambda: Settings(max_upload_bytes=5),
+    )
+    response = client.post(
+        "/v1/files",
+        files={"file": ("big.txt", b"0123456789", "text/plain")},
+        headers=auth_headers,
+    )
+    assert response.status_code == 413
+    assert response.json()["error"]["code"] == "payload_too_large"
+
+
 def test_file_isolation_between_users(client, auth_factory) -> None:
     alice = auth_factory()
     bob = auth_factory()
     upload = client.post(
-        "/api/v1/files",
+        "/v1/files",
         files={"file": ("secret.txt", b"hello", "text/plain")},
         headers=alice,
     ).json()
-    assert client.get(f"/api/v1/files/{upload['id']}", headers=bob).status_code == 404
-    assert client.get(f"/api/v1/files/{upload['id']}/download", headers=bob).status_code == 404
+    assert client.get(f"/v1/files/{upload['id']}", headers=bob).status_code == 404
+    assert client.get(f"/v1/files/{upload['id']}/download", headers=bob).status_code == 404

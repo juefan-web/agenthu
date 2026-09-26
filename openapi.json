@@ -52,13 +52,13 @@
         }
       }
     },
-    "/api/v1/auth/register": {
+    "/v1/auth/register": {
       "post": {
         "tags": [
           "auth"
         ],
         "summary": "Register",
-        "operationId": "register_api_v1_auth_register_post",
+        "operationId": "register_v1_auth_register_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -133,13 +133,13 @@
         }
       }
     },
-    "/api/v1/auth/login": {
+    "/v1/auth/login": {
       "post": {
         "tags": [
           "auth"
         ],
         "summary": "Login",
-        "operationId": "login_api_v1_auth_login_post",
+        "operationId": "login_v1_auth_login_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -214,19 +214,19 @@
         }
       }
     },
-    "/api/v1/auth/token": {
+    "/v1/auth/token": {
       "post": {
         "tags": [
           "auth"
         ],
         "summary": "Login Form",
         "description": "OAuth2 password grant form, used by the OpenAPI 'Authorize' button.",
-        "operationId": "login_form_api_v1_auth_token_post",
+        "operationId": "login_form_v1_auth_token_post",
         "requestBody": {
           "content": {
             "application/x-www-form-urlencoded": {
               "schema": {
-                "$ref": "#/components/schemas/Body_login_form_api_v1_auth_token_post"
+                "$ref": "#/components/schemas/Body_login_form_v1_auth_token_post"
               }
             }
           },
@@ -296,13 +296,13 @@
         }
       }
     },
-    "/api/v1/auth/me": {
+    "/v1/auth/me": {
       "get": {
         "tags": [
           "auth"
         ],
         "summary": "Me",
-        "operationId": "me_api_v1_auth_me_get",
+        "operationId": "me_v1_auth_me_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -372,13 +372,13 @@
         ]
       }
     },
-    "/api/v1/events": {
+    "/v1/events": {
       "post": {
         "tags": [
           "events"
         ],
         "summary": "Create",
-        "operationId": "create_api_v1_events_post",
+        "operationId": "create_v1_events_post",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -462,7 +462,7 @@
           "events"
         ],
         "summary": "List All",
-        "operationId": "list_all_api_v1_events_get",
+        "operationId": "list_all_v1_events_get",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -623,13 +623,100 @@
         }
       }
     },
-    "/api/v1/events/{event_id}": {
+    "/v1/events/batch": {
+      "post": {
+        "tags": [
+          "events"
+        ],
+        "summary": "Ingest Batch",
+        "description": "Batch ingestion contract used by the desktop client sync coordinator.\n\n``accepted_event_ids`` / ``duplicate_event_ids`` contain the client\n``client_event_id`` values so the client can clear its pending queue.",
+        "operationId": "ingest_batch_v1_events_batch_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventBatchResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/events/{event_id}": {
       "get": {
         "tags": [
           "events"
         ],
         "summary": "Get One",
-        "operationId": "get_one_api_v1_events__event_id__get",
+        "operationId": "get_one_v1_events__event_id__get",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -715,7 +802,7 @@
           "events"
         ],
         "summary": "Delete",
-        "operationId": "delete_api_v1_events__event_id__delete",
+        "operationId": "delete_v1_events__event_id__delete",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -790,13 +877,13 @@
         }
       }
     },
-    "/api/v1/tasks": {
+    "/v1/tasks": {
       "post": {
         "tags": [
           "tasks"
         ],
         "summary": "Create",
-        "operationId": "create_api_v1_tasks_post",
+        "operationId": "create_v1_tasks_post",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -818,7 +905,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TaskRead"
+                  "$ref": "#/components/schemas/ClientTask"
                 }
               }
             }
@@ -880,7 +967,7 @@
           "tasks"
         ],
         "summary": "List All",
-        "operationId": "list_all_api_v1_tasks_get",
+        "operationId": "list_all_v1_tasks_get",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -967,7 +1054,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Page_TaskRead_"
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ClientTask"
+                  },
+                  "title": "Response List All V1 Tasks Get"
                 }
               }
             }
@@ -1025,13 +1116,13 @@
         }
       }
     },
-    "/api/v1/tasks/{task_id}": {
+    "/v1/tasks/{task_id}": {
       "get": {
         "tags": [
           "tasks"
         ],
         "summary": "Get One",
-        "operationId": "get_one_api_v1_tasks__task_id__get",
+        "operationId": "get_one_v1_tasks__task_id__get",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -1055,7 +1146,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TaskRead"
+                  "$ref": "#/components/schemas/ClientTask"
                 }
               }
             }
@@ -1117,7 +1208,7 @@
           "tasks"
         ],
         "summary": "Update",
-        "operationId": "update_api_v1_tasks__task_id__patch",
+        "operationId": "update_v1_tasks__task_id__patch",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -1151,7 +1242,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TaskRead"
+                  "$ref": "#/components/schemas/ClientTask"
                 }
               }
             }
@@ -1213,7 +1304,7 @@
           "tasks"
         ],
         "summary": "Delete",
-        "operationId": "delete_api_v1_tasks__task_id__delete",
+        "operationId": "delete_v1_tasks__task_id__delete",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -1288,13 +1379,13 @@
         }
       }
     },
-    "/api/v1/tasks/{task_id}/events/{event_id}": {
+    "/v1/tasks/{task_id}/events/{event_id}": {
       "post": {
         "tags": [
           "tasks"
         ],
         "summary": "Link Event",
-        "operationId": "link_event_api_v1_tasks__task_id__events__event_id__post",
+        "operationId": "link_event_v1_tasks__task_id__events__event_id__post",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -1328,7 +1419,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TaskRead"
+                  "$ref": "#/components/schemas/ClientTask"
                 }
               }
             }
@@ -1390,7 +1481,7 @@
           "tasks"
         ],
         "summary": "Unlink Event",
-        "operationId": "unlink_event_api_v1_tasks__task_id__events__event_id__delete",
+        "operationId": "unlink_event_v1_tasks__task_id__events__event_id__delete",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -1424,7 +1515,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TaskRead"
+                  "$ref": "#/components/schemas/ClientTask"
                 }
               }
             }
@@ -1482,13 +1573,99 @@
         }
       }
     },
-    "/api/v1/tasks/{task_id}/focus/start": {
+    "/v1/focus-sessions": {
       "post": {
         "tags": [
-          "tasks"
+          "focus"
         ],
-        "summary": "Start Focus",
-        "operationId": "start_focus_api_v1_tasks__task_id__focus_start_post",
+        "summary": "Start",
+        "operationId": "start_v1_focus_sessions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FocusSessionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientFocusSession"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/focus-sessions/{session_id}": {
+      "get": {
+        "tags": [
+          "focus"
+        ],
+        "summary": "Get One",
+        "operationId": "get_one_v1_focus_sessions__session_id__get",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -1496,13 +1673,13 @@
         ],
         "parameters": [
           {
-            "name": "task_id",
+            "name": "session_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "Task Id"
+              "title": "Session Id"
             }
           }
         ],
@@ -1512,7 +1689,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EventRead"
+                  "$ref": "#/components/schemas/ClientFocusSession"
                 }
               }
             }
@@ -1568,15 +1745,13 @@
             }
           }
         }
-      }
-    },
-    "/api/v1/tasks/{task_id}/focus/complete": {
-      "post": {
+      },
+      "patch": {
         "tags": [
-          "tasks"
+          "focus"
         ],
-        "summary": "Complete Focus",
-        "operationId": "complete_focus_api_v1_tasks__task_id__focus_complete_post",
+        "summary": "Update",
+        "operationId": "update_v1_focus_sessions__session_id__patch",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -1584,13 +1759,13 @@
         ],
         "parameters": [
           {
-            "name": "task_id",
+            "name": "session_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
               "format": "uuid",
-              "title": "Task Id"
+              "title": "Session Id"
             }
           }
         ],
@@ -1599,7 +1774,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/FocusCompleteRequest"
+                "$ref": "#/components/schemas/FocusSessionUpdate"
               }
             }
           }
@@ -1610,7 +1785,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TaskRead"
+                  "$ref": "#/components/schemas/ClientFocusSession"
                 }
               }
             }
@@ -1668,13 +1843,13 @@
         }
       }
     },
-    "/api/v1/goals": {
+    "/v1/goals": {
       "post": {
         "tags": [
           "goals"
         ],
         "summary": "Create",
-        "operationId": "create_api_v1_goals_post",
+        "operationId": "create_v1_goals_post",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -1758,7 +1933,7 @@
           "goals"
         ],
         "summary": "List All",
-        "operationId": "list_all_api_v1_goals_get",
+        "operationId": "list_all_v1_goals_get",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -1853,13 +2028,13 @@
         }
       }
     },
-    "/api/v1/goals/{goal_id}": {
+    "/v1/goals/{goal_id}": {
       "get": {
         "tags": [
           "goals"
         ],
         "summary": "Get One",
-        "operationId": "get_one_api_v1_goals__goal_id__get",
+        "operationId": "get_one_v1_goals__goal_id__get",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -1945,7 +2120,7 @@
           "goals"
         ],
         "summary": "Update",
-        "operationId": "update_api_v1_goals__goal_id__patch",
+        "operationId": "update_v1_goals__goal_id__patch",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -2041,7 +2216,7 @@
           "goals"
         ],
         "summary": "Delete",
-        "operationId": "delete_api_v1_goals__goal_id__delete",
+        "operationId": "delete_v1_goals__goal_id__delete",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -2116,21 +2291,21 @@
         }
       }
     },
-    "/api/v1/current-state": {
+    "/v1/current-state": {
       "get": {
         "tags": [
           "current-state"
         ],
         "summary": "Get Current State",
         "description": "Recompute and return the projection of the user's present.",
-        "operationId": "get_current_state_api_v1_current_state_get",
+        "operationId": "get_current_state_v1_current_state_get",
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CurrentStateRead"
+                  "$ref": "#/components/schemas/ClientCurrentState"
                 }
               }
             }
@@ -2197,7 +2372,7 @@
           "current-state"
         ],
         "summary": "Patch",
-        "operationId": "patch_api_v1_current_state_patch",
+        "operationId": "patch_v1_current_state_patch",
         "requestBody": {
           "content": {
             "application/json": {
@@ -2214,7 +2389,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CurrentStateRead"
+                  "$ref": "#/components/schemas/ClientCurrentState"
                 }
               }
             }
@@ -2277,20 +2452,20 @@
         ]
       }
     },
-    "/api/v1/current-state/refresh": {
+    "/v1/current-state/refresh": {
       "post": {
         "tags": [
           "current-state"
         ],
         "summary": "Refresh",
-        "operationId": "refresh_api_v1_current_state_refresh_post",
+        "operationId": "refresh_v1_current_state_refresh_post",
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CurrentStateRead"
+                  "$ref": "#/components/schemas/ClientCurrentState"
                 }
               }
             }
@@ -2353,13 +2528,13 @@
         ]
       }
     },
-    "/api/v1/memory": {
+    "/v1/memory": {
       "post": {
         "tags": [
           "memory"
         ],
         "summary": "Create",
-        "operationId": "create_api_v1_memory_post",
+        "operationId": "create_v1_memory_post",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -2443,7 +2618,7 @@
           "memory"
         ],
         "summary": "List All",
-        "operationId": "list_all_api_v1_memory_get",
+        "operationId": "list_all_v1_memory_get",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -2588,13 +2763,13 @@
         }
       }
     },
-    "/api/v1/memory/{memory_id}": {
+    "/v1/memory/{memory_id}": {
       "get": {
         "tags": [
           "memory"
         ],
         "summary": "Get One",
-        "operationId": "get_one_api_v1_memory__memory_id__get",
+        "operationId": "get_one_v1_memory__memory_id__get",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -2680,7 +2855,7 @@
           "memory"
         ],
         "summary": "Update",
-        "operationId": "update_api_v1_memory__memory_id__patch",
+        "operationId": "update_v1_memory__memory_id__patch",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -2776,7 +2951,7 @@
           "memory"
         ],
         "summary": "Delete",
-        "operationId": "delete_api_v1_memory__memory_id__delete",
+        "operationId": "delete_v1_memory__memory_id__delete",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -2851,13 +3026,13 @@
         }
       }
     },
-    "/api/v1/plans": {
+    "/v1/plans": {
       "post": {
         "tags": [
           "plans"
         ],
         "summary": "Create",
-        "operationId": "create_api_v1_plans_post",
+        "operationId": "create_v1_plans_post",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -2879,7 +3054,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PlanRead"
+                  "$ref": "#/components/schemas/ClientPlan"
                 }
               }
             }
@@ -2941,7 +3116,7 @@
           "plans"
         ],
         "summary": "List All",
-        "operationId": "list_all_api_v1_plans_get",
+        "operationId": "list_all_v1_plans_get",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -3011,7 +3186,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Page_PlanRead_"
+                  "$ref": "#/components/schemas/Page_ClientPlan_"
                 }
               }
             }
@@ -3069,13 +3244,13 @@
         }
       }
     },
-    "/api/v1/plans/generate": {
+    "/v1/plans/generate": {
       "post": {
         "tags": [
           "plans"
         ],
         "summary": "Generate",
-        "operationId": "generate_api_v1_plans_generate_post",
+        "operationId": "generate_v1_plans_generate_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -3092,7 +3267,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PlanRead"
+                  "$ref": "#/components/schemas/ClientPlan"
                 }
               }
             }
@@ -3155,13 +3330,90 @@
         ]
       }
     },
-    "/api/v1/plans/{plan_id}": {
+    "/v1/plans/today": {
+      "get": {
+        "tags": [
+          "plans"
+        ],
+        "summary": "Today",
+        "description": "Return the client's \"today\" plan.\n\nThe confirmed plan is returned when present; otherwise a deterministic\nbaseline plan is generated (pending confirmation) so the client always has\nsomething to display and confirm.",
+        "operationId": "today_v1_plans_today_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientPlan"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/plans/{plan_id}": {
       "get": {
         "tags": [
           "plans"
         ],
         "summary": "Get One",
-        "operationId": "get_one_api_v1_plans__plan_id__get",
+        "operationId": "get_one_v1_plans__plan_id__get",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -3185,7 +3437,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PlanRead"
+                  "$ref": "#/components/schemas/ClientPlan"
                 }
               }
             }
@@ -3247,7 +3499,7 @@
           "plans"
         ],
         "summary": "Delete",
-        "operationId": "delete_api_v1_plans__plan_id__delete",
+        "operationId": "delete_v1_plans__plan_id__delete",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -3322,13 +3574,13 @@
         }
       }
     },
-    "/api/v1/plans/{plan_id}/confirm": {
+    "/v1/plans/{plan_id}/confirm": {
       "post": {
         "tags": [
           "plans"
         ],
         "summary": "Confirm",
-        "operationId": "confirm_api_v1_plans__plan_id__confirm_post",
+        "operationId": "confirm_v1_plans__plan_id__confirm_post",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -3352,7 +3604,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PlanRead"
+                  "$ref": "#/components/schemas/ClientPlan"
                 }
               }
             }
@@ -3410,13 +3662,13 @@
         }
       }
     },
-    "/api/v1/plans/{plan_id}/cancel": {
+    "/v1/plans/{plan_id}/cancel": {
       "post": {
         "tags": [
           "plans"
         ],
         "summary": "Cancel",
-        "operationId": "cancel_api_v1_plans__plan_id__cancel_post",
+        "operationId": "cancel_v1_plans__plan_id__cancel_post",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -3440,7 +3692,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PlanRead"
+                  "$ref": "#/components/schemas/ClientPlan"
                 }
               }
             }
@@ -3498,13 +3750,13 @@
         }
       }
     },
-    "/api/v1/plans/{plan_id}/replan": {
+    "/v1/plans/{plan_id}/replan": {
       "post": {
         "tags": [
           "plans"
         ],
         "summary": "Replan Endpoint",
-        "operationId": "replan_endpoint_api_v1_plans__plan_id__replan_post",
+        "operationId": "replan_endpoint_v1_plans__plan_id__replan_post",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -3538,7 +3790,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PlanRead"
+                  "$ref": "#/components/schemas/ClientPlan"
                 }
               }
             }
@@ -3596,13 +3848,13 @@
         }
       }
     },
-    "/api/v1/plans/{plan_id}/items/{item_id}": {
+    "/v1/plans/{plan_id}/items/{item_id}": {
       "patch": {
         "tags": [
           "plans"
         ],
         "summary": "Update Item",
-        "operationId": "update_item_api_v1_plans__plan_id__items__item_id__patch",
+        "operationId": "update_item_v1_plans__plan_id__items__item_id__patch",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -3646,7 +3898,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PlanRead"
+                  "$ref": "#/components/schemas/ClientPlan"
                 }
               }
             }
@@ -3704,13 +3956,13 @@
         }
       }
     },
-    "/api/v1/files": {
+    "/v1/files": {
       "post": {
         "tags": [
           "files"
         ],
         "summary": "Upload",
-        "operationId": "upload_api_v1_files_post",
+        "operationId": "upload_v1_files_post",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -3721,7 +3973,7 @@
           "content": {
             "multipart/form-data": {
               "schema": {
-                "$ref": "#/components/schemas/Body_upload_api_v1_files_post"
+                "$ref": "#/components/schemas/Body_upload_v1_files_post"
               }
             }
           }
@@ -3794,7 +4046,7 @@
           "files"
         ],
         "summary": "List All",
-        "operationId": "list_all_api_v1_files_get",
+        "operationId": "list_all_v1_files_get",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -3889,13 +4141,13 @@
         }
       }
     },
-    "/api/v1/files/{file_id}": {
+    "/v1/files/{file_id}": {
       "get": {
         "tags": [
           "files"
         ],
         "summary": "Get One",
-        "operationId": "get_one_api_v1_files__file_id__get",
+        "operationId": "get_one_v1_files__file_id__get",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -3981,7 +4233,7 @@
           "files"
         ],
         "summary": "Delete",
-        "operationId": "delete_api_v1_files__file_id__delete",
+        "operationId": "delete_v1_files__file_id__delete",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -4056,13 +4308,13 @@
         }
       }
     },
-    "/api/v1/files/{file_id}/download": {
+    "/v1/files/{file_id}/download": {
       "get": {
         "tags": [
           "files"
         ],
         "summary": "Download",
-        "operationId": "download_api_v1_files__file_id__download_get",
+        "operationId": "download_v1_files__file_id__download_get",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -4142,13 +4394,13 @@
         }
       }
     },
-    "/api/v1/files/{file_id}/signed-url": {
+    "/v1/files/{file_id}/signed-url": {
       "get": {
         "tags": [
           "files"
         ],
         "summary": "Signed Url",
-        "operationId": "signed_url_api_v1_files__file_id__signed_url_get",
+        "operationId": "signed_url_v1_files__file_id__signed_url_get",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -4230,13 +4482,13 @@
         }
       }
     },
-    "/api/v1/permissions/policy": {
+    "/v1/permissions/policy": {
       "get": {
         "tags": [
           "permissions"
         ],
         "summary": "Policy",
-        "operationId": "policy_api_v1_permissions_policy_get",
+        "operationId": "policy_v1_permissions_policy_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -4306,13 +4558,13 @@
         ]
       }
     },
-    "/api/v1/permissions/grants": {
+    "/v1/permissions/grants": {
       "get": {
         "tags": [
           "permissions"
         ],
         "summary": "List Grants",
-        "operationId": "list_grants_api_v1_permissions_grants_get",
+        "operationId": "list_grants_v1_permissions_grants_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -4323,7 +4575,7 @@
                     "$ref": "#/components/schemas/PermissionGrantRead"
                   },
                   "type": "array",
-                  "title": "Response List Grants Api V1 Permissions Grants Get"
+                  "title": "Response List Grants V1 Permissions Grants Get"
                 }
               }
             }
@@ -4390,7 +4642,7 @@
           "permissions"
         ],
         "summary": "Create Grant",
-        "operationId": "create_grant_api_v1_permissions_grants_post",
+        "operationId": "create_grant_v1_permissions_grants_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -4470,13 +4722,13 @@
         ]
       }
     },
-    "/api/v1/permissions/grants/{grant_id}": {
+    "/v1/permissions/grants/{grant_id}": {
       "delete": {
         "tags": [
           "permissions"
         ],
         "summary": "Revoke Grant",
-        "operationId": "revoke_grant_api_v1_permissions_grants__grant_id__delete",
+        "operationId": "revoke_grant_v1_permissions_grants__grant_id__delete",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -4551,13 +4803,13 @@
         }
       }
     },
-    "/api/v1/permissions/check": {
+    "/v1/permissions/check": {
       "post": {
         "tags": [
           "permissions"
         ],
         "summary": "Check",
-        "operationId": "check_api_v1_permissions_check_post",
+        "operationId": "check_v1_permissions_check_post",
         "requestBody": {
           "content": {
             "application/json": {
@@ -4637,13 +4889,13 @@
         ]
       }
     },
-    "/api/v1/audit": {
+    "/v1/audit": {
       "get": {
         "tags": [
           "audit"
         ],
         "summary": "List Audit",
-        "operationId": "list_audit_api_v1_audit_get",
+        "operationId": "list_audit_v1_audit_get",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -4754,14 +5006,14 @@
         }
       }
     },
-    "/api/v1/jobs/ping": {
+    "/v1/jobs/ping": {
       "post": {
         "tags": [
           "jobs"
         ],
         "summary": "Enqueue Ping",
         "description": "Enqueue the liveness task to prove the Redis/Arq pipeline works.",
-        "operationId": "enqueue_ping_api_v1_jobs_ping_post",
+        "operationId": "enqueue_ping_v1_jobs_ping_post",
         "responses": {
           "202": {
             "description": "Successful Response",
@@ -4831,13 +5083,13 @@
         ]
       }
     },
-    "/api/v1/jobs/{job_id}": {
+    "/v1/jobs/{job_id}": {
       "get": {
         "tags": [
           "jobs"
         ],
         "summary": "Job Status",
-        "operationId": "job_status_api_v1_jobs__job_id__get",
+        "operationId": "job_status_v1_jobs__job_id__get",
         "security": [
           {
             "OAuth2PasswordBearer": []
@@ -5115,7 +5367,7 @@
         ],
         "title": "AuditLogRead"
       },
-      "Body_login_form_api_v1_auth_token_post": {
+      "Body_login_form_v1_auth_token_post": {
         "properties": {
           "grant_type": {
             "anyOf": [
@@ -5172,9 +5424,9 @@
           "username",
           "password"
         ],
-        "title": "Body_login_form_api_v1_auth_token_post"
+        "title": "Body_login_form_v1_auth_token_post"
       },
-      "Body_upload_api_v1_files_post": {
+      "Body_upload_v1_files_post": {
         "properties": {
           "file": {
             "type": "string",
@@ -5186,60 +5438,48 @@
         "required": [
           "file"
         ],
-        "title": "Body_upload_api_v1_files_post"
+        "title": "Body_upload_v1_files_post"
       },
-      "CurrentStateRead": {
+      "ClientCurrentState": {
         "properties": {
-          "user_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "User Id"
-          },
           "version": {
             "type": "integer",
             "title": "Version"
           },
-          "current_time": {
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "now": {
             "type": "string",
             "format": "date-time",
-            "title": "Current Time"
+            "title": "Now"
           },
-          "current_context": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Current Context"
-          },
-          "current_task": {
+          "context": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/TaskRead"
+                "type": "string"
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Context"
           },
-          "pending_tasks": {
+          "tasks": {
             "items": {
-              "$ref": "#/components/schemas/TaskRead"
+              "$ref": "#/components/schemas/ClientTask"
             },
             "type": "array",
-            "title": "Pending Tasks"
-          },
-          "current_plan": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/PlanRead"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "recent_state": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Recent State"
+            "title": "Tasks"
           },
           "available_minutes": {
             "anyOf": [
@@ -5251,6 +5491,145 @@
               }
             ],
             "title": "Available Minutes"
+          },
+          "current_context": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Current Context"
+          },
+          "current_task": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClientTask"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pending_tasks": {
+            "items": {
+              "$ref": "#/components/schemas/ClientTask"
+            },
+            "type": "array",
+            "title": "Pending Tasks"
+          },
+          "current_plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClientPlan"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recent_state": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Recent State"
+          },
+          "current_time": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Time"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "updated_at",
+          "now",
+          "context",
+          "available_minutes"
+        ],
+        "title": "ClientCurrentState"
+      },
+      "ClientFocusSession": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "task_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Task Id"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "ended_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ended At"
+          },
+          "actual_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Minutes"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "deviation_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deviation Note"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
           },
           "updated_at": {
             "anyOf": [
@@ -5267,12 +5646,359 @@
         },
         "type": "object",
         "required": [
-          "user_id",
-          "version",
-          "current_time"
+          "id",
+          "task_id",
+          "started_at",
+          "ended_at",
+          "actual_minutes",
+          "status",
+          "deviation_note"
         ],
-        "title": "CurrentStateRead",
-        "description": "Projection of the user's present.\n\nBuilt explicitly by ``CurrentStateService`` (not ``from_attributes``) because\nit joins Tasks, Plans, and recent Events."
+        "title": "ClientFocusSession"
+      },
+      "ClientPlan": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generated At"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ClientPlanItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "confirmation_required": {
+            "type": "boolean",
+            "title": "Confirmation Required"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "goal_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Goal Id"
+          },
+          "basis": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Basis"
+          },
+          "permission_level": {
+            "type": "integer",
+            "title": "Permission Level",
+            "default": 2
+          },
+          "replan_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replan Reason"
+          },
+          "confirmed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirmed At"
+          },
+          "cancelled_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelled At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "generated_at",
+          "confirmation_required",
+          "status"
+        ],
+        "title": "ClientPlan"
+      },
+      "ClientPlanItem": {
+        "properties": {
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          },
+          "start_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start At"
+          },
+          "end_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End At"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "order_index": {
+            "type": "integer",
+            "title": "Order Index"
+          },
+          "planned_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Planned Minutes"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "actual_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Minutes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task_id",
+          "start_at",
+          "end_at",
+          "reason",
+          "id",
+          "title",
+          "order_index",
+          "status"
+        ],
+        "title": "ClientPlanItem"
+      },
+      "ClientTask": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "due_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due At"
+          },
+          "estimate_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimate Minutes"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "source_event_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Source Event Ids"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "goal_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Goal Id"
+          },
+          "actual_duration_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual Duration Minutes"
+          },
+          "priority": {
+            "type": "integer",
+            "title": "Priority",
+            "default": 0
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "due_at",
+          "estimate_minutes",
+          "status"
+        ],
+        "title": "ClientTask"
       },
       "CurrentStateUpdate": {
         "properties": {
@@ -5354,6 +6080,91 @@
         ],
         "title": "ErrorResponse"
       },
+      "EventBatchRejection": {
+        "properties": {
+          "client_event_id": {
+            "type": "string",
+            "title": "Client Event Id"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "client_event_id",
+          "reason"
+        ],
+        "title": "EventBatchRejection"
+      },
+      "EventBatchRequest": {
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/EventEnvelope"
+            },
+            "type": "array",
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Events"
+          },
+          "client_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Cursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "events"
+        ],
+        "title": "EventBatchRequest"
+      },
+      "EventBatchResponse": {
+        "properties": {
+          "accepted_event_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Accepted Event Ids"
+          },
+          "duplicate_event_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Duplicate Event Ids"
+          },
+          "rejected": {
+            "items": {
+              "$ref": "#/components/schemas/EventBatchRejection"
+            },
+            "type": "array",
+            "title": "Rejected"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "type": "object",
+        "title": "EventBatchResponse"
+      },
       "EventCreate": {
         "properties": {
           "type": {
@@ -5410,6 +6221,105 @@
         ],
         "title": "EventCreate"
       },
+      "EventEnvelope": {
+        "properties": {
+          "client_event_id": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Client Event Id"
+          },
+          "type": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Type"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Occurred At"
+          },
+          "source": {
+            "type": "string",
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Source"
+          },
+          "data": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Data"
+          },
+          "context": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Context"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/EventProvenance"
+          }
+        },
+        "type": "object",
+        "required": [
+          "client_event_id",
+          "type",
+          "occurred_at",
+          "source",
+          "provenance"
+        ],
+        "title": "EventEnvelope"
+      },
+      "EventProvenance": {
+        "properties": {
+          "connector": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Connector"
+          },
+          "connector_version": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Connector Version"
+          },
+          "upstream_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Upstream Id"
+          },
+          "semantic_version": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Semantic Version"
+          },
+          "fetched_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Fetched At"
+          },
+          "endpoint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Endpoint"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "connector",
+          "connector_version",
+          "upstream_id",
+          "semantic_version",
+          "fetched_at"
+        ],
+        "title": "EventProvenance"
+      },
       "EventRead": {
         "properties": {
           "id": {
@@ -5430,6 +6340,11 @@
             "type": "string",
             "format": "date-time",
             "title": "Timestamp"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Occurred At"
           },
           "source": {
             "type": "string",
@@ -5461,6 +6376,17 @@
             ],
             "title": "Dedupe Key"
           },
+          "client_event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Event Id"
+          },
           "ingested_at": {
             "type": "string",
             "format": "date-time",
@@ -5483,11 +6409,13 @@
           "user_id",
           "type",
           "timestamp",
+          "occurred_at",
           "source",
           "data",
           "context",
           "provenance",
           "dedupe_key",
+          "client_event_id",
           "ingested_at",
           "created_at",
           "updated_at"
@@ -5574,20 +6502,47 @@
         ],
         "title": "FileRead"
       },
-      "FocusCompleteRequest": {
+      "FocusSessionCreate": {
         "properties": {
+          "task_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Task Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task_id"
+        ],
+        "title": "FocusSessionCreate"
+      },
+      "FocusSessionUpdate": {
+        "properties": {
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
           "actual_minutes": {
-            "type": "integer",
-            "maximum": 10080.0,
-            "minimum": 1.0,
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 10080.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Actual Minutes"
           },
-          "completed": {
-            "type": "boolean",
-            "title": "Completed",
-            "default": true
-          },
-          "notes": {
+          "deviation_note": {
             "anyOf": [
               {
                 "type": "string",
@@ -5597,14 +6552,11 @@
                 "type": "null"
               }
             ],
-            "title": "Notes"
+            "title": "Deviation Note"
           }
         },
         "type": "object",
-        "required": [
-          "actual_minutes"
-        ],
-        "title": "FocusCompleteRequest"
+        "title": "FocusSessionUpdate"
       },
       "GoalCreate": {
         "properties": {
@@ -6146,6 +7098,37 @@
         ],
         "title": "Page[AuditLogRead]"
       },
+      "Page_ClientPlan_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ClientPlan"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[ClientPlan]"
+      },
       "Page_EventRead_": {
         "properties": {
           "items": {
@@ -6269,68 +7252,6 @@
           "offset"
         ],
         "title": "Page[MemoryRead]"
-      },
-      "Page_PlanRead_": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/PlanRead"
-            },
-            "type": "array",
-            "title": "Items"
-          },
-          "total": {
-            "type": "integer",
-            "title": "Total"
-          },
-          "limit": {
-            "type": "integer",
-            "title": "Limit"
-          },
-          "offset": {
-            "type": "integer",
-            "title": "Offset"
-          }
-        },
-        "type": "object",
-        "required": [
-          "items",
-          "total",
-          "limit",
-          "offset"
-        ],
-        "title": "Page[PlanRead]"
-      },
-      "Page_TaskRead_": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/TaskRead"
-            },
-            "type": "array",
-            "title": "Items"
-          },
-          "total": {
-            "type": "integer",
-            "title": "Total"
-          },
-          "limit": {
-            "type": "integer",
-            "title": "Limit"
-          },
-          "offset": {
-            "type": "integer",
-            "title": "Offset"
-          }
-        },
-        "type": "object",
-        "required": [
-          "items",
-          "total",
-          "limit",
-          "offset"
-        ],
-        "title": "Page[TaskRead]"
       },
       "PermissionCheckRequest": {
         "properties": {
@@ -6751,128 +7672,6 @@
         ],
         "title": "PlanItemCreate"
       },
-      "PlanItemRead": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "plan_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Plan Id"
-          },
-          "task_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Task Id"
-          },
-          "title": {
-            "type": "string",
-            "title": "Title"
-          },
-          "order_index": {
-            "type": "integer",
-            "title": "Order Index"
-          },
-          "planned_start": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Planned Start"
-          },
-          "planned_end": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Planned End"
-          },
-          "planned_minutes": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Planned Minutes"
-          },
-          "status": {
-            "$ref": "#/components/schemas/PlanItemStatus"
-          },
-          "actual_minutes": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Actual Minutes"
-          },
-          "result": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Result"
-          },
-          "notes": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Notes"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "plan_id",
-          "task_id",
-          "title",
-          "order_index",
-          "planned_start",
-          "planned_end",
-          "planned_minutes",
-          "status",
-          "actual_minutes",
-          "result",
-          "notes"
-        ],
-        "title": "PlanItemRead"
-      },
       "PlanItemStatus": {
         "type": "string",
         "enum": [
@@ -6935,160 +7734,6 @@
         },
         "type": "object",
         "title": "PlanItemUpdate"
-      },
-      "PlanRead": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "user_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "User Id"
-          },
-          "goal_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Goal Id"
-          },
-          "replaces_plan_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Replaces Plan Id"
-          },
-          "title": {
-            "type": "string",
-            "title": "Title"
-          },
-          "status": {
-            "$ref": "#/components/schemas/PlanStatus"
-          },
-          "basis": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Basis"
-          },
-          "permission_level": {
-            "type": "integer",
-            "title": "Permission Level"
-          },
-          "generated_by": {
-            "type": "string",
-            "title": "Generated By"
-          },
-          "replan_reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Replan Reason"
-          },
-          "execution_result": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Execution Result"
-          },
-          "confirmed_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Confirmed At"
-          },
-          "cancelled_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cancelled At"
-          },
-          "completed_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Completed At"
-          },
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/PlanItemRead"
-            },
-            "type": "array",
-            "title": "Items"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Updated At"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "user_id",
-          "goal_id",
-          "replaces_plan_id",
-          "title",
-          "status",
-          "basis",
-          "permission_level",
-          "generated_by",
-          "replan_reason",
-          "execution_result",
-          "confirmed_at",
-          "cancelled_at",
-          "completed_at",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "PlanRead"
       },
       "PlanReplanRequest": {
         "properties": {
@@ -7232,146 +7877,6 @@
           "title"
         ],
         "title": "TaskCreate"
-      },
-      "TaskRead": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "Id"
-          },
-          "user_id": {
-            "type": "string",
-            "format": "uuid",
-            "title": "User Id"
-          },
-          "goal_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Goal Id"
-          },
-          "title": {
-            "type": "string",
-            "title": "Title"
-          },
-          "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
-          "source": {
-            "type": "string",
-            "title": "Source"
-          },
-          "status": {
-            "$ref": "#/components/schemas/TaskStatus"
-          },
-          "deadline": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Deadline"
-          },
-          "estimated_duration_minutes": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Estimated Duration Minutes"
-          },
-          "actual_duration_minutes": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Actual Duration Minutes"
-          },
-          "priority": {
-            "type": "integer",
-            "title": "Priority"
-          },
-          "completed_at": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date-time"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Completed At"
-          },
-          "extra": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Extra"
-          },
-          "related_event_ids": {
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "type": "array",
-            "title": "Related Event Ids"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Updated At"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "user_id",
-          "goal_id",
-          "title",
-          "description",
-          "source",
-          "status",
-          "deadline",
-          "estimated_duration_minutes",
-          "actual_duration_minutes",
-          "priority",
-          "completed_at",
-          "extra",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "TaskRead"
       },
       "TaskStatus": {
         "type": "string",

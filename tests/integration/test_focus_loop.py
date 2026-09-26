@@ -1,7 +1,7 @@
-"""End-to-end Study + Time loop through the HTTP contract.
+"""End-to-end Study + Time loop through the client-facing contract.
 
-course/assignment event -> task+deadline -> generated plan -> confirm ->
-focus start -> focus complete -> actual duration -> current state -> re-plan
+assignment event -> task + deadline -> /plans/today -> confirm ->
+POST /focus-sessions -> PATCH complete -> actual duration -> current state -> re-plan
 """
 
 from __future__ import annotations
@@ -16,11 +16,11 @@ pytestmark = pytest.mark.integration
 
 
 def test_full_study_time_loop(client, auth_headers) -> None:
-    goal = client.post("/api/v1/goals", json=goal_payload(), headers=auth_headers).json()
+    goal = client.post("/v1/goals", json=goal_payload(), headers=auth_headers).json()
 
-    event = client.post("/api/v1/events", json=assignment_event(), headers=auth_headers).json()
+    event = client.post("/v1/events", json=assignment_event(), headers=auth_headers).json()
     task = client.post(
-        "/api/v1/tasks",
+        "/v1/tasks",
         json=task_payload(
             title="Linear Algebra HW2",
             deadline=datetime.now(UTC) + timedelta(days=1),
@@ -30,57 +30,66 @@ def test_full_study_time_loop(client, auth_headers) -> None:
         ),
         headers=auth_headers,
     ).json()
+    assert task["status"] == "todo"
 
-    # Plan is generated and requires confirmation.
-    plan = client.post("/api/v1/plans/generate", json={}, headers=auth_headers).json()
-    assert plan["permission_level"] == 2
+    # Today plan is generated and requires confirmation.
+    plan = client.get("/v1/plans/today", headers=auth_headers).json()
+    assert plan["status"] == "draft"
+    assert plan["confirmation_required"] is True
     assert len(plan["items"]) == 1
 
-    state_before = client.get("/api/v1/current-state", headers=auth_headers).json()
+    state_before = client.get("/v1/current-state", headers=auth_headers).json()
     assert state_before["current_plan"] is None
 
-    confirmed = client.post(f"/api/v1/plans/{plan['id']}/confirm", headers=auth_headers)
-    assert confirmed.json()["status"] == "CONFIRMED"
+    confirmed = client.post(f"/v1/plans/{plan['id']}/confirm", headers=auth_headers)
+    assert confirmed.json()["status"] == "confirmed"
 
-    state_confirmed = client.get("/api/v1/current-state", headers=auth_headers).json()
+    state_confirmed = client.get("/v1/current-state", headers=auth_headers).json()
     assert state_confirmed["current_plan"]["id"] == plan["id"]
 
-    # Focus start -> event -> task becomes IN_PROGRESS.
-    started = client.post(f"/api/v1/tasks/{task['id']}/focus/start", headers=auth_headers)
-    assert started.status_code == 200
-    assert started.json()["type"] == "focus.started"
-    assert client.get(f"/api/v1/tasks/{task['id']}", headers=auth_headers).json()["status"] == (
-        "IN_PROGRESS"
+    # Focus session: start -> task in progress.
+    started = client.post("/v1/focus-sessions", json={"task_id": task["id"]}, headers=auth_headers)
+    assert started.status_code == 201, started.text
+    session = started.json()
+    assert session["status"] == "running"
+    assert session["ended_at"] is None
+    assert client.get(f"/v1/tasks/{task['id']}", headers=auth_headers).json()["status"] == (
+        "in_progress"
     )
 
-    # Focus complete -> actual duration recorded -> task completed.
-    completed = client.post(
-        f"/api/v1/tasks/{task['id']}/focus/complete",
-        json={"actual_minutes": 75, "completed": True, "notes": "Took longer than planned"},
+    # Complete -> actual duration recorded -> task done.
+    completed = client.patch(
+        f"/v1/focus-sessions/{session['id']}",
+        json={"status": "completed", "actual_minutes": 75, "deviation_note": "Took longer"},
         headers=auth_headers,
     )
     assert completed.status_code == 200, completed.text
-    completed_task = completed.json()
-    assert completed_task["status"] == "COMPLETED"
-    assert completed_task["actual_duration_minutes"] == 75
+    body = completed.json()
+    assert body["status"] == "completed"
+    assert body["actual_minutes"] == 75
+    assert body["ended_at"] is not None
+    assert body["deviation_note"] == "Took longer"
 
-    state_after = client.get("/api/v1/current-state", headers=auth_headers).json()
-    assert state_after["pending_tasks"] == []
+    task_after = client.get(f"/v1/tasks/{task['id']}", headers=auth_headers).json()
+    assert task_after["status"] == "done"
+    assert task_after["actual_duration_minutes"] == 75
+
+    state_after = client.get("/v1/current-state", headers=auth_headers).json()
+    assert state_after["tasks"] == []
     assert state_after["recent_state"]["last_event_type"] == "focus.completed"
 
     # A new task plus re-planning after the deviation.
     client.post(
-        "/api/v1/tasks",
+        "/v1/tasks",
         json=task_payload(
             title="Linear Algebra HW3", deadline=datetime.now(UTC) + timedelta(days=2)
         ),
         headers=auth_headers,
     )
     replanned = client.post(
-        f"/api/v1/plans/{plan['id']}/replan",
+        f"/v1/plans/{plan['id']}/replan",
         json={"reason": "HW2 took 75 min instead of 60; re-plan remaining work"},
         headers=auth_headers,
     )
     assert replanned.status_code == 201
-    assert replanned.json()["replaces_plan_id"] == plan["id"]
     assert replanned.json()["basis"]["completed_task_ids"] == [task["id"]]

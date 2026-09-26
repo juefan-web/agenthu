@@ -11,12 +11,14 @@ from starlette.concurrency import run_in_threadpool
 
 from backend.api.deps import CurrentUser, DBSession, PaginationDep, StorageDep
 from backend.config import get_settings
-from backend.core.errors import NotFoundError, ValidationError
+from backend.core.errors import NotFoundError, PayloadTooLargeError, ValidationError
 from backend.models.file import FileObject
 from backend.schemas.common import Page
 from backend.schemas.file import FileRead, SignedUrl
 
 router = APIRouter(prefix="/files", tags=["files"])
+
+_CHUNK_SIZE = 1024 * 1024
 
 
 def _get_file(db: DBSession, user_id: uuid.UUID, file_id: uuid.UUID) -> FileObject:
@@ -36,13 +38,28 @@ async def upload(
     file: Annotated[UploadFile, File()],
 ) -> FileObject:
     settings = get_settings()
-    data = await file.read()
-    if not data:
-        raise ValidationError("Uploaded file is empty")
-    if len(data) > settings.max_upload_bytes:
-        raise ValidationError(f"File exceeds the maximum size of {settings.max_upload_bytes} bytes")
+    # Stream in chunks and enforce the size limit during the read so an
+    # oversized upload never has to be fully buffered in memory.
+    hasher = hashlib.sha256()
+    buffer = bytearray()
+    total = 0
+    while True:
+        chunk = await file.read(_CHUNK_SIZE)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > settings.max_upload_bytes:
+            raise PayloadTooLargeError(
+                f"File exceeds the maximum size of {settings.max_upload_bytes} bytes"
+            )
+        hasher.update(chunk)
+        buffer.extend(chunk)
 
-    checksum = hashlib.sha256(data).hexdigest()
+    if total == 0:
+        raise ValidationError("Uploaded file is empty")
+
+    data = bytes(buffer)
+    checksum = hasher.hexdigest()
     suffix = PurePosixPath(file.filename or "").suffix[:16]
     key = f"{user.id}/{uuid.uuid4().hex}{suffix}"
     content_type = file.content_type or "application/octet-stream"
@@ -59,8 +76,13 @@ async def upload(
         checksum_sha256=checksum,
         file_metadata={"declared_size": len(data)},
     )
-    db.add(obj)
-    db.flush()
+    try:
+        db.add(obj)
+        db.flush()
+    except Exception:
+        # Compensating delete: never leave an orphan object when metadata fails.
+        await run_in_threadpool(storage.delete, key)
+        raise
     return obj
 
 

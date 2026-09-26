@@ -10,9 +10,14 @@ from sqlalchemy import select
 from backend.api.deps import CurrentUser, DBSession, PaginationDep
 from backend.core.errors import NotFoundError
 from backend.models.event import Event
+from backend.schemas.client_contract import (
+    EventBatchRejection,
+    EventBatchRequest,
+    EventBatchResponse,
+)
 from backend.schemas.common import Page
 from backend.schemas.event import EventCreate, EventRead
-from backend.services.events import create_event, list_events
+from backend.services.events import create_event, ingest_event_batch, list_events
 
 router = APIRouter(prefix="/events", tags=["events"])
 
@@ -55,6 +60,28 @@ def list_all(
         total=total,
         limit=pagination.limit,
         offset=pagination.offset,
+    )
+
+
+@router.post("/batch", response_model=EventBatchResponse)
+def ingest_batch(
+    payload: EventBatchRequest, user: CurrentUser, db: DBSession
+) -> EventBatchResponse:
+    """Batch ingestion contract used by the desktop client sync coordinator.
+
+    ``accepted_event_ids`` / ``duplicate_event_ids`` contain the client
+    ``client_event_id`` values so the client can clear its pending queue.
+    """
+
+    outcome = ingest_event_batch(db, user_id=user.id, envelopes=payload.events)
+    return EventBatchResponse(
+        accepted_event_ids=outcome.accepted,
+        duplicate_event_ids=outcome.duplicates,
+        rejected=[
+            EventBatchRejection(client_event_id=client_event_id, reason=reason)
+            for client_event_id, reason in outcome.rejected
+        ],
+        next_cursor=payload.client_cursor,
     )
 
 

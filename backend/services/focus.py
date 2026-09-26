@@ -1,9 +1,9 @@
-"""Focus session helpers.
+"""Persisted focus sessions with an explicit lifecycle.
 
-Focus is modeled as Events plus projection handlers, never as ad-hoc state:
-starting/completing a focus session emits ``focus.started`` / ``focus.completed``
-events, and the registered handlers update the Task, actual duration and
-CurrentState. This keeps the loop (plan -> focus -> result -> re-plan) auditable.
+``running -> paused -> running -> completed`` (or ``abandoned``). Every
+transition is driven by an Event with a stable dedupe key derived from the
+session id, so network retries and duplicate "complete" taps are idempotent:
+the task's actual duration is not accumulated twice.
 """
 
 from __future__ import annotations
@@ -11,53 +11,165 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.core.errors import ConflictError, ValidationError
 from backend.db.base import utcnow
-from backend.models.event import Event
+from backend.models.enums import FocusSessionStatus, TaskStatus
+from backend.models.focus_session import FocusSession
 from backend.models.task import Task
+from backend.schemas.client_contract import FocusSessionUpdate
 from backend.schemas.event import EventCreate
 from backend.services.events import create_event
 
+_ALLOWED_TRANSITIONS: dict[FocusSessionStatus, set[FocusSessionStatus]] = {
+    FocusSessionStatus.RUNNING: {
+        FocusSessionStatus.PAUSED,
+        FocusSessionStatus.COMPLETED,
+        FocusSessionStatus.ABANDONED,
+    },
+    FocusSessionStatus.PAUSED: {
+        FocusSessionStatus.RUNNING,
+        FocusSessionStatus.COMPLETED,
+        FocusSessionStatus.ABANDONED,
+    },
+    FocusSessionStatus.COMPLETED: set(),
+    FocusSessionStatus.ABANDONED: set(),
+}
 
-def emit_focus_started(session: Session, *, user_id: uuid.UUID, task: Task) -> Event:
-    payload = EventCreate(
-        type="focus.started",
-        source="backend",
-        data={"task_id": str(task.id)},
-        context={"task_title": task.title},
-        provenance={"origin": "backend.focus.start"},
-        dedupe_key=None,
-    )
-    event, _ = create_event(session, user_id=user_id, payload=payload)
-    return event
+_TERMINAL = {FocusSessionStatus.COMPLETED, FocusSessionStatus.ABANDONED}
+_ACTIVE = {FocusSessionStatus.RUNNING, FocusSessionStatus.PAUSED}
 
 
-def emit_focus_completed(
+def _emit(
     session: Session,
     *,
     user_id: uuid.UUID,
+    event_type: str,
+    focus: FocusSession,
     task: Task,
-    actual_minutes: int,
-    completed: bool = True,
-    notes: str | None = None,
-    timestamp: datetime | None = None,
-) -> Event:
+    extra: dict[str, object] | None = None,
+) -> None:
     payload = EventCreate(
-        type="focus.completed",
+        type=event_type,
         source="backend",
-        data={
-            "task_id": str(task.id),
-            "actual_minutes": actual_minutes,
-            "completed": completed,
-            "notes": notes,
-        },
+        data={"task_id": str(task.id), "session_id": str(focus.id), **(extra or {})},
         context={
             "task_title": task.title,
             "estimated_duration_minutes": task.estimated_duration_minutes,
         },
-        provenance={"origin": "backend.focus.complete"},
-        timestamp=timestamp or utcnow(),
+        provenance={"origin": "backend.focus", "focus_session_id": str(focus.id)},
+        dedupe_key=f"focus-session:{focus.id}:{event_type.split('.')[-1]}",
     )
-    event, _ = create_event(session, user_id=user_id, payload=payload)
-    return event
+    create_event(session, user_id=user_id, payload=payload)
+
+
+def active_session_for_task(
+    session: Session, *, user_id: uuid.UUID, task_id: uuid.UUID
+) -> FocusSession | None:
+    stmt = (
+        select(FocusSession)
+        .where(
+            FocusSession.user_id == user_id,
+            FocusSession.task_id == task_id,
+            FocusSession.status.in_(_ACTIVE),
+        )
+        .order_by(FocusSession.created_at.desc())
+    )
+    return session.scalar(stmt)
+
+
+def create_focus_session(session: Session, *, user_id: uuid.UUID, task: Task) -> FocusSession:
+    existing = active_session_for_task(session, user_id=user_id, task_id=task.id)
+    if existing is not None:
+        # Starting a task that already has an active session is idempotent.
+        return existing
+
+    focus = FocusSession(
+        user_id=user_id,
+        task_id=task.id,
+        status=FocusSessionStatus.RUNNING,
+        started_at=utcnow(),
+    )
+    session.add(focus)
+    session.flush()
+    _emit(session, user_id=user_id, event_type="focus.started", focus=focus, task=task)
+    return focus
+
+
+def update_focus_session(
+    session: Session,
+    *,
+    user_id: uuid.UUID,
+    focus: FocusSession,
+    task: Task,
+    payload: FocusSessionUpdate,
+) -> FocusSession:
+    if focus.status in _TERMINAL:
+        # Completion/abandonment is idempotent: return the stored result.
+        return focus
+
+    if payload.deviation_note is not None:
+        focus.deviation_note = payload.deviation_note
+
+    if payload.status is None:
+        session.flush()
+        return focus
+
+    try:
+        target = FocusSessionStatus(payload.status)
+    except ValueError as exc:
+        raise ValidationError(
+            f"Unknown focus status '{payload.status}'",
+            details={"allowed": [status.value for status in FocusSessionStatus]},
+        ) from exc
+
+    if target not in _ALLOWED_TRANSITIONS[focus.status]:
+        raise ConflictError(
+            f"Cannot transition focus session from {focus.status.value} to {target.value}"
+        )
+
+    if target == FocusSessionStatus.COMPLETED:
+        _complete(session, user_id=user_id, focus=focus, task=task, payload=payload)
+    elif target == FocusSessionStatus.ABANDONED:
+        focus.status = FocusSessionStatus.ABANDONED
+        focus.ended_at = utcnow()
+        _emit(session, user_id=user_id, event_type="focus.abandoned", focus=focus, task=task)
+    else:
+        focus.status = target
+
+    session.flush()
+    return focus
+
+
+def _complete(
+    session: Session,
+    *,
+    user_id: uuid.UUID,
+    focus: FocusSession,
+    task: Task,
+    payload: FocusSessionUpdate,
+) -> None:
+    now = utcnow()
+    focus.status = FocusSessionStatus.COMPLETED
+    focus.ended_at = now
+    focus.actual_minutes = payload.actual_minutes or _elapsed_minutes(focus.started_at, now)
+    if task.status != TaskStatus.COMPLETED:
+        _emit(
+            session,
+            user_id=user_id,
+            event_type="focus.completed",
+            focus=focus,
+            task=task,
+            extra={
+                "actual_minutes": focus.actual_minutes,
+                "completed": True,
+                "notes": focus.deviation_note,
+            },
+        )
+
+
+def _elapsed_minutes(started_at: datetime, ended_at: datetime) -> int:
+    seconds = max(0, int((ended_at - started_at).total_seconds()))
+    return max(1, seconds // 60)

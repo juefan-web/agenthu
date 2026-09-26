@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.core.errors import NotFoundError
+from backend.core.errors import ConflictError, NotFoundError
 from backend.db.base import utcnow
 from backend.models.enums import PlanStatus, TaskStatus
 from backend.models.goal import Goal
@@ -100,6 +100,13 @@ def replan(
     original = session.scalar(select(Plan).where(Plan.id == plan_id, Plan.user_id == user_id))
     if original is None:
         raise NotFoundError("Plan not found")
+
+    if original.status not in (
+        PlanStatus.DRAFT,
+        PlanStatus.PENDING_CONFIRMATION,
+        PlanStatus.CONFIRMED,
+    ):
+        raise ConflictError(f"Plan in status {original.status.value} cannot be re-planned")
 
     planned_task_ids = [item.task_id for item in original.items if item.task_id is not None]
     completed_item_ids: list[str] = []

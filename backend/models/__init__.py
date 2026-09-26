@@ -8,6 +8,7 @@ from backend.models.current_state import CurrentState
 from backend.models.enums import (
     AuditActor,
     AuditDecision,
+    FocusSessionStatus,
     GoalStatus,
     MemoryCorrectionStatus,
     MemoryLevel,
@@ -17,6 +18,7 @@ from backend.models.enums import (
 )
 from backend.models.event import Event
 from backend.models.file import FileObject
+from backend.models.focus_session import FocusSession
 from backend.models.goal import Goal
 from backend.models.memory import Memory
 from backend.models.permission import PermissionGrant
@@ -31,6 +33,8 @@ __all__ = [
     "CurrentState",
     "Event",
     "FileObject",
+    "FocusSession",
+    "FocusSessionStatus",
     "Goal",
     "GoalStatus",
     "Memory",

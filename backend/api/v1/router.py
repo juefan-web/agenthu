@@ -8,6 +8,7 @@ from backend.api.v1 import (
     current_state,
     events,
     files,
+    focus_sessions,
     goals,
     jobs,
     memory,
@@ -20,6 +21,7 @@ api_router = APIRouter()
 api_router.include_router(auth.router)
 api_router.include_router(events.router)
 api_router.include_router(tasks.router)
+api_router.include_router(focus_sessions.router)
 api_router.include_router(goals.router)
 api_router.include_router(current_state.router)
 api_router.include_router(memory.router)

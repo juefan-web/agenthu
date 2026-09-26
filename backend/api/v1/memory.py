@@ -10,13 +10,15 @@ from backend.models.enums import MemoryCorrectionStatus
 from backend.models.memory import Memory
 from backend.schemas.common import Page
 from backend.schemas.memory import MemoryCreate, MemoryRead, MemoryUpdate
-from backend.services.lookup import get_memory
+from backend.services.lookup import ensure_owned_events, get_memory
 
 router = APIRouter(prefix="/memory", tags=["memory"])
 
 
 @router.post("", response_model=MemoryRead, status_code=status.HTTP_201_CREATED)
 def create(payload: MemoryCreate, user: CurrentUser, db: DBSession) -> Memory:
+    # P2: every referenced source event must belong to the current user.
+    ensure_owned_events(db, user_id=user.id, event_ids=payload.source_event_ids)
     data = payload.model_dump()
     data["source_event_ids"] = [str(event_id) for event_id in payload.source_event_ids]
     memory = Memory(user_id=user.id, **data)
@@ -68,6 +70,7 @@ def update(memory_id: uuid.UUID, payload: MemoryUpdate, user: CurrentUser, db: D
     memory = get_memory(db, user_id=user.id, memory_id=memory_id)
     data = payload.model_dump(exclude_unset=True)
     if "source_event_ids" in data and data["source_event_ids"] is not None:
+        ensure_owned_events(db, user_id=user.id, event_ids=data["source_event_ids"])
         data["source_event_ids"] = [str(event_id) for event_id in data["source_event_ids"]]
     for field, value in data.items():
         setattr(memory, field, value)

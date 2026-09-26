@@ -55,6 +55,14 @@ class PlanItemStatus(StrEnum):
     CANCELLED = "CANCELLED"
 
 
+class FocusSessionStatus(StrEnum):
+    # Values match the client contract (packages/contracts FocusSessionSchema).
+    RUNNING = "running"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+    ABANDONED = "abandoned"
+
+
 class MemoryCorrectionStatus(StrEnum):
     UNREVIEWED = "UNREVIEWED"
     CONFIRMED = "CONFIRMED"

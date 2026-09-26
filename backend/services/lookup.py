@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from backend.core.errors import NotFoundError
 from backend.models.event import Event
+from backend.models.focus_session import FocusSession
 from backend.models.goal import Goal
 from backend.models.memory import Memory
 from backend.models.plan import Plan
@@ -52,3 +53,54 @@ def get_event(session: Session, *, user_id: uuid.UUID, event_id: uuid.UUID) -> E
     if event is None:
         raise NotFoundError("Event not found")
     return event
+
+
+def get_focus_session(
+    session: Session, *, user_id: uuid.UUID, session_id: uuid.UUID
+) -> FocusSession:
+    focus = session.scalar(
+        select(FocusSession).where(FocusSession.id == session_id, FocusSession.user_id == user_id)
+    )
+    if focus is None:
+        raise NotFoundError("Focus session not found")
+    return focus
+
+
+def owned_task_ids(
+    session: Session, *, user_id: uuid.UUID, task_ids: list[uuid.UUID]
+) -> set[uuid.UUID]:
+    """Return which of ``task_ids`` belong to the user."""
+
+    if not task_ids:
+        return set()
+    stmt = select(Task.id).where(Task.user_id == user_id, Task.id.in_(task_ids))
+    return set(session.scalars(stmt))
+
+
+def owned_event_ids(
+    session: Session, *, user_id: uuid.UUID, event_ids: list[uuid.UUID]
+) -> set[uuid.UUID]:
+    if not event_ids:
+        return set()
+    stmt = select(Event.id).where(Event.user_id == user_id, Event.id.in_(event_ids))
+    return set(session.scalars(stmt))
+
+
+def ensure_owned_tasks(session: Session, *, user_id: uuid.UUID, task_ids: list[uuid.UUID]) -> None:
+    missing = set(task_ids) - owned_task_ids(session, user_id=user_id, task_ids=task_ids)
+    if missing:
+        raise NotFoundError(
+            "One or more tasks were not found",
+            details={"task_ids": [str(task_id) for task_id in missing]},
+        )
+
+
+def ensure_owned_events(
+    session: Session, *, user_id: uuid.UUID, event_ids: list[uuid.UUID]
+) -> None:
+    missing = set(event_ids) - owned_event_ids(session, user_id=user_id, event_ids=event_ids)
+    if missing:
+        raise NotFoundError(
+            "One or more events were not found",
+            details={"event_ids": [str(event_id) for event_id in missing]},
+        )

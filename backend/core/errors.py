@@ -64,6 +64,11 @@ class PermissionDeniedError(AppError):
     code = "permission_denied"
 
 
+class PayloadTooLargeError(AppError):
+    status_code = 413  # CONTENT_TOO_LARGE (renamed in newer Starlette)
+    code = "payload_too_large"
+
+
 class StorageError(AppError):
     status_code = status.HTTP_502_BAD_GATEWAY
     code = "storage_error"
@@ -139,6 +144,7 @@ _STATUS_CODES = {
     403: "permission_denied",
     404: "not_found",
     409: "conflict",
+    413: "payload_too_large",
     422: "validation_error",
     429: "rate_limited",
     500: "internal_error",

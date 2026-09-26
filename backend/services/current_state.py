@@ -22,6 +22,7 @@ from backend.models.task import Task
 from backend.schemas.current_state import CurrentStateRead, CurrentStateUpdate
 from backend.schemas.plan import PlanRead
 from backend.schemas.task import TaskRead
+from backend.services.lookup import ensure_owned_tasks
 
 _PENDING_STATUSES = (TaskStatus.TODO, TaskStatus.IN_PROGRESS)
 _RECENT_WINDOW = timedelta(hours=24)
@@ -105,6 +106,7 @@ def update_overrides(
     if payload.available_minutes is not None:
         state.available_minutes = payload.available_minutes
     if payload.current_task_id is not None:
+        ensure_owned_tasks(session, user_id=user_id, task_ids=[payload.current_task_id])
         state.current_task_id = payload.current_task_id
     session.flush()
     return recompute_current_state(session, user_id)

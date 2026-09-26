@@ -7,20 +7,27 @@ def test_openapi_contains_frozen_contract_paths() -> None:
     schema = app.openapi()
     paths = schema["paths"]
     expected = {
-        "/api/v1/auth/register",
-        "/api/v1/auth/login",
-        "/api/v1/auth/me",
-        "/api/v1/events",
-        "/api/v1/tasks",
-        "/api/v1/goals",
-        "/api/v1/current-state",
-        "/api/v1/memory",
-        "/api/v1/plans",
-        "/api/v1/plans/generate",
-        "/api/v1/files",
-        "/api/v1/permissions/policy",
-        "/api/v1/audit",
-        "/api/v1/jobs/ping",
+        # Client contract (packages/contracts + apps/desktop/src/backend/client.ts)
+        "/v1/events/batch",
+        "/v1/tasks",
+        "/v1/current-state",
+        "/v1/plans/today",
+        "/v1/plans/{plan_id}/confirm",
+        "/v1/focus-sessions",
+        "/v1/focus-sessions/{session_id}",
+        # Internal/core surface
+        "/v1/auth/register",
+        "/v1/auth/login",
+        "/v1/auth/me",
+        "/v1/events",
+        "/v1/goals",
+        "/v1/memory",
+        "/v1/plans",
+        "/v1/plans/generate",
+        "/v1/files",
+        "/v1/permissions/policy",
+        "/v1/audit",
+        "/v1/jobs/ping",
         "/health",
         "/health/ready",
     }
@@ -33,3 +40,8 @@ def test_openapi_error_envelope_is_documented() -> None:
     components = schema["components"]["schemas"]
     assert "ErrorResponse" in components
     assert "ErrorBody" in components
+
+
+def test_openapi_prefix_is_v1() -> None:
+    paths = app.openapi()["paths"]
+    assert not [path for path in paths if path.startswith("/api/")]

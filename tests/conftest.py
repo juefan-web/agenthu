@@ -121,7 +121,7 @@ def register_user(client: TestClient):
             "password": password,
             "display_name": display_name,
         }
-        response = client.post("/api/v1/auth/register", json=payload)
+        response = client.post("/v1/auth/register", json=payload)
         assert response.status_code == 201, response.text
         # Merge the server response (normalized email) with the credentials.
         return {**payload, **response.json()}
@@ -130,7 +130,7 @@ def register_user(client: TestClient):
 
 
 def login_headers(client: TestClient, email: str, password: str) -> dict[str, str]:
-    response = client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    response = client.post("/v1/auth/login", json={"email": email, "password": password})
     assert response.status_code == 200, response.text
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
 

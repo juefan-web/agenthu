@@ -14,11 +14,20 @@ context lives under `AGENT_CONTEXT/`.
   PlanItem, FileObject, AuditLog, PermissionGrant and the `task_events` link table. Initial Alembic
   migration creates 13 tables with explicit foreign keys, indexes and CHECK constraints.
 - **Core contracts (frozen)**: database model + Pydantic schema + API + test fixtures for Event,
-  Task, Goal, CurrentState, Memory, Plan. OpenAPI is exported to `openapi.json` (38 paths).
+  Task, Goal, CurrentState, Memory, Plan. OpenAPI is exported to `openapi.json` (40 paths).
+- **Desktop client contract** (`/v1`, aligned to `packages/contracts`): `POST /v1/events/batch`,
+  `GET /v1/tasks` (bare `Task[]`), `GET /v1/current-state`, `GET /v1/plans/today`,
+  `POST /v1/plans/{id}/confirm`, `POST /v1/focus-sessions`, `PATCH /v1/focus-sessions/{id}`.
+  Mappers live in `backend/services/client_view.py`.
+- **Focus sessions**: persisted `focus_sessions` with a `running/paused/completed/abandoned` state
+  machine and idempotent completion (no double-counted actual minutes).
 - **Auth**: register / JSON login / OAuth2-form token / me, bcrypt password hashing, HS256 JWT.
-- **Event infrastructure**: `POST/GET/DELETE /events`, per-user dedupe by `dedupe_key` (unique
-  constraint + `X-Deduplicated` header), provenance, filters, and an event-handler registry that
+- **Event infrastructure**: `POST/GET/DELETE /events`, backend-computed dedupe
+  (`source:upstream_id:semantic_version`) plus optional `dedupe_key`, unique constraint,
+  `X-Deduplicated` header, provenance, filters, batch ingestion and an event-handler registry that
   projects Events into Task/CurrentState.
+- **Ingestion safety**: recursive sensitive-field rejection (password/cookie/token/OTP), JSON size
+  and depth limits, and a non-local `SECRET_KEY` startup guard.
 - **Task / Goal**: CRUD, goal ownership validation, task↔event linking, status transitions with
   `completed_at`.
 - **CurrentState**: recomputed projection (never a copy of Events) with `version`, pending tasks,
@@ -43,10 +52,11 @@ context lives under `AGENT_CONTEXT/`.
 
 - `ruff check` + `ruff format --check`: pass
 - `pyright`: 0 errors
-- `pytest` (full suite, all services up): **67 passed** in ~45s
+- `pytest` (full suite, all services up): **95 passed** in ~52s
 - `pytest -m storage` (S3Storage against `s3mock`): pass
 - Arq worker test (Redis → Arq → task): pass
 - Migration test (upgrade from zero + downgrade + `alembic check` no drift): pass
+- `openapi.json` regenerated: 40 paths, prefix `/v1`
 
 ## Blocked
 
@@ -57,6 +67,26 @@ context lives under `AGENT_CONTEXT/`.
   image) and `quay.io/minio/minio` requires auth. MinIO remains the default backend; `s3mock`
   (`docker compose --profile s3mock`) is available where MinIO cannot be pulled. This does not
   affect the code path, which depends only on the `ObjectStorage` interface.
+- **Documentation mismatch (needs a coordinated decision)**: `TECH_STACK_AND_WORKPLAN.md` states the
+  client is Flutter generated from OpenAPI, but the real client is React/Tauri with hand-written Zod
+  contracts (`packages/contracts`). The Backend now conforms to the real client (see D-009), but the
+  project doc should be updated with Developer B.
+
+## Resolved review items (astra6 report on e715f9e)
+
+| ID | Issue | Resolution |
+| --- | --- | --- |
+| P1-1 | Client contract mismatch | `/api/v1` → `/v1`; client-shaped tasks/current-state/plans; added `events/batch`, `plans/today`, `focus-sessions` (D-009) |
+| P1-2 | Event dedupe not business-keyed | Backend computes `source:upstream_id:semantic_version` (D-010) |
+| P1-3 | Focus completion not idempotent | Persisted `focus_sessions` + state machine + dedupe-keyed completion (D-011) |
+| P1-4 | Plan can reference another user's task | Ownership validation for plan items / current-state overrides (D-014) |
+| P1-5 | No sensitive Event interception | Recursive sensitive-field rejection + size/depth limits (D-012) |
+| P1-6 | Default JWT secret in production | Non-local strong-secret startup guard (D-013) |
+| P2-1 | Replan without status check | Replan restricted to non-terminal plans (D-015) |
+| P2-2 | Memory source_event_ids unverified | Ownership validation on create/update (D-014) |
+| P2-3 | Upload buffered before size check | Chunked size limit (413) + orphan cleanup (D-016) |
+| P2-4 | CI only on `main` push | Push triggers cover all branches (D-017) |
+| — | Trailing whitespace in migration | Fixed in `339f5d1471c9_initial_schema.py` |
 
 ## Known Issues
 
@@ -78,8 +108,9 @@ context lives under `AGENT_CONTEXT/`.
 2. **M2 — Planner**: LLM planner behind the existing permission layer, execution results and
    deviation-driven re-planning.
 3. **M3 — Memory / Grounding**: material indexing (pgvector), citations, user correction flow.
-4. Wire `openapi.json` into the Flutter API client generation and add a contract check to CI.
-5. Decide credential storage (encryption + access control + deletion path) before any real campus
+4. Add a contract test that fails CI when `openapi.json` drifts from the client's `packages/contracts`.
+5. Update `TECH_STACK_AND_WORKPLAN.md` (Flutter → React/Tauri) with Developer B.
+6. Decide credential storage (encryption + access control + deletion path) before any real campus
    data source is enabled.
 
 ## Recent Decisions

@@ -9,8 +9,11 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+DEFAULT_SECRET_KEY = "dev-insecure-change-me"
+MIN_SECRET_KEY_LENGTH = 32
 
 
 class Settings(BaseSettings):
@@ -26,7 +29,7 @@ class Settings(BaseSettings):
     environment: str = "local"
     debug: bool = False
     log_level: str = "INFO"
-    api_v1_prefix: str = "/api/v1"
+    api_v1_prefix: str = "/v1"
 
     # --- Database ----------------------------------------------------------
     # 127.0.0.1 (not "localhost") avoids IPv6/IPv4 ambiguity on Windows, where
@@ -42,7 +45,7 @@ class Settings(BaseSettings):
     arq_queue_name: str = "arq:queue"
 
     # --- Auth --------------------------------------------------------------
-    secret_key: str = "dev-insecure-change-me"
+    secret_key: str = DEFAULT_SECRET_KEY
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24 * 7
 
@@ -66,6 +69,21 @@ class Settings(BaseSettings):
     @property
     def is_local(self) -> bool:
         return self.environment.lower() in {"local", "dev", "development", "test"}
+
+    @model_validator(mode="after")
+    def _enforce_strong_secret_outside_local(self) -> Settings:
+        if self.is_local:
+            return self
+        if self.secret_key in {DEFAULT_SECRET_KEY, "", "secret", "changeme"}:
+            raise ValueError(
+                "SECRET_KEY must be set to a strong, unique value outside local environments"
+            )
+        if len(self.secret_key) < MIN_SECRET_KEY_LENGTH:
+            raise ValueError(
+                f"SECRET_KEY must be at least {MIN_SECRET_KEY_LENGTH} characters outside "
+                "local environments"
+            )
+        return self
 
 
 @lru_cache

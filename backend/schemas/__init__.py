@@ -28,7 +28,7 @@ from backend.schemas.plan import (
     PlanRead,
     PlanReplanRequest,
 )
-from backend.schemas.task import FocusCompleteRequest, TaskCreate, TaskRead, TaskUpdate
+from backend.schemas.task import TaskCreate, TaskRead, TaskUpdate
 from backend.schemas.user import LoginRequest, Token, UserCreate, UserRead
 
 __all__ = [
@@ -39,7 +39,6 @@ __all__ = [
     "EventCreate",
     "EventRead",
     "FileRead",
-    "FocusCompleteRequest",
     "GoalCreate",
     "GoalRead",
     "GoalUpdate",

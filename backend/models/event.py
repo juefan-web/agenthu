@@ -42,6 +42,15 @@ class Event(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
     )
     dedupe_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Client correlation id from the batch ingestion contract. Used to report
+    # accepted/duplicate client_event_ids back to the client queue.
+    client_event_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     ingested_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+    @property
+    def occurred_at(self) -> datetime:
+        """Client-contract alias for ``timestamp``."""
+
+        return self.timestamp

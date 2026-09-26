@@ -3,16 +3,36 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from backend.core.sensitive import validate_json_payload
 from backend.models.event import Event
 from backend.models.task import Task
+from backend.schemas.client_contract import EventEnvelope
 from backend.schemas.event import EventCreate
 from backend.services.event_handlers import process_event
+
+
+def compute_dedupe_key(source: str, provenance: dict[str, Any] | None) -> str | None:
+    """Derive the canonical idempotency key: ``source:upstream_id:semantic_version``.
+
+    This is the client contract's ``eventDedupeKey``. It is computed on the
+    Backend so a client cannot weaken idempotency by omitting a key.
+    """
+
+    if not isinstance(provenance, dict):
+        return None
+    upstream_id = provenance.get("upstream_id")
+    semantic_version = provenance.get("semantic_version")
+    if upstream_id and semantic_version:
+        return f"{source}:{upstream_id}:{semantic_version}"
+    return None
 
 
 def create_event(
@@ -20,6 +40,7 @@ def create_event(
     *,
     user_id: uuid.UUID,
     payload: EventCreate,
+    client_event_id: str | None = None,
 ) -> tuple[Event, bool]:
     """Persist an Event, processing it through registered handlers.
 
@@ -29,8 +50,9 @@ def create_event(
     safe.
     """
 
-    if payload.dedupe_key:
-        existing = find_by_dedupe_key(session, user_id=user_id, dedupe_key=payload.dedupe_key)
+    dedupe_key = payload.dedupe_key or compute_dedupe_key(payload.source, payload.provenance)
+    if dedupe_key:
+        existing = find_by_dedupe_key(session, user_id=user_id, dedupe_key=dedupe_key)
         if existing is not None:
             return existing, False
 
@@ -42,15 +64,16 @@ def create_event(
         data=payload.data,
         context=payload.context,
         provenance=payload.provenance,
-        dedupe_key=payload.dedupe_key,
+        dedupe_key=dedupe_key,
+        client_event_id=client_event_id,
     )
     try:
         with session.begin_nested():
             session.add(event)
             session.flush()
     except IntegrityError:
-        if payload.dedupe_key:
-            existing = find_by_dedupe_key(session, user_id=user_id, dedupe_key=payload.dedupe_key)
+        if dedupe_key:
+            existing = find_by_dedupe_key(session, user_id=user_id, dedupe_key=dedupe_key)
             if existing is not None:
                 return existing, False
         raise
@@ -100,3 +123,52 @@ def list_events(
 
 def list_events_for_task(session: Session, task: Task) -> list[Event]:
     return list(task.related_events)
+
+
+@dataclass
+class EventBatchOutcome:
+    """Result of ingesting a batch of client event envelopes.
+
+    ``accepted`` / ``duplicates`` contain the *client* ``client_event_id`` values
+    so the client can clear its local queue (see the desktop sync coordinator).
+    """
+
+    accepted: list[str] = field(default_factory=list)
+    duplicates: list[str] = field(default_factory=list)
+    rejected: list[tuple[str, str]] = field(default_factory=list)
+
+
+def ingest_event_batch(
+    session: Session,
+    *,
+    user_id: uuid.UUID,
+    envelopes: list[EventEnvelope],
+) -> EventBatchOutcome:
+    outcome = EventBatchOutcome()
+    for envelope in envelopes:
+        reason = (
+            validate_json_payload("data", envelope.data)
+            or validate_json_payload("context", envelope.context)
+            or validate_json_payload("provenance", envelope.provenance.model_dump())
+        )
+        if reason is not None:
+            outcome.rejected.append((envelope.client_event_id, reason))
+            continue
+
+        payload = EventCreate(
+            type=envelope.type,
+            timestamp=envelope.occurred_at,
+            source=envelope.source,
+            data=envelope.data,
+            context=envelope.context,
+            provenance=envelope.provenance.model_dump(mode="json"),
+        )
+        # Envelope-level validation already ran; create and classify.
+        _event, created = create_event(
+            session, user_id=user_id, payload=payload, client_event_id=envelope.client_event_id
+        )
+        if created:
+            outcome.accepted.append(envelope.client_event_id)
+        else:
+            outcome.duplicates.append(envelope.client_event_id)
+    return outcome
