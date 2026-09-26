@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { z } from "zod";
-import { login, getCsrfToken, type InfoHelper } from "@onethu/info-lib";
+import { clearOutstandingLogin, login, getCsrfToken, type InfoHelper } from "@onethu/info-lib";
 import { setPlatformFetch, uFetch } from "@onethu/info-lib/network";
 import { webvpnWrap } from "@onethu/core";
 import { tauriFetch, isTauriRuntime } from "./tauriTransport";
@@ -37,6 +37,7 @@ export class TauriCampusAuthGateway implements CampusAuthGateway {
   private trust = false;
   private aborted = false;
   private timeout: ReturnType<typeof setTimeout> | undefined;
+  private restoreInFlight: Promise<SessionStatus> | undefined;
 
   constructor(private readonly deps: AuthDependencies) {
     this.helper = {
@@ -69,6 +70,15 @@ export class TauriCampusAuthGateway implements CampusAuthGateway {
   }
 
   async restore(): Promise<SessionStatus> {
+    if (this.restoreInFlight) return this.restoreInFlight;
+    const operation = this.restoreOnce();
+    this.restoreInFlight = operation.finally(() => {
+      this.restoreInFlight = undefined;
+    });
+    return operation;
+  }
+
+  private async restoreOnce(): Promise<SessionStatus> {
     if (this.completion) return this.twoFactorStatus(!!this.codeGate);
     try {
       this.aborted = false;
@@ -91,6 +101,9 @@ export class TauriCampusAuthGateway implements CampusAuthGateway {
 
   async login(input: LoginInput): Promise<SessionStatus> {
     await this.logout();
+    // info-lib keeps its own process-wide login promise while waiting for 2FA.
+    // A cancelled/expired attempt must never poison the next login attempt.
+    clearOutstandingLogin();
     if (!/^\d+$/.test(input.username.trim()) || !input.password) {
       return { state: "error", username: null, message: "请输入学号和密码" };
     }
@@ -146,6 +159,7 @@ export class TauriCampusAuthGateway implements CampusAuthGateway {
 
   async logout(): Promise<void> {
     this.aborted = true;
+    clearOutstandingLogin();
     clearTimeout(this.timeout);
     this.methodGate?.reject(cancelled);
     this.codeGate?.reject(cancelled);

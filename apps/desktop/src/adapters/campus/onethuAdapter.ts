@@ -95,8 +95,20 @@ function dateOnly(value: Date): string {
   return value.toISOString().slice(0, 10);
 }
 
+const COLLECTION_TIMEOUT_MS = 120_000;
+
+function withTimeout<T>(promise: Promise<T>, milliseconds: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<T>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("校园数据采集超过 120 秒，请检查网络后重试")), milliseconds);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 export class OneThuCampusAdapter implements CampusAdapter {
   constructor(private readonly options: OneThuAdapterOptions) {}
+
+  private collectionInFlight: Promise<CampusSnapshot> | undefined;
 
   async restore(): Promise<SessionStatus> {
     return this.applyStatus(await this.options.auth.restore());
@@ -158,7 +170,15 @@ export class OneThuCampusAdapter implements CampusAdapter {
   }
 
   async collectSnapshot(): Promise<CampusSnapshot> {
-    return this.read(() => this.collectOnce());
+    // Keep collection single-flight. A second click should observe the existing
+    // request instead of multiplying the upstream course/homework calls.
+    if (!this.collectionInFlight) {
+      const operation = this.read(() => this.collectOnce());
+      this.collectionInFlight = operation.finally(() => {
+        this.collectionInFlight = undefined;
+      });
+    }
+    return withTimeout(this.collectionInFlight, COLLECTION_TIMEOUT_MS);
   }
 
   private async collectOnce(): Promise<CampusSnapshot> {

@@ -59,4 +59,27 @@ describe("TauriCampusAuthGateway", () => {
     });
     expect(cleared).toBe(1);
   });
+
+  it("shares concurrent session restores", async () => {
+    let restores = 0;
+    let probes = 0;
+    const gateway = new TauriCampusAuthGateway(dependencies(async () => undefined, {
+      restore: async () => {
+        restores += 1;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        return { username: "12345678", fingerprint: "finger", finger3: "" };
+      },
+      probe: async () => {
+        probes += 1;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        return true;
+      },
+    }));
+
+    const [first, second] = await Promise.all([gateway.restore(), gateway.restore()]);
+    expect(first).toEqual({ state: "ready", username: "12345678" });
+    expect(second).toEqual(first);
+    expect(restores).toBe(1);
+    expect(probes).toBe(1);
+  });
 });

@@ -36,6 +36,7 @@ export default function App() {
   const [view, setView] = useState<View>("today");
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(0);
+  const [collectionElapsed, setCollectionElapsed] = useState(0);
   const session = useSessionStore();
   const queryClient = useQueryClient();
   const tasks = useQuery({ queryKey: ["tasks"], queryFn: () => backend!.getTasks(), enabled: !!backend });
@@ -64,6 +65,7 @@ export default function App() {
   const collect = useMutation({
     mutationFn: async () => {
       const snapshot = await campus.collectSnapshot();
+      setNotice(`校园数据已采集 ${snapshot.events.length} 条，正在同步…`);
       if (sync) await sync.enqueue(snapshot.events);
       else await queue.add(snapshot.events);
       const result = sync ? await sync.flush() : null;
@@ -82,6 +84,18 @@ export default function App() {
       setNotice(`同步未完成，事件留在本地队列：${errorText(error)}`);
     },
   });
+
+  useEffect(() => {
+    if (!collect.isPending) {
+      setCollectionElapsed(0);
+      return;
+    }
+    const startedAt = Date.now();
+    const update = () => setCollectionElapsed(Math.floor((Date.now() - startedAt) / 1000));
+    update();
+    const timer = setInterval(update, 1_000);
+    return () => clearInterval(timer);
+  }, [collect.isPending]);
 
   const retry = useMutation({
     mutationFn: async () => {
@@ -129,7 +143,7 @@ export default function App() {
         <section className="workspace-section">
           <div className="section-heading"><h2>校园数据</h2><span className="section-meta">课程 · 作业 · 课表 · 校历</span></div>
           <CampusConnection onError={(error) => setNotice(errorText(error))} />
-          <div className="section-actions"><button className="primary-button" disabled={session.status !== "ready" || collect.isPending} onClick={() => collect.mutate()}>{collect.isPending ? "正在采集…" : "采集并同步"}</button></div>
+          <div className="section-actions"><button className="primary-button" disabled={session.status !== "ready" || collect.isPending} onClick={() => collect.mutate()}>{collect.isPending ? `正在采集（${collectionElapsed}s）…` : "采集并同步"}</button></div>
         </section>
         <section className="workspace-section">
           <div className="section-heading"><h2>今日计划</h2><span className="section-meta">{currentState.data?.context ?? "当前上下文未设置"}</span></div>

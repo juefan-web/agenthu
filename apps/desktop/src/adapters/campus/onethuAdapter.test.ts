@@ -82,6 +82,20 @@ describe("OneThuCampusAdapter", () => {
     expect(snapshot.events[1]?.context.course_id).toBe("course-1");
   });
 
+  it("shares one in-flight collection when called twice", async () => {
+    const session = fakeSession();
+    let homeworkCalls = 0;
+    session.learn.getAllHomework = async () => {
+      homeworkCalls += 1;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      return [];
+    };
+    const adapter = new OneThuCampusAdapter({ session, auth });
+    const [first, second] = await Promise.all([adapter.collectSnapshot(), adapter.collectSnapshot()]);
+    expect(homeworkCalls).toBe(1);
+    expect(first.events).toEqual(second.events);
+  });
+
   it("uses stable schedule identities and changes assignment version when status changes", () => {
     const fetchedAt = "2026-09-26T10:00:00+08:00";
     const schedule = { courseName: "线性代数", date: "2026-09-28", startSection: 1, endSection: 2, location: "六教" };

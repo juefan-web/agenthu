@@ -109,10 +109,16 @@ pub async fn campus_request(app: tauri::AppHandle, state: tauri::State<'_, Campu
         }),
         _ => return Err("Unsupported redirect policy".into()),
     };
-    // Serialize requests with restore/logout so a late response cannot resurrect cookies.
-    let session = state.0.lock().await;
+    // Copy the current jar under the state lock, then release it before doing network I/O.
+    // Holding this lock while reading a response serialized every campus request and made
+    // parallel homework collection look hung. A later logout/restore replaces the jar; the
+    // pointer check below prevents an old response from being persisted into the new session.
+    let jar = {
+        let session = state.0.lock().await;
+        Arc::clone(&session.jar)
+    };
     let client = reqwest::Client::builder().redirect(redirect)
-        .cookie_provider(Arc::clone(&session.jar)).timeout(Duration::from_secs(30))
+        .cookie_provider(Arc::clone(&jar)).timeout(Duration::from_secs(30))
         .build().map_err(|_| "Campus transport unavailable")?;
     let method = reqwest::Method::from_bytes(request.method.as_bytes()).map_err(|_| "Invalid method")?;
     let mut builder = client.request(method, url).headers(request_headers(request.headers)?);
@@ -129,7 +135,10 @@ pub async fn campus_request(app: tauri::AppHandle, state: tauri::State<'_, Campu
         if body.len() + chunk.len() > 16 * 1024 * 1024 { return Err("Campus response is too large".into()); }
         body.extend_from_slice(&chunk);
     }
-    persist(&session, &snapshot_path(&app)?)?;
+    let session = state.0.lock().await;
+    if Arc::ptr_eq(&session.jar, &jar) {
+        persist(&session, &snapshot_path(&app)?)?;
+    }
     Ok(CampusResponse { status, headers, body: String::from_utf8_lossy(&body).into_owned(), final_url })
 }
 
