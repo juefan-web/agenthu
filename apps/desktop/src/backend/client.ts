@@ -22,7 +22,9 @@ export class BackendClient {
   private readonly fetcher: typeof fetch;
 
   constructor(private readonly options: BackendClientOptions) {
-    this.fetcher = options.fetcher ?? fetch;
+    // Keep the browser fetch call bound to its global context. Some WebView
+    // implementations reject a detached `fetch` function with Illegal invocation.
+    this.fetcher = options.fetcher ?? ((input, init) => fetch(input, init));
   }
 
   async pushEvents(request: EventBatchRequest): Promise<EventBatchResponse> {
