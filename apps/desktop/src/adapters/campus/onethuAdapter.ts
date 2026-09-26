@@ -31,6 +31,13 @@ function requireReady(session: CampusSession): void {
   if (session.state !== "ready") throw new CampusAuthError();
 }
 
+async function requireLearnSession(session: CampusSession): Promise<void> {
+  if (session.learn.csrfToken) return;
+  if (!await session.learn.resume()) {
+    throw new CampusAuthError("网络学堂会话未能建立，请重新登录后重试");
+  }
+}
+
 function mapCourse(course: CourseInfo): CampusCourse {
   return {
     id: course.id,
@@ -116,6 +123,7 @@ export class OneThuCampusAdapter implements CampusAdapter {
     return this.read(async () => {
     const { session } = this.options;
     requireReady(session);
+    await requireLearnSession(session);
     const semester = await session.learn.getCurrentSemester();
     return (await session.learn.getCourseList(semester.id)).map(mapCourse);
     });
@@ -125,6 +133,7 @@ export class OneThuCampusAdapter implements CampusAdapter {
     return this.read(async () => {
     const { session } = this.options;
     requireReady(session);
+    await requireLearnSession(session);
     const semester = await session.learn.getCurrentSemester();
     const courses = await session.learn.getCourseList(semester.id);
     return (await session.learn.getAllHomework(courses.map((course) => course.id))).map(mapAssignment);
@@ -143,6 +152,7 @@ export class OneThuCampusAdapter implements CampusAdapter {
     return this.read(async () => {
     const { session } = this.options;
     requireReady(session);
+    await requireLearnSession(session);
     return mapCalendar(await session.learn.getCalendarData());
     });
   }
@@ -155,6 +165,7 @@ export class OneThuCampusAdapter implements CampusAdapter {
     const fetchedAt = new Date().toISOString();
     try {
       requireReady(this.options.session);
+      await requireLearnSession(this.options.session);
       const semester = await this.options.session.learn.getCurrentSemester();
       const [coursesRaw, calendarRaw] = await Promise.all([
         this.options.session.learn.getCourseList(semester.id),

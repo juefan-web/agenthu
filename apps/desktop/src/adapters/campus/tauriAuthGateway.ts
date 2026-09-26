@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { z } from "zod";
-import { login, roam, getCsrfToken, type InfoHelper } from "@onethu/info-lib";
+import { login, getCsrfToken, type InfoHelper } from "@onethu/info-lib";
 import { setPlatformFetch, uFetch } from "@onethu/info-lib/network";
 import { webvpnWrap } from "@onethu/core";
 import { tauriFetch, isTauriRuntime } from "./tauriTransport";
@@ -160,8 +160,9 @@ export class TauriCampusAuthGateway implements CampusAuthGateway {
 export function createTauriAuthGateway(): TauriCampusAuthGateway {
   const gateway = new TauriCampusAuthGateway({
     run: async (helper) => {
+      // LearnClient enters through the authenticated WebVPN SSO path on first use.
+      // A second direct CAS roam here would prompt for 2FA again.
       await login(helper, helper.userId, helper.password);
-      await roam(helper, "id", "bb5df85216504820be7bba2b0ae1535b/0");
     },
     probe: async (username) => {
       const csrf = await getCsrfToken();

@@ -8,6 +8,8 @@ function fakeSession() {
   return {
     state: "ready" as const,
     learn: {
+      csrfToken: "fixture-csrf",
+      resume: async () => true,
       getCurrentSemester: async () => ({ id: "2026-2027-1" }),
       getCourseList: async () => [
         {

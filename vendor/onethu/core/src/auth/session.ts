@@ -85,6 +85,7 @@ export class CampusSession {
   /** 重置内存会话（logout 用；finger3 属设备信任，保留在 store） */
   reset(): void {
     this.#password = "";
+    this.learn.applyCsrf("");
     this.state = "idle";
     this.http.jar.clear();
   }
