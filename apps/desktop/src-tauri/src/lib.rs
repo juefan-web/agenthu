@@ -4,7 +4,7 @@ mod vault;
 use rusqlite::{params, Connection};
 use std::fs;
 use tauri::Manager;
-use campus::{campus_request, campus_restore, campus_save_session, campus_logout, CampusState};
+use campus::CampusState;
 
 fn queue_connection(app: &tauri::AppHandle) -> Result<Connection, String> {
     let dir = app.path().app_data_dir().map_err(|error| error.to_string())?;
@@ -28,7 +28,7 @@ fn queue_connection(app: &tauri::AppHandle) -> Result<Connection, String> {
 }
 
 #[tauri::command]
-pub fn queue_add(app: tauri::AppHandle, events: Vec<serde_json::Value>) -> Result<(), String> {
+fn queue_add(app: tauri::AppHandle, events: Vec<serde_json::Value>) -> Result<(), String> {
     let mut connection = queue_connection(&app)?;
     let transaction = connection.transaction().map_err(|error| error.to_string())?;
     for event in events {
@@ -46,7 +46,7 @@ pub fn queue_add(app: tauri::AppHandle, events: Vec<serde_json::Value>) -> Resul
 }
 
 #[tauri::command]
-pub fn queue_list(app: tauri::AppHandle) -> Result<Vec<serde_json::Value>, String> {
+fn queue_list(app: tauri::AppHandle) -> Result<Vec<serde_json::Value>, String> {
     let connection = queue_connection(&app)?;
     let mut statement = connection.prepare("SELECT payload FROM pending_events ORDER BY rowid")
         .map_err(|error| error.to_string())?;
@@ -59,7 +59,7 @@ pub fn queue_list(app: tauri::AppHandle) -> Result<Vec<serde_json::Value>, Strin
 }
 
 #[tauri::command]
-pub fn queue_remove(app: tauri::AppHandle, client_event_ids: Vec<String>) -> Result<(), String> {
+fn queue_remove(app: tauri::AppHandle, client_event_ids: Vec<String>) -> Result<(), String> {
     let mut connection = queue_connection(&app)?;
     let transaction = connection.transaction().map_err(|error| error.to_string())?;
     for id in client_event_ids {
@@ -70,7 +70,7 @@ pub fn queue_remove(app: tauri::AppHandle, client_event_ids: Vec<String>) -> Res
 }
 
 #[tauri::command]
-pub fn queue_get_cursor(app: tauri::AppHandle) -> Result<Option<String>, String> {
+fn queue_get_cursor(app: tauri::AppHandle) -> Result<Option<String>, String> {
     let connection = queue_connection(&app)?;
     let mut statement = connection.prepare("SELECT value FROM sync_state WHERE key = 'event_cursor'")
         .map_err(|error| error.to_string())?;
@@ -82,7 +82,7 @@ pub fn queue_get_cursor(app: tauri::AppHandle) -> Result<Option<String>, String>
 }
 
 #[tauri::command]
-pub fn queue_set_cursor(app: tauri::AppHandle, cursor: Option<String>) -> Result<(), String> {
+fn queue_set_cursor(app: tauri::AppHandle, cursor: Option<String>) -> Result<(), String> {
     let connection = queue_connection(&app)?;
     connection.execute(
         "INSERT INTO sync_state (key, value) VALUES ('event_cursor', ?1)
@@ -93,7 +93,7 @@ pub fn queue_set_cursor(app: tauri::AppHandle, cursor: Option<String>) -> Result
 }
 
 #[tauri::command]
-pub fn focus_get_draft(app: tauri::AppHandle) -> Result<Option<serde_json::Value>, String> {
+fn focus_get_draft(app: tauri::AppHandle) -> Result<Option<serde_json::Value>, String> {
     let connection = queue_connection(&app)?;
     let mut statement = connection.prepare("SELECT payload FROM focus_draft WHERE id = 1")
         .map_err(|error| error.to_string())?;
@@ -108,7 +108,7 @@ pub fn focus_get_draft(app: tauri::AppHandle) -> Result<Option<serde_json::Value
 }
 
 #[tauri::command]
-pub fn focus_set_draft(app: tauri::AppHandle, draft: Option<serde_json::Value>) -> Result<(), String> {
+fn focus_set_draft(app: tauri::AppHandle, draft: Option<serde_json::Value>) -> Result<(), String> {
     let connection = queue_connection(&app)?;
     if let Some(draft) = draft {
         let payload = serde_json::to_string(&draft).map_err(|error| error.to_string())?;
@@ -129,7 +129,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(CampusState::default())
         .invoke_handler(tauri::generate_handler![
-            campus_request, campus_restore, campus_save_session, campus_logout,
+            campus::campus_request, campus::campus_restore, campus::campus_save_session, campus::campus_logout,
             queue_add, queue_list, queue_remove, queue_get_cursor, queue_set_cursor,
             focus_get_draft, focus_set_draft,
         ])
