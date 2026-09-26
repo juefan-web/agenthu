@@ -35,8 +35,5 @@ data/
 .DS_Store
 Thumbs.db
 
-# Personal local notes / scratch (not shared)
-LESSONS_LEARNED.md
-NOTES*.md
-SCRATCH*.md
-*.local.md
+# Personal local note (not shared)
+/LESSONS_LEARNED.md
