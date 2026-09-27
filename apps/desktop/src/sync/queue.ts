@@ -1,6 +1,9 @@
 import { EventEnvelopeSchema, SyncCursorSchema, type EventEnvelope } from "@agenthu/contracts";
 import { invoke } from "@tauri-apps/api/core";
 
+const QUEUE_STORAGE_KEY = "agenthu.event-queue";
+export const CORRUPT_QUEUE_BACKUP_KEY = "agenthu.event-queue.corrupt";
+
 export interface EventQueue {
   add(events: EventEnvelope[]): Promise<void>;
   list(): Promise<EventEnvelope[]>;
@@ -12,6 +15,12 @@ export interface EventQueue {
 interface QueueState {
   events: EventEnvelope[];
   cursor: string | null;
+}
+
+interface CorruptQueueBackup {
+  reason: string;
+  quarantined_at: string;
+  value: unknown;
 }
 
 export class LocalEventQueue implements EventQueue {
@@ -51,21 +60,65 @@ export class LocalEventQueue implements EventQueue {
   }
 
   private read(): QueueState {
-    const raw = this.storage?.getItem("agenthu.event-queue");
+    const raw = this.storage?.getItem(QUEUE_STORAGE_KEY);
     if (!raw) return { events: [], cursor: null };
+
+    let parsed: unknown;
     try {
-      const parsed = JSON.parse(raw) as QueueState;
-      return {
-        events: EventEnvelopeSchema.array().parse(parsed.events),
-        cursor: SyncCursorSchema.parse({ value: parsed.cursor }).value,
-      };
+      parsed = JSON.parse(raw);
     } catch {
+      this.quarantine(raw, ["queue payload is not valid JSON"]);
       return { events: [], cursor: null };
     }
+
+    // Recover events and cursor independently so damage to one field cannot
+    // discard the other. The full raw payload is copied aside before anything
+    // is dropped, so no pending event is lost without a recoverable record.
+    const problems: string[] = [];
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      problems.push("queue payload is not an object");
+    }
+    const record = (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed : {}) as Partial<QueueState>;
+    const events = this.readEvents(record.events, problems);
+    const cursor = this.readCursor(record.cursor, problems);
+    if (problems.length > 0) this.quarantine(raw, problems);
+    return { events, cursor };
+  }
+
+  private readEvents(value: unknown, problems: string[]): EventEnvelope[] {
+    if (value === undefined || value === null) return [];
+    if (!Array.isArray(value)) {
+      problems.push("queue events are not an array");
+      return [];
+    }
+    const events: EventEnvelope[] = [];
+    for (const item of value) {
+      const parsed = EventEnvelopeSchema.safeParse(item);
+      if (parsed.success) events.push(parsed.data);
+      else problems.push("a queued event failed schema validation");
+    }
+    return events;
+  }
+
+  private readCursor(value: unknown, problems: string[]): string | null {
+    const parsed = SyncCursorSchema.safeParse({ value: value ?? null });
+    if (parsed.success) return parsed.data.value;
+    problems.push("sync cursor failed schema validation");
+    return null;
+  }
+
+  private quarantine(value: unknown, reasons: string[]): void {
+    if (!this.storage) return;
+    const backup: CorruptQueueBackup = {
+      reason: reasons.join("; "),
+      quarantined_at: new Date().toISOString(),
+      value,
+    };
+    this.storage.setItem(CORRUPT_QUEUE_BACKUP_KEY, JSON.stringify(backup));
   }
 
   private write(): void {
-    this.storage?.setItem("agenthu.event-queue", JSON.stringify(this.state));
+    this.storage?.setItem(QUEUE_STORAGE_KEY, JSON.stringify(this.state));
   }
 }
 

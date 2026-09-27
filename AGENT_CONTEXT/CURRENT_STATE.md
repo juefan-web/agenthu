@@ -8,6 +8,8 @@
 
 客户端耗时排查已确认 Tauri transport 原先每请求新建 HTTP Client，且每个响应都把会话快照重新写入 Stronghold；后者会阻塞请求热路径。现按会话复用重定向策略对应的 Client，登录成功时由显式 `campus_save_session` 保存快照，普通校园请求只在内存更新 Cookie，不再同步写 Stronghold。采集流程用校历学期 ID 取课程，省去重复学期请求，并让课表与课程/作业链并行；UI 分开显示采集、保存和同步阶段及完成耗时。登录后的身份探测仍保留。测试覆盖快照未变/变化与采集并行顺序。真实校园网络和账号下的登录、2FA、采集耗时尚未重新测量；OneTHU 仍会为每门课请求三类作业，上游延迟可能占主导。
 
+本轮风险修复：校园请求完成后会按快照内容变化持久化刷新 Cookie；LocalEventQueue 分别恢复 events/cursor，损坏内容写入隔离备份；Event 去重键对反斜杠和分隔符转义，避免字段碰撞。对应回归测试已加入；客户端 Vitest 仍受当前 Windows 环境 pnpm store 权限和 `spawn EPERM` 限制，Rust 与 TypeScript 编译验证通过。
+
 ## 尚未满足的验收项
 
 - 真实校园账号登录、2FA、会话恢复和失效重试仍需在构建后的 Windows 客户端中人工验收；当前已有 OneTHU 认证适配、Stronghold 加密快照和脱敏状态测试。

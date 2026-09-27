@@ -96,10 +96,11 @@ export type FocusSession = z.infer<typeof FocusSessionSchema>;
 export type SyncCursor = z.infer<typeof SyncCursorSchema>;
 
 export function eventDedupeKey(event: Pick<EventEnvelope, "source" | "provenance">): string {
+  const escape = (part: string): string => part.replace(/[\\:]/g, (ch) => `\\${ch}`);
   return [
-    event.source,
-    event.provenance.upstream_id,
-    event.provenance.semantic_version,
+    escape(event.source),
+    escape(event.provenance.upstream_id),
+    escape(event.provenance.semantic_version),
   ].join(":");
 }
 

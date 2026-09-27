@@ -137,7 +137,7 @@ fn request_headers(values: HashMap<String, String>) -> Result<HeaderMap, String>
 }
 
 #[tauri::command]
-pub async fn campus_request(state: tauri::State<'_, CampusState>, request: CampusRequest) -> Result<CampusResponse, String> {
+pub async fn campus_request(app: tauri::AppHandle, state: tauri::State<'_, CampusState>, request: CampusRequest) -> Result<CampusResponse, String> {
     let url = url::Url::parse(&request.url).map_err(|_| "Invalid campus URL")?;
     if !allowed_campus_url(&url) { return Err("Campus URL is not allowed".into()); }
     if !matches!(request.method.as_str(), "GET" | "POST" | "HEAD") {
@@ -176,6 +176,10 @@ pub async fn campus_request(state: tauri::State<'_, CampusState>, request: Campu
         if body.len() + chunk.len() > 16 * 1024 * 1024 { return Err("Campus response is too large".into()); }
         body.extend_from_slice(&chunk);
     }
+    // Persist refreshed cookies after the response has updated the shared jar.
+    // `persist` skips the encrypted write when the snapshot is unchanged.
+    let mut session = state.0.lock().await;
+    persist(&mut session, &snapshot_path(&app)?)?;
     Ok(CampusResponse { status, headers, body: String::from_utf8_lossy(&body).into_owned(), final_url })
 }
 

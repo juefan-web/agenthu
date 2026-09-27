@@ -23,6 +23,21 @@ describe("event contract", () => {
     expect(eventDedupeKey(parsed)).toBe("onethu:hw-1:v1");
   });
 
+  it("does not collide when source or upstream_id contains a colon", () => {
+    const base = EventEnvelopeSchema.parse(event);
+    const first = eventDedupeKey({
+      ...base,
+      source: "a:b",
+      provenance: { ...base.provenance, upstream_id: "c" },
+    });
+    const second = eventDedupeKey({
+      ...base,
+      source: "a",
+      provenance: { ...base.provenance, upstream_id: "b:c" },
+    });
+    expect(first).not.toBe(second);
+  });
+
   it("rejects credentials before enqueueing", () => {
     const parsed = EventEnvelopeSchema.parse({
       ...event,
