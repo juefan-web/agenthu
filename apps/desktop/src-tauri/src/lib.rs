@@ -124,6 +124,35 @@ fn focus_set_draft(app: tauri::AppHandle, draft: Option<serde_json::Value>) -> R
     Ok(())
 }
 
+const BACKEND_STORAGE_ERROR: &str = "Backend token storage failed";
+const MAX_BACKEND_TOKEN_BYTES: usize = 16 * 1024;
+
+fn backend_token_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    let dir = app.path().app_local_data_dir().map_err(|_| BACKEND_STORAGE_ERROR)?;
+    fs::create_dir_all(&dir).map_err(|_| BACKEND_STORAGE_ERROR)?;
+    Ok(dir.join("backend.hold"))
+}
+
+#[tauri::command]
+fn backend_token_get(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    let Some(payload) = vault::read_backend(&backend_token_path(&app)?)? else { return Ok(None); };
+    if payload.len() > MAX_BACKEND_TOKEN_BYTES { return Err(BACKEND_STORAGE_ERROR.into()); }
+    String::from_utf8(payload).map(Some).map_err(|_| BACKEND_STORAGE_ERROR.into())
+}
+
+#[tauri::command]
+fn backend_token_set(app: tauri::AppHandle, token: String) -> Result<(), String> {
+    if token.len() > MAX_BACKEND_TOKEN_BYTES || !token.trim_start().starts_with('{') {
+        return Err(BACKEND_STORAGE_ERROR.into());
+    }
+    vault::write_backend(&backend_token_path(&app)?, token.into_bytes())
+}
+
+#[tauri::command]
+fn backend_token_clear(app: tauri::AppHandle) -> Result<(), String> {
+    vault::clear_backend(&backend_token_path(&app)?)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -132,6 +161,7 @@ pub fn run() {
             campus::campus_request, campus::campus_restore, campus::campus_save_session, campus::campus_logout,
             queue_add, queue_list, queue_remove, queue_get_cursor, queue_set_cursor,
             focus_get_draft, focus_set_draft,
+            backend_token_get, backend_token_set, backend_token_clear,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Agenthu");

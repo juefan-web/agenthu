@@ -24,6 +24,7 @@
 
 ## 下一步
 
-1. 使用构建后的 Windows 客户端复测登录、2FA、采集和同步各阶段耗时，并完成重启恢复、失效重试和敏感日志验收。
-2. 与开发者 A 对齐 OpenAPI，加入 Backend fixture、端到端登录/同步/Focus 流程、断网重试和冲突测试。
-3. 推进 Android 凭据存储、通知、同步恢复和 OneTHU 分发许可审查。
+1. 开发者 A 先修正 OAuth2/OpenAPI `tokenUrl`，补齐 Bearer JWT fixture、主链路 API 联调测试，并把 OpenAPI/Zod 漂移检查纳入 CI。详见 `TASKS/backend-auth-contract-integration.md`。
+2. 开发者 B 实现独立的 Backend JWT 会话、Stronghold Token 存储、Bearer 注入、401/过期恢复，并完成客户端主链路联调。详见 `TASKS/client-backend-session-integration.md`。
+3. 两位开发者共同在 Windows 构建包验收校园登录/2FA、重启恢复、Event 同步、计划确认、Focus 完成、断网重试和冲突处理。
+4. 主链路稳定后再推进 Android 凭据存储/通知、Agent 动态重规划、Memory/Grounding 和 OneTHU 分发许可审查。

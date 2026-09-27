@@ -6,13 +6,16 @@ import type { SessionStatus } from "./adapters/campus/types";
 import { CampusAuthError } from "./adapters/campus/types";
 import { isTauriRuntime } from "./adapters/campus/tauriTransport";
 import { BackendClient } from "./backend/client";
+import { createBackendSession } from "./backend/session";
 import { createFocusDraftStore } from "./focus/draft";
 import { useSessionStore } from "./state/session";
+import { useBackendSessionStore } from "./state/backendSession";
 import { EventSyncCoordinator } from "./sync/coordinator";
 import { createEventQueue } from "./sync/queue";
 
 const backendUrl = import.meta.env.VITE_BACKEND_URL?.replace(/\/$/, "") ?? "";
-const backend = backendUrl ? new BackendClient({ baseUrl: backendUrl }) : null;
+const backendSession = backendUrl ? createBackendSession({ baseUrl: backendUrl }) : null;
+const backend = backendSession?.client ?? null;
 const campus = createCampusRuntime().adapter;
 const queue = createEventQueue();
 const focusDraft = createFocusDraftStore();
@@ -39,16 +42,40 @@ export default function App() {
   const [pending, setPending] = useState(0);
   const [collectionElapsed, setCollectionElapsed] = useState(0);
   const [collectionStage, setCollectionStage] = useState<CollectionStage>(null);
+  const [backendEmail, setBackendEmail] = useState("");
+  const [backendPassword, setBackendPassword] = useState("");
+  const [backendBusy, setBackendBusy] = useState(false);
   const session = useSessionStore();
+  const backendState = useBackendSessionStore();
   const queryClient = useQueryClient();
-  const tasks = useQuery({ queryKey: ["tasks"], queryFn: () => backend!.getTasks(), enabled: !!backend });
-  const plan = useQuery({ queryKey: ["plan"], queryFn: () => backend!.getTodayPlan(), enabled: !!backend });
-  const currentState = useQuery({ queryKey: ["current-state"], queryFn: () => backend!.getCurrentState(), enabled: !!backend });
+  const backendReady = !!backend && backendState.status === "ready";
+  const tasks = useQuery({ queryKey: ["tasks"], queryFn: () => backend!.getTasks(), enabled: backendReady });
+  const plan = useQuery({ queryKey: ["plan"], queryFn: () => backend!.getTodayPlan(), enabled: backendReady });
+  const currentState = useQuery({ queryKey: ["current-state"], queryFn: () => backend!.getCurrentState(), enabled: backendReady });
 
   useEffect(() => {
     void campus.restore().then(applySession).catch((error) => setNotice(errorText(error)));
     void queue.list().then((events) => setPending(events.length));
+    if (backendSession) void backendSession.restore();
   }, []);
+
+  async function backendLogin(event: FormEvent) {
+    event.preventDefault();
+    if (!backend) return;
+    setBackendBusy(true);
+    try {
+      await backendSession?.login(backendEmail, backendPassword);
+      setBackendPassword("");
+      setNotice("Backend 已连接");
+      await queryClient.invalidateQueries();
+    } catch (error) { setNotice(errorText(error)); }
+    finally { setBackendBusy(false); }
+  }
+
+  async function backendLogout() {
+    await backendSession?.logout();
+    await queryClient.invalidateQueries();
+  }
 
   useEffect(() => {
     if (!sync) return;
@@ -155,8 +182,15 @@ export default function App() {
           {pending > 0 && <span className="pending-count">{pending} 条待同步</span>}
           <button className="ghost-button" disabled={!sync || pending === 0 || retry.isPending} onClick={() => retry.mutate()}>重试同步</button>
           {session.status === "ready" && <button className="ghost-button" onClick={() => void logout()}>退出校园账号</button>}
+          {backendState.status === "ready" && <button className="ghost-button" onClick={() => void backendLogout()}>退出 Backend</button>}
         </div>
       </header>
+      {backend && backendState.status !== "ready" && <form className="backend-login" onSubmit={(event) => void backendLogin(event)}>
+        <label>Backend 邮箱<input type="email" value={backendEmail} onChange={(event) => setBackendEmail(event.target.value)} required /></label>
+        <label>Backend 密码<input type="password" value={backendPassword} onChange={(event) => setBackendPassword(event.target.value)} required /></label>
+        <button className="primary-button" disabled={backendBusy}>{backendBusy ? "登录中…" : "登录 Backend"}</button>
+      </form>}
+      {backendState.message && <p className="error-text" role="alert">{backendState.message}</p>}
       {notice && <div className="notice" role="status">{notice}</div>}
       {view === "today" && <div className="workspace-grid">
         <section className="workspace-section">

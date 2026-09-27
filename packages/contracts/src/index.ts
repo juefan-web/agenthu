@@ -121,3 +121,32 @@ export function assertSafeEvent(event: EventEnvelope): void {
   visit(event.data, "data");
   visit(event.context, "context");
 }
+
+export const LoginRequestSchema = z.object({
+  email: z.string().min(3).max(320),
+  password: z.string().min(1).max(128),
+});
+
+export const RegisterRequestSchema = z.object({
+  email: z.string().min(3).max(320),
+  password: z.string().min(8).max(128),
+  display_name: z.string().min(1).max(200),
+});
+
+export const TokenSchema = z.object({
+  access_token: z.string().min(1),
+  token_type: z.string().min(1).default("bearer"),
+  expires_in: z.number().int().positive(),
+});
+
+export const UserSchema = z.object({
+  id: z.string().min(1),
+  email: z.string().min(1),
+  display_name: z.string().min(1),
+  is_active: z.boolean(),
+});
+
+export type LoginRequest = z.infer<typeof LoginRequestSchema>;
+export type RegisterRequest = z.infer<typeof RegisterRequestSchema>;
+export type Token = z.infer<typeof TokenSchema>;
+export type User = z.infer<typeof UserSchema>;
