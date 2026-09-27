@@ -118,3 +118,34 @@ compensating object delete removes orphans if metadata persistence fails.
 ## D-017 — CI runs on every pushed branch
 
 `push` triggers cover all branches, not only `main`, so feature branches are validated before merge.
+
+---
+
+## Second review (astra6 report on eb1a058/e2d2841)
+
+## D-018 — Authentication is Bearer JWT (frozen)
+
+Decided with the reviewer. The Backend freezes:
+`POST /v1/auth/register`, `POST /v1/auth/login` (and `/v1/auth/token`), `GET /v1/auth/me`, plus the
+401/expiry semantics (JSON error envelope, `code: "unauthenticated"`).
+
+The client (Developer B) implements its own Backend login, stores the token encrypted, attaches
+`Authorization: Bearer <jwt>` to requests, and clears it on logout. The Backend does **not** add a
+cookie session. Campus (OneTHU) accounts and Backend accounts are separate and must not be mixed.
+
+## D-019 — `/v1/plans/today` selection rules
+
+`/v1/plans/today` must always return a plan the client can parse, so it:
+- returns the confirmed plan only if it is client-valid;
+- otherwise reuses a client-valid draft/pending plan **created since the start of today** in
+  `default_timezone` (default `Asia/Shanghai`);
+- never reuses a cross-day draft, and never returns a task-less manual plan
+  (`task_id`/`start_at`/`end_at` must be non-null for every item);
+- otherwise generates a deterministic plan.
+
+## D-020 — CORS uses explicit client origins
+
+Defaults are the real client origins: Tauri `devUrl` `http://localhost:5173` (and `127.0.0.1:5173`)
+plus the Tauri production webview origins (`tauri://localhost`, `http://tauri.localhost`). A
+wildcard origin together with credentials is invalid in browsers, so configuring `*` automatically
+disables credentials.

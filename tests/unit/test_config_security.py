@@ -11,6 +11,12 @@ def test_default_cors_origins_are_explicit() -> None:
     assert "*" not in settings.cors_origins
 
 
+def test_default_cors_origins_include_client_dev_url() -> None:
+    # apps/desktop/src-tauri/tauri.conf.json sets devUrl http://localhost:5173.
+    settings = Settings()
+    assert "http://localhost:5173" in settings.cors_origins
+
+
 def test_local_environment_allows_default_secret() -> None:
     settings = Settings(environment="local", secret_key=DEFAULT_SECRET_KEY)
     assert settings.is_local

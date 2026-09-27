@@ -9,11 +9,13 @@ will reuse the same Plan model and permission layer.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.config import get_settings
 from backend.core.errors import ConflictError, NotFoundError
 from backend.db.base import utcnow
 from backend.models.enums import PlanStatus, TaskStatus
@@ -24,6 +26,28 @@ from backend.services.current_state import get_or_create_state, pending_tasks
 
 DEFAULT_TASK_MINUTES = 60
 STRATEGY = "deadline_then_priority"
+
+
+def start_of_today() -> datetime:
+    """Start of the current day in the configured timezone, as UTC."""
+
+    timezone = ZoneInfo(get_settings().default_timezone)
+    local_now = datetime.now(timezone)
+    local_start = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    return local_start.astimezone(UTC)
+
+
+def is_client_valid_plan(plan: Plan) -> bool:
+    """Whether every plan item satisfies the desktop client's PlanItemSchema.
+
+    The client requires non-null ``task_id``, ``start_at`` and ``end_at``. Manual
+    plans may omit them, so they must never be served by ``/v1/plans/today``.
+    """
+
+    return all(
+        item.task_id is not None and item.planned_start is not None and item.planned_end is not None
+        for item in plan.items
+    )
 
 
 def generate_plan(
@@ -89,23 +113,31 @@ def generate_plan(
     return plan
 
 
-def latest_open_plan(session: Session, user_id: uuid.UUID) -> Plan | None:
-    """Return the most recent draft/pending plan, if any.
+def latest_open_plan(
+    session: Session,
+    user_id: uuid.UUID,
+    *,
+    since: datetime | None = None,
+    scan: int = 10,
+) -> Plan | None:
+    """Return the most recent client-valid draft/pending plan created since ``since``.
 
     Used by the client-facing ``/plans/today`` so repeated reads reuse the same
-    proposal instead of generating a new plan on every request.
+    proposal instead of generating a new plan on every request, while never
+    reusing a stale (cross-day) or client-incompatible draft.
     """
 
-    stmt = (
-        select(Plan)
-        .where(
-            Plan.user_id == user_id,
-            Plan.status.in_([PlanStatus.DRAFT, PlanStatus.PENDING_CONFIRMATION]),
-        )
-        .order_by(Plan.created_at.desc())
-        .limit(1)
-    )
-    return session.scalar(stmt)
+    conditions = [
+        Plan.user_id == user_id,
+        Plan.status.in_([PlanStatus.DRAFT, PlanStatus.PENDING_CONFIRMATION]),
+    ]
+    if since is not None:
+        conditions.append(Plan.created_at >= since)
+    stmt = select(Plan).where(*conditions).order_by(Plan.created_at.desc()).limit(scan)
+    for plan in session.scalars(stmt):
+        if is_client_valid_plan(plan):
+            return plan
+    return None
 
 
 def replan(

@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     debug: bool = False
     log_level: str = "INFO"
     api_v1_prefix: str = "/v1"
+    # Timezone used to decide the "today" boundary for plans.
+    default_timezone: str = "Asia/Shanghai"
 
     # --- Database ----------------------------------------------------------
     # 127.0.0.1 (not "localhost") avoids IPv6/IPv4 ambiguity on Windows, where
@@ -66,8 +68,10 @@ class Settings(BaseSettings):
     # Tauri uses the dev server origin (Vite) and the `tauri://localhost` origin.
     cors_origins: list[str] = Field(
         default_factory=lambda: [
-            "http://localhost:1420",
-            "http://127.0.0.1:1420",
+            # Tauri devUrl (apps/desktop/src-tauri/tauri.conf.json).
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            # Tauri production webview origins.
             "tauri://localhost",
             "http://tauri.localhost",
         ]

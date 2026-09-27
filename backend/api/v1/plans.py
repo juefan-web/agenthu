@@ -24,7 +24,13 @@ from backend.services import permissions
 from backend.services.client_view import plan_to_client
 from backend.services.current_state import current_plan_for, recompute_current_state
 from backend.services.lookup import ensure_owned_tasks, get_goal, get_plan
-from backend.services.planner import generate_plan, latest_open_plan, replan
+from backend.services.planner import (
+    generate_plan,
+    is_client_valid_plan,
+    latest_open_plan,
+    replan,
+    start_of_today,
+)
 
 router = APIRouter(prefix="/plans", tags=["plans"])
 
@@ -85,10 +91,15 @@ def today(user: CurrentUser, db: DBSession) -> ClientPlan:
     something to display and confirm.
     """
 
+    # /v1/plans/today must always satisfy the client's PlanSchema, so a manual
+    # plan with task-less items is never served here.
     plan = current_plan_for(db, user.id)
+    if plan is not None and not is_client_valid_plan(plan):
+        plan = None
     if plan is None:
-        # Reuse an existing draft/pending proposal so repeated reads are stable.
-        plan = latest_open_plan(db, user.id)
+        # Reuse today's draft/pending proposal so repeated reads are stable, but
+        # never a stale (cross-day) draft.
+        plan = latest_open_plan(db, user.id, since=start_of_today())
     if plan is None:
         plan = generate_plan(db, user_id=user.id)
         recompute_current_state(db, user.id)

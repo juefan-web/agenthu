@@ -99,21 +99,24 @@ contract smoke** against `/v1` (12/12 checks pass).
 ### Fixed in this round
 
 - `GET /v1/plans/today` generated a new plan on every read; it now reuses the latest
-  draft/pending plan (`backend/services/planner.latest_open_plan`).
-- CORS: `allow_origins=["*"]` combined with `allow_credentials=True` is invalid for browsers.
-  Defaults are now explicit dev/Tauri origins, and a wildcard automatically disables credentials.
+  **client-valid, same-day** draft/pending plan (`planner.latest_open_plan(since=start_of_today())`)
+  and never returns a task-less manual plan (`planner.is_client_valid_plan`).
+- CORS defaults corrected to the real client origin `http://localhost:5173`
+  (`tauri.conf.json` `devUrl`); wildcard + credentials still auto-disables credentials.
 - `TaskCreate`/`TaskUpdate` accept the client status values (`todo`, `in_progress`, `done`,
   `cancelled`) in addition to the internal enum names.
+- Contract smoke test frozen in the repo (`tests/integration/test_client_contract.py`) plus
+  `tests/integration/test_cors.py` (real 5173 origin) and cross-day / manual-plan coverage in
+  `tests/integration/test_plans.py`.
+
+### Resolved decisions
+
+- **Auth is Bearer JWT** (D-018): the Backend freezes register/login/me and the 401/expiry
+  semantics; the client stores the token and sends `Authorization: Bearer`. No cookie session is
+  added. Campus and Backend accounts stay separate.
 
 ### Open (needs a decision or another owner)
 
-- **Auth mechanism mismatch (integration blocker)**: the desktop client issues requests with
-  `credentials: "include"` and **no** `Authorization` header, but the Backend is Bearer-only, so all
-  client calls would return 401. Options: (a) the client stores and sends a Bearer token, or
-  (b) the Backend adds a cookie/session auth mode. This is a cross-boundary ADR with Developer B.
-- **Manual plans with null `task_id` items**: the client `PlanItemSchema.task_id` is a non-null
-  string. `/plans/today` returns generated plans (task ids present); if a manually created draft is
-  ever returned with task-less items, the client Zod parse would fail.
 - **MinIO healthcheck** still uses `curl` and is unverified (the image cannot be pulled here);
   s3mock is pinned/verified.
 - No rate limiting or request-size limit at the proxy layer (M4 hardening).

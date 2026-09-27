@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from backend.models.enums import PlanStatus
+from backend.models.plan import Plan
 from tests.fixtures.payloads import task_payload
 
 pytestmark = pytest.mark.integration
@@ -85,6 +88,39 @@ def test_today_plan_is_idempotent(client, auth_headers) -> None:
 
     plans = client.get("/v1/plans", headers=auth_headers).json()
     assert plans["total"] == 1
+
+
+def test_today_ignores_cross_day_draft(client, auth_headers, db_session) -> None:
+    me = client.get("/v1/auth/me", headers=auth_headers).json()
+    stale = Plan(
+        user_id=uuid.UUID(me["id"]),
+        title="Yesterday's draft",
+        status=PlanStatus.PENDING_CONFIRMATION,
+        created_at=datetime.now(UTC) - timedelta(days=1),
+    )
+    db_session.add(stale)
+    db_session.flush()
+
+    _make_task(client, auth_headers, title="HW2", days=1)
+    today = client.get("/v1/plans/today", headers=auth_headers).json()
+    assert today["id"] != str(stale.id)
+
+
+def test_today_never_returns_manual_plan_without_task_ids(client, auth_headers) -> None:
+    manual = client.post(
+        "/v1/plans",
+        json={"title": "Manual", "items": [{"title": "Read chapter", "order_index": 0}]},
+        headers=auth_headers,
+    ).json()
+    assert manual["items"][0]["task_id"] is None
+
+    _make_task(client, auth_headers, title="HW2", days=1)
+    today = client.get("/v1/plans/today", headers=auth_headers).json()
+    assert today["id"] != manual["id"]
+    for item in today["items"]:
+        assert item["task_id"] is not None
+        assert item["start_at"] is not None
+        assert item["end_at"] is not None
 
 
 def test_replan_supersedes_previous_plan(client, auth_headers) -> None:
