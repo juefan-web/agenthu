@@ -1,9 +1,20 @@
-use std::path::Path;
+use std::{path::Path, sync::Once};
 use tauri_plugin_stronghold::stronghold::Stronghold;
 
 const CLIENT: &[u8] = b"agenthu-campus-v1";
 const RECORD: &[u8] = b"session";
 const VAULT_ERROR: &str = "Secure campus storage is unavailable";
+static CONFIGURE_WORK_FACTOR: Once = Once::new();
+
+fn configure_work_factor() {
+    // The vault key is generated randomly and stored in Windows Credential Manager,
+    // rather than derived from a user password. Password-hardening work factors add
+    // minutes of CPU time to every Stronghold snapshot without improving this key's
+    // security. Existing snapshots retain and use their embedded work factor.
+    CONFIGURE_WORK_FACTOR.call_once(|| {
+        let _ = engine::snapshot::try_set_encrypt_work_factor(0);
+    });
+}
 
 #[cfg(windows)]
 fn key(create: bool) -> Result<Vec<u8>, String> {
@@ -28,21 +39,25 @@ fn key(_create: bool) -> Result<Vec<u8>, String> {
 }
 
 pub fn read(path: &Path) -> Result<Option<Vec<u8>>, String> {
+    configure_work_factor();
     if !path.exists() { return Ok(None); }
     read_with_key(path, key(false)?)
 }
 
 fn read_with_key(path: &Path, key: Vec<u8>) -> Result<Option<Vec<u8>>, String> {
+    configure_work_factor();
     let vault = Stronghold::new(path, key).map_err(|_| VAULT_ERROR)?;
     let client = vault.load_client(CLIENT).map_err(|_| VAULT_ERROR)?;
     client.store().get(RECORD).map_err(|_| VAULT_ERROR.into())
 }
 
 pub fn write(path: &Path, payload: Vec<u8>) -> Result<(), String> {
+    configure_work_factor();
     write_with_key(path, key(!path.exists())?, payload)
 }
 
 fn write_with_key(path: &Path, key: Vec<u8>, payload: Vec<u8>) -> Result<(), String> {
+    configure_work_factor();
     let vault = Stronghold::new(path, key).map_err(|_| VAULT_ERROR)?;
     let client = if path.exists() {
         vault.load_client(CLIENT)

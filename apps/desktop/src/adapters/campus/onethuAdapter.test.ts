@@ -96,6 +96,34 @@ describe("OneThuCampusAdapter", () => {
     expect(first.events).toEqual(second.events);
   });
 
+  it("uses the calendar semester and starts schedule collection before homework completes", async () => {
+    const session = fakeSession();
+    let requestedSemester = "";
+    let scheduleCalls = 0;
+    let finishHomework!: () => void;
+    let homeworkStarted!: () => void;
+    const homeworkGate = new Promise<void>((resolve) => { finishHomework = resolve; });
+    const started = new Promise<void>((resolve) => { homeworkStarted = resolve; });
+    session.learn.getCurrentSemester = async () => { throw new Error("redundant semester request"); };
+    session.learn.getCourseList = async (semesterId) => {
+      requestedSemester = semesterId;
+      return [];
+    };
+    session.learn.getAllHomework = async () => {
+      homeworkStarted();
+      await homeworkGate;
+      return [];
+    };
+    session.info.getSchedule = async () => { scheduleCalls += 1; return []; };
+
+    const collection = new OneThuCampusAdapter({ session, auth }).collectSnapshot();
+    await started;
+    expect(requestedSemester).toBe("2026-2027-1");
+    expect(scheduleCalls).toBe(1);
+    finishHomework();
+    await collection;
+  });
+
   it("uses stable schedule identities and changes assignment version when status changes", () => {
     const fetchedAt = "2026-09-26T10:00:00+08:00";
     const schedule = { courseName: "线性代数", date: "2026-09-28", startSection: 1, endSection: 2, location: "六教" };

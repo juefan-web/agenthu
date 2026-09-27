@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
 use tauri::Manager;
 use tokio::sync::Mutex;
+use zeroize::Zeroizing;
 
 const STORAGE_ERROR: &str = "Campus session storage failed";
 
@@ -25,10 +26,41 @@ struct Snapshot {
     cookies: Vec<cookie_store::Cookie<'static>>,
 }
 
+struct CampusClients {
+    follow: reqwest::Client,
+    manual: reqwest::Client,
+}
+
+impl CampusClients {
+    fn new(jar: Arc<CookieStoreMutex>) -> Result<Self, String> {
+        let follow = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::custom(|attempt| {
+                if attempt.previous().len() >= 10 || !allowed_campus_url(attempt.url()) {
+                    attempt.error("Campus redirect rejected")
+                } else {
+                    attempt.follow()
+                }
+            }))
+            .cookie_provider(Arc::clone(&jar))
+            .timeout(Duration::from_secs(30))
+            .build()
+            .map_err(|_| "Campus transport unavailable")?;
+        let manual = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .cookie_provider(jar)
+            .timeout(Duration::from_secs(30))
+            .build()
+            .map_err(|_| "Campus transport unavailable")?;
+        Ok(Self { follow, manual })
+    }
+}
+
 #[derive(Default)]
 struct CampusSession {
     jar: Arc<CookieStoreMutex>,
     metadata: Option<SessionMetadata>,
+    clients: Option<CampusClients>,
+    persisted_snapshot: Option<Zeroizing<Vec<u8>>>,
 }
 
 #[derive(Default)]
@@ -66,14 +98,28 @@ fn snapshot_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(dir.join("campus.hold"))
 }
 
-fn persist(session: &CampusSession, path: &std::path::Path) -> Result<(), String> {
+fn snapshot_payload(session: &CampusSession) -> Result<Option<Vec<u8>>, String> {
     if let Some(metadata) = &session.metadata {
         let cookies = session.jar.lock().map_err(|_| STORAGE_ERROR)?
             .iter_unexpired().cloned().collect();
         let payload = serde_json::to_vec(&Snapshot { version: 1, metadata: metadata.clone(), cookies })
             .map_err(|_| STORAGE_ERROR)?;
-        vault::write(path, payload)?;
+        return Ok(Some(payload));
     }
+    Ok(None)
+}
+
+fn snapshot_changed(session: &CampusSession, payload: &[u8]) -> bool {
+    !session.persisted_snapshot.as_deref().is_some_and(|saved| saved.as_slice() == payload)
+}
+
+fn persist(session: &mut CampusSession, path: &std::path::Path) -> Result<(), String> {
+    let Some(payload) = snapshot_payload(session)? else { return Ok(()); };
+    if !snapshot_changed(session, &payload) {
+        return Ok(());
+    }
+    vault::write(path, payload.clone())?;
+    session.persisted_snapshot = Some(Zeroizing::new(payload));
     Ok(())
 }
 
@@ -91,7 +137,7 @@ fn request_headers(values: HashMap<String, String>) -> Result<HeaderMap, String>
 }
 
 #[tauri::command]
-pub async fn campus_request(app: tauri::AppHandle, state: tauri::State<'_, CampusState>, request: CampusRequest) -> Result<CampusResponse, String> {
+pub async fn campus_request(state: tauri::State<'_, CampusState>, request: CampusRequest) -> Result<CampusResponse, String> {
     let url = url::Url::parse(&request.url).map_err(|_| "Invalid campus URL")?;
     if !allowed_campus_url(&url) { return Err("Campus URL is not allowed".into()); }
     if !matches!(request.method.as_str(), "GET" | "POST" | "HEAD") {
@@ -100,26 +146,21 @@ pub async fn campus_request(app: tauri::AppHandle, state: tauri::State<'_, Campu
     if request.body.as_ref().is_some_and(|b| b.len() > 1024 * 1024) {
         return Err("Campus request is too large".into());
     }
-    let redirect = match request.redirect.as_deref() {
-        Some("manual") => reqwest::redirect::Policy::none(),
-        Some("follow") | None => reqwest::redirect::Policy::custom(|attempt| {
-            if attempt.previous().len() >= 10 || !allowed_campus_url(attempt.url()) {
-                attempt.error("Campus redirect rejected")
-            } else { attempt.follow() }
-        }),
+    let manual_redirect = match request.redirect.as_deref() {
+        Some("manual") => true,
+        Some("follow") | None => false,
         _ => return Err("Unsupported redirect policy".into()),
     };
-    // Copy the current jar under the state lock, then release it before doing network I/O.
-    // Holding this lock while reading a response serialized every campus request and made
-    // parallel homework collection look hung. A later logout/restore replaces the jar; the
-    // pointer check below prevents an old response from being persisted into the new session.
-    let jar = {
-        let session = state.0.lock().await;
-        Arc::clone(&session.jar)
+    let client = {
+        let mut session = state.0.lock().await;
+        let jar = Arc::clone(&session.jar);
+        if session.clients.is_none() {
+            session.clients = Some(CampusClients::new(Arc::clone(&jar))?);
+        }
+        let clients = session.clients.as_ref().expect("campus clients initialized");
+        let client = if manual_redirect { &clients.manual } else { &clients.follow };
+        client.clone()
     };
-    let client = reqwest::Client::builder().redirect(redirect)
-        .cookie_provider(Arc::clone(&jar)).timeout(Duration::from_secs(30))
-        .build().map_err(|_| "Campus transport unavailable")?;
     let method = reqwest::Method::from_bytes(request.method.as_bytes()).map_err(|_| "Invalid method")?;
     let mut builder = client.request(method, url).headers(request_headers(request.headers)?);
     if let Some(body) = request.body { builder = builder.body(body); }
@@ -135,10 +176,6 @@ pub async fn campus_request(app: tauri::AppHandle, state: tauri::State<'_, Campu
         if body.len() + chunk.len() > 16 * 1024 * 1024 { return Err("Campus response is too large".into()); }
         body.extend_from_slice(&chunk);
     }
-    let session = state.0.lock().await;
-    if Arc::ptr_eq(&session.jar, &jar) {
-        persist(&session, &snapshot_path(&app)?)?;
-    }
     Ok(CampusResponse { status, headers, body: String::from_utf8_lossy(&body).into_owned(), final_url })
 }
 
@@ -151,6 +188,8 @@ pub async fn campus_restore(app: tauri::AppHandle, state: tauri::State<'_, Campu
         let store = CookieStore::from_cookies(snapshot.cookies.into_iter().map(Ok::<_, String>), false)?;
         session.jar = Arc::new(CookieStoreMutex::new(store));
         session.metadata = Some(snapshot.metadata);
+        session.clients = None;
+        session.persisted_snapshot = Some(Zeroizing::new(payload));
     }
     Ok(session.metadata.clone())
 }
@@ -162,7 +201,7 @@ pub async fn campus_save_session(app: tauri::AppHandle, state: tauri::State<'_, 
     }
     let mut session = state.0.lock().await;
     session.metadata = Some(metadata);
-    persist(&session, &snapshot_path(&app)?)
+    persist(&mut session, &snapshot_path(&app)?)
 }
 
 #[tauri::command]
@@ -197,5 +236,24 @@ mod tests {
         let restored = CookieStoreMutex::new(CookieStore::from_cookies(cookies.into_iter().map(Ok::<_, String>), false).unwrap());
         assert_eq!(restored.cookies(&url).unwrap(), "JSESSIONID=fixture");
         assert!(restored.cookies(&url::Url::parse("https://learn.tsinghua.edu.cn/").unwrap()).is_none());
+    }
+
+    #[test]
+    fn only_changed_cookies_need_a_new_encrypted_snapshot() {
+        let url = url::Url::parse("https://id.tsinghua.edu.cn/").unwrap();
+        let mut session = CampusSession {
+            metadata: Some(SessionMetadata {
+                username: "fixture".into(), fingerprint: "fingerprint".into(), finger3: String::new(),
+            }),
+            ..CampusSession::default()
+        };
+        let initial = snapshot_payload(&session).unwrap().unwrap();
+        assert!(snapshot_changed(&session, &initial));
+        session.persisted_snapshot = Some(Zeroizing::new(initial.clone()));
+        assert!(!snapshot_changed(&session, &initial));
+
+        session.jar.lock().unwrap().parse("JSESSIONID=changed; Secure; Path=/", &url).unwrap();
+        let changed = snapshot_payload(&session).unwrap().unwrap();
+        assert!(snapshot_changed(&session, &changed));
     }
 }

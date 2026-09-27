@@ -184,21 +184,22 @@ export class OneThuCampusAdapter implements CampusAdapter {
   private async collectOnce(): Promise<CampusSnapshot> {
     const fetchedAt = new Date().toISOString();
     try {
-      requireReady(this.options.session);
-      await requireLearnSession(this.options.session);
-      const semester = await this.options.session.learn.getCurrentSemester();
-      const [coursesRaw, calendarRaw] = await Promise.all([
-        this.options.session.learn.getCourseList(semester.id),
-        this.options.session.learn.getCalendarData(),
-      ]);
-      const assignmentsRaw = await this.options.session.learn.getAllHomework(
-        coursesRaw.map((course) => course.id),
-      );
+      const { session } = this.options;
+      requireReady(session);
       const now = new Date();
-      const scheduleRaw = await this.options.session.info.getSchedule(
-        dateOnly(now),
-        dateOnly(new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000)),
+      await requireLearnSession(session);
+      const schedulePromise = session.info.getSchedule(
+        dateOnly(now), dateOnly(new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000)),
       );
+      const learnPromise = (async () => {
+        const calendarRaw = await session.learn.getCalendarData();
+        const coursesRaw = await session.learn.getCourseList(calendarRaw.semesterId);
+        const assignmentsRaw = await session.learn.getAllHomework(coursesRaw.map((course) => course.id));
+        return { calendarRaw, coursesRaw, assignmentsRaw };
+      })();
+      const [scheduleRaw, { calendarRaw, coursesRaw, assignmentsRaw }] = await Promise.all([
+        schedulePromise, learnPromise,
+      ]);
       const courses = coursesRaw.map(mapCourse);
       const assignments = assignmentsRaw.map(mapAssignment);
       const calendar = mapCalendar(calendarRaw);

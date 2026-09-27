@@ -18,6 +18,7 @@ const queue = createEventQueue();
 const focusDraft = createFocusDraftStore();
 const sync = backend ? new EventSyncCoordinator(backend, queue) : null;
 type View = "today" | "tasks" | "focus";
+type CollectionStage = "collecting" | "saving" | "syncing" | null;
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -37,6 +38,7 @@ export default function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(0);
   const [collectionElapsed, setCollectionElapsed] = useState(0);
+  const [collectionStage, setCollectionStage] = useState<CollectionStage>(null);
   const session = useSessionStore();
   const queryClient = useQueryClient();
   const tasks = useQuery({ queryKey: ["tasks"], queryFn: () => backend!.getTasks(), enabled: !!backend });
@@ -64,25 +66,42 @@ export default function App() {
 
   const collect = useMutation({
     mutationFn: async () => {
-      const snapshot = await campus.collectSnapshot();
-      setNotice(`校园数据已采集 ${snapshot.events.length} 条，正在同步…`);
-      if (sync) await sync.enqueue(snapshot.events);
-      else await queue.add(snapshot.events);
-      const result = sync ? await sync.flush() : null;
-      setPending((await queue.list()).length);
-      return { collected: snapshot.events.length, result };
+      const startedAt = performance.now();
+      let collected = 0;
+      let saved = false;
+      try {
+        setCollectionStage("collecting");
+        const snapshot = await campus.collectSnapshot();
+        collected = snapshot.events.length;
+        const collectionSeconds = ((performance.now() - startedAt) / 1_000).toFixed(1);
+        setCollectionStage("saving");
+        if (sync) await sync.enqueue(snapshot.events);
+        else await queue.add(snapshot.events);
+        saved = true;
+        if (sync) setCollectionStage("syncing");
+        const syncStartedAt = performance.now();
+        const result = sync ? await sync.flush() : null;
+        const syncSeconds = ((performance.now() - syncStartedAt) / 1_000).toFixed(1);
+        setPending((await queue.list()).length);
+        return { collected, collectionSeconds, syncSeconds, result };
+      } catch (error) {
+        setNotice(saved
+          ? `采集 ${collected} 条已保存到本地，上传未完成：${errorText(error)}`
+          : `校园数据未保存：${errorText(error)}`);
+        throw error;
+      }
     },
-    onSuccess: ({ collected, result }) => {
+    onSuccess: ({ collected, collectionSeconds, syncSeconds, result }) => {
       setNotice(result
-        ? `采集 ${collected} 条，上传 ${result.sent} 条，重复 ${result.duplicates} 条，待同步 ${result.pending} 条。`
-        : `采集 ${collected} 条，已保存到本地队列；配置 Backend 后可上传。`);
+        ? `采集 ${collected} 条（${collectionSeconds} 秒），同步 ${syncSeconds} 秒；上传 ${result.sent} 条，重复 ${result.duplicates} 条，待同步 ${result.pending} 条。`
+        : `采集 ${collected} 条（${collectionSeconds} 秒），已保存到本地队列；配置 Backend 后可上传。`);
       void queryClient.invalidateQueries();
     },
     onError: (error) => {
       if (error instanceof CampusAuthError) applySession({ state: "error", username: null, message: error.message });
       void queue.list().then((events) => setPending(events.length));
-      setNotice(`同步未完成，事件留在本地队列：${errorText(error)}`);
     },
+    onSettled: () => setCollectionStage(null),
   });
 
   useEffect(() => {
@@ -143,7 +162,7 @@ export default function App() {
         <section className="workspace-section">
           <div className="section-heading"><h2>校园数据</h2><span className="section-meta">课程 · 作业 · 课表 · 校历</span></div>
           <CampusConnection onError={(error) => setNotice(errorText(error))} />
-          <div className="section-actions"><button className="primary-button" disabled={session.status !== "ready" || collect.isPending} onClick={() => collect.mutate()}>{collect.isPending ? `正在采集（${collectionElapsed}s）…` : "采集并同步"}</button></div>
+          <div className="section-actions"><button className="primary-button" disabled={session.status !== "ready" || collect.isPending} onClick={() => collect.mutate()}>{collect.isPending ? `${collectionStage === "saving" ? "正在保存" : collectionStage === "syncing" ? "正在同步" : "正在采集"}（${collectionElapsed}s）…` : "采集并同步"}</button></div>
         </section>
         <section className="workspace-section">
           <div className="section-heading"><h2>今日计划</h2><span className="section-meta">{currentState.data?.context ?? "当前上下文未设置"}</span></div>
