@@ -19,7 +19,8 @@ os.environ.setdefault("AUDIT_ENABLED", "false")
 
 import socket  # noqa: E402
 import uuid  # noqa: E402
-from collections.abc import Iterator  # noqa: E402
+from collections.abc import Callable, Iterator  # noqa: E402
+from datetime import timedelta  # noqa: E402
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
@@ -32,6 +33,7 @@ from sqlalchemy.orm import Session, sessionmaker  # noqa: E402
 from sqlalchemy.pool import NullPool  # noqa: E402
 
 import backend.models  # noqa: E402,F401  (register models)
+from backend.core.security import create_access_token  # noqa: E402
 from backend.db.base import Base  # noqa: E402
 from backend.services.storage import InMemoryStorage  # noqa: E402
 
@@ -147,3 +149,59 @@ def auth_factory(client: TestClient, register_user):
 @pytest.fixture
 def auth_headers(auth_factory) -> dict[str, str]:
     return auth_factory()
+
+
+@pytest.fixture
+def login_token_headers(client: TestClient, register_user) -> dict[str, str]:
+    """Bearer headers obtained from the JSON ``POST /v1/auth/login`` endpoint."""
+
+    payload = register_user()
+    return login_headers(client, payload["email"], payload["password"])
+
+
+@pytest.fixture
+def oauth_token_headers(client: TestClient, register_user) -> dict[str, str]:
+    """Bearer headers obtained from the OAuth2 form ``POST /v1/auth/token`` endpoint."""
+
+    payload = register_user()
+    response = client.post(
+        "/v1/auth/token",
+        data={"username": payload["email"], "password": payload["password"]},
+    )
+    assert response.status_code == 200, response.text
+    return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
+@pytest.fixture
+def token_factory(register_user) -> Callable[..., tuple[dict[str, str], dict[str, str]]]:
+    """Issue Bearer headers directly for a registered user with a custom expiry.
+
+    Returns ``(headers, user)``; ``user`` carries the normalized email and id.
+    """
+
+    def _issue(
+        *,
+        email: str | None = None,
+        expires_delta: timedelta | None = None,
+    ) -> tuple[dict[str, str], dict[str, str]]:
+        user = register_user(email=email)
+        token = create_access_token(user["id"], expires_delta=expires_delta)
+        return {"Authorization": f"Bearer {token}"}, user
+
+    return _issue
+
+
+@pytest.fixture
+def expired_token_headers(token_factory) -> dict[str, str]:
+    """Bearer headers whose JWT is already expired (D-018 401 semantics)."""
+
+    headers, _ = token_factory(expires_delta=timedelta(seconds=-60))
+    return headers
+
+
+@pytest.fixture
+def expired_access_token(token_factory) -> str:
+    """An expired raw JWT for the same 401 checks."""
+
+    headers, _ = token_factory(expires_delta=timedelta(seconds=-60))
+    return headers["Authorization"].removeprefix("Bearer ")

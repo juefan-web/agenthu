@@ -31,3 +31,12 @@ alembic upgrade head
 uvicorn backend.main:app --reload
 pytest
 ```
+
+Contract checks (run before committing a contract change):
+
+```bash
+# Fail if openapi.json is stale or the shared client Zod contract drifted.
+python -m backend.scripts.check_contract_drift
+# Refresh the committed OpenAPI artifact after an intentional change.
+python -m backend.scripts.check_contract_drift --write
+```

@@ -70,6 +70,43 @@ def task_payload(
     }
 
 
+# Fixed timestamps keep the batch fixtures byte-for-byte repeatable.
+_ASSIGNMENT_OCCURRED_AT = "2026-09-26T10:00:00+08:00"
+_ASSIGNMENT_FETCHED_AT = "2026-09-26T10:00:01+08:00"
+
+
+def assignment_envelope(
+    *,
+    client_event_id: str,
+    upstream_id: str,
+    title: str = "Linear Algebra HW2",
+    estimated_minutes: int = 120,
+    semantic_version: str = "v1",
+    source: str = "onethu",
+) -> dict[str, Any]:
+    """Deterministic ``EventEnvelope`` for ``POST /v1/events/batch``.
+
+    The dedupe key derives from ``source:upstream_id:semantic_version`` (D-010),
+    so replaying the same envelope is idempotent and reported as a duplicate.
+    """
+
+    return {
+        "client_event_id": client_event_id,
+        "type": "study.assignment.discovered",
+        "occurred_at": _ASSIGNMENT_OCCURRED_AT,
+        "source": source,
+        "data": {"title": title, "estimated_minutes": estimated_minutes},
+        "context": {"origin": "test-fixture"},
+        "provenance": {
+            "connector": source,
+            "connector_version": "2026-09-26",
+            "upstream_id": upstream_id,
+            "semantic_version": semantic_version,
+            "fetched_at": _ASSIGNMENT_FETCHED_AT,
+        },
+    }
+
+
 def goal_payload(*, title: str = "Do well in Linear Algebra") -> dict[str, Any]:
     return {
         "title": title,

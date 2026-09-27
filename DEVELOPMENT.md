@@ -1,6 +1,6 @@
 # Current Status
 
-Last updated: 2026-09-26 · Milestone: **M0 — engineering baseline + frozen core contracts**
+Last updated: 2026-09-27 · Milestone: **M0 — engineering baseline + frozen core contracts**
 
 This document reflects the real state of the code. It is not a design document; product and
 architecture invariants live in `AGENTS.md` and `TECH_STACK_AND_WORKPLAN.md`. Cross-session
@@ -21,7 +21,11 @@ context lives under `AGENT_CONTEXT/`.
   Mappers live in `backend/services/client_view.py`.
 - **Focus sessions**: persisted `focus_sessions` with a `running/paused/completed/abandoned` state
   machine and idempotent completion (no double-counted actual minutes).
-- **Auth**: register / JSON login / OAuth2-form token / me, bcrypt password hashing, HS256 JWT.
+- **Auth contract**: register / JSON login / OAuth2-form token / me, bcrypt password hashing, HS256
+  JWT. `tokenUrl` is derived from `api_v1_prefix` (`/v1/auth/token`). Stable fixtures cover
+  `/register`, `/login`, `/token`, `/me` and expired JWTs; missing / invalid / expired Bearer tokens
+  all return the `401` envelope with `code: "unauthenticated"` and `WWW-Authenticate: Bearer`
+  (D-018).
 - **Event infrastructure**: `POST/GET/DELETE /events`, backend-computed dedupe
   (`source:upstream_id:semantic_version`) plus optional `dedupe_key`, unique constraint,
   `X-Deduplicated` header, provenance, filters, batch ingestion and an event-handler registry that
@@ -52,7 +56,8 @@ context lives under `AGENT_CONTEXT/`.
 
 - `ruff check` + `ruff format --check`: pass
 - `pyright`: 0 errors
-- `pytest` (full suite, all services up): **95 passed** in ~52s
+- `pytest` (full suite, all services up): **137 passed, 1 skipped** in ~64s
+- OpenAPI/Zod contract drift check: pass (`python -m backend.scripts.check_contract_drift`)
 - `pytest -m storage` (S3Storage against `s3mock`): pass
 - Arq worker test (Redis → Arq → task): pass
 - Migration test (upgrade from zero + downgrade + `alembic check` no drift): pass
@@ -112,6 +117,12 @@ contract smoke** against `/v1` (12/12 checks pass).
   `api_v1_prefix` (`/v1/auth/token`) and asserted by `tests/unit/test_openapi.py`.
 - `is_client_valid_plan` documents that `reason` is guaranteed non-empty by `plan_to_client`
   (item notes -> strategy -> replan reason -> "planned"), covered by `tests/unit/test_client_view.py`.
+- Auth contract fixtures (`/register`, `/login`, `/token`, `/me`, expired JWT) and explicit
+  missing / invalid / expired `401` envelope tests in `tests/integration/test_auth.py`.
+- Repeatable Event -> Task -> CurrentState -> Plan -> Focus main-chain fixture test in
+  `tests/integration/test_client_main_chain.py`.
+- OpenAPI/Zod drift check (`backend/scripts/check_contract_drift.py`, D-021) plus the frozen client
+  Zod snapshot and `tests/unit/test_contract_drift.py`; CI runs it before the OpenAPI export.
 
 ### Resolved decisions
 
@@ -147,7 +158,9 @@ contract smoke** against `/v1` (12/12 checks pass).
 2. **M2 — Planner**: LLM planner behind the existing permission layer, execution results and
    deviation-driven re-planning.
 3. **M3 — Memory / Grounding**: material indexing (pgvector), citations, user correction flow.
-4. Add a contract test that fails CI when `openapi.json` drifts from the client's `packages/contracts`.
+4. Done (D-021): `backend/scripts/check_contract_drift.py` runs in CI before the OpenAPI export and
+   fails when `openapi.json` is stale or the client's `packages/contracts` Zod contract drifts
+   (frozen snapshot in `tests/fixtures/client_contract.ts`).
 5. Update `TECH_STACK_AND_WORKPLAN.md` (Flutter → React/Tauri) with Developer B.
 6. Decide credential storage (encryption + access control + deletion path) before any real campus
    data source is enabled.

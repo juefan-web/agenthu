@@ -33,6 +33,7 @@ dev = [
 
 [project.scripts]
 agenthu-openapi = "backend.scripts.export_openapi:main"
+agenthu-contract-drift = "backend.scripts.check_contract_drift:main"
 
 [build-system]
 requires = ["setuptools>=68"]

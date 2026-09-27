@@ -82,6 +82,13 @@ jobs:
           alembic downgrade base
           alembic upgrade head
 
+      # Fail fast when the committed `openapi.json` is stale or the shared client
+      # contract (`packages/contracts`, snapshot in `tests/fixtures/client_contract.ts`)
+      # no longer matches the Backend schemas. Must run *before* the export step,
+      # otherwise the artifact is regenerated and drift is masked.
+      - name: Check OpenAPI / client contract drift
+        run: python -m backend.scripts.check_contract_drift
+
       - name: Export OpenAPI contract
         run: python -m backend.scripts.export_openapi --output openapi.json
 

@@ -1,7 +1,7 @@
 # CURRENT_STATE
 
-Updated: 2026-09-26 · Milestone: **M0 (engineering baseline + frozen contracts)** +
-astra6 review fixes
+Updated: 2026-09-27 · Milestone: **M0 (engineering baseline + frozen contracts)** +
+astra6 review fixes + A/B contract integration
 
 ## Done
 
@@ -15,14 +15,21 @@ astra6 review fixes
 - Deterministic planner and the full Study + Time loop integration test.
 - Ingestion safety: sensitive-field rejection, JSON limits, non-local secret guard,
   cross-user reference validation.
-- OpenAPI exported to `openapi.json` (40 paths, prefix `/v1`).
+- OpenAPI exported to `openapi.json` (40 paths, prefix `/v1`); OAuth2 `tokenUrl` is `/v1/auth/token`.
+- Auth contract fixtures (`/register`, `/login`, `/token`, `/me`, expired JWT) and 401 envelope
+  tests (missing / invalid / expired, `WWW-Authenticate: Bearer`).
+- Repeatable Event -> Task -> CurrentState -> Plan -> Focus main-chain API test
+  (`tests/integration/test_client_main_chain.py`).
+- OpenAPI/Zod drift check (`backend/scripts/check_contract_drift.py`) wired into CI before the
+  OpenAPI export; frozen client Zod snapshot in `tests/fixtures/client_contract.ts` (D-021).
 - Docs: `README.md`, `DEVELOPMENT.md` (status + review fixes), `M0_HANDOFF.md`, `AGENT_CONTEXT/`.
 
 ## Verification snapshot
 
 - `ruff check` / `ruff format --check`: pass
 - `pyright`: 0 errors
-- `pytest` full suite with db/redis/s3mock up: **95 passed**
+- `pytest` full suite with db/redis/s3mock up: **137 passed, 1 skipped** (storage marker)
+- OpenAPI/Zod drift check: pass (`python -m backend.scripts.check_contract_drift`)
 - S3Storage round-trip against `s3mock`: pass
 - Arq worker (Redis → Arq → task): pass
 - Migration from zero + downgrade + `alembic check` (no drift): pass
@@ -41,4 +48,4 @@ astra6 review fixes
 ## Next
 
 - M1: real (manual-first) adapters and idempotent ingestion, richer CurrentState, LLM planner behind
-  the permission layer, OpenAPI/contract drift check in CI.
+  the permission layer.

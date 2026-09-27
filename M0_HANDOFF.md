@@ -119,6 +119,11 @@ Error envelope (frozen):
 Codes: `bad_request`, `unauthenticated`, `permission_denied`, `not_found`, `conflict`,
 `validation_error`, `payload_too_large`, `storage_error`, `service_unavailable`, `internal_error`.
 
+Auth contract fixtures and the missing / invalid / expired `401` semantics are covered by
+`tests/integration/test_auth.py`; the Event -> Task -> CurrentState -> Plan -> Focus main chain is
+covered by `tests/integration/test_client_main_chain.py`. OpenAPI/Zod drift is enforced in CI by
+`backend/scripts/check_contract_drift.py` (D-021).
+
 ## 3. Current database structure
 
 All tables use UUID primary keys and timezone-aware timestamps. Every user-owned table has
@@ -196,6 +201,8 @@ Backend never imports provider types.
 3. **Planner**: LLM planner behind `permissions.evaluate_permission`, persisting `basis` and
    citations; deviation-driven `replan`.
 4. **Memory**: extraction with sources, pgvector retrieval, correction/delete paths.
-5. **Contract check in CI**: fail when `openapi.json` drifts from `packages/contracts`.
+5. **Contract check in CI** (done, D-021): `python -m backend.scripts.check_contract_drift` fails CI
+   when `openapi.json` is stale or the client's `packages/contracts` Zod contract drifts from the
+   OpenAPI components. It also runs as `tests/unit/test_contract_drift.py`.
 
 Runbook: `alembic upgrade head`, `uvicorn backend.main:app`, `arq backend.worker.settings.WorkerSettings`.
