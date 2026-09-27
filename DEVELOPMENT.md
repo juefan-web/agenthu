@@ -108,6 +108,10 @@ contract smoke** against `/v1` (12/12 checks pass).
 - Contract smoke test frozen in the repo (`tests/integration/test_client_contract.py`) plus
   `tests/integration/test_cors.py` (real 5173 origin) and cross-day / manual-plan coverage in
   `tests/integration/test_plans.py`.
+- OpenAPI OAuth2 `tokenUrl` was hardcoded to `/api/v1/auth/token`; it is now derived from
+  `api_v1_prefix` (`/v1/auth/token`) and asserted by `tests/unit/test_openapi.py`.
+- `is_client_valid_plan` documents that `reason` is guaranteed non-empty by `plan_to_client`
+  (item notes -> strategy -> replan reason -> "planned"), covered by `tests/unit/test_client_view.py`.
 
 ### Resolved decisions
 

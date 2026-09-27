@@ -42,6 +42,9 @@ def is_client_valid_plan(plan: Plan) -> bool:
 
     The client requires non-null ``task_id``, ``start_at`` and ``end_at``. Manual
     plans may omit them, so they must never be served by ``/v1/plans/today``.
+    ``reason`` is intentionally not checked here: ``client_view.plan_to_client``
+    always produces a non-empty value (item notes -> plan strategy ->
+    replan_reason -> "planned"), covered by ``tests/unit/test_client_view.py``.
     """
 
     return all(

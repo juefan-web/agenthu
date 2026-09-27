@@ -8089,7 +8089,7 @@
         "flows": {
           "password": {
             "scopes": {},
-            "tokenUrl": "/api/v1/auth/token"
+            "tokenUrl": "/v1/auth/token"
           }
         }
       }

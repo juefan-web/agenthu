@@ -45,3 +45,12 @@ def test_openapi_error_envelope_is_documented() -> None:
 def test_openapi_prefix_is_v1() -> None:
     paths = app.openapi()["paths"]
     assert not [path for path in paths if path.startswith("/api/")]
+
+
+def test_openapi_oauth2_token_url_matches_api_prefix() -> None:
+    schema = app.openapi()
+    flows = schema["components"]["securitySchemes"]["OAuth2PasswordBearer"]["flows"]
+    token_url = flows["password"]["tokenUrl"]
+    assert token_url == "/v1/auth/token"
+    assert token_url in schema["paths"]
+    assert not token_url.startswith("/api/")
