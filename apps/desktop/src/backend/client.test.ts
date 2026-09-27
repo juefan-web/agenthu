@@ -39,7 +39,7 @@ describe("BackendClient authentication", () => {
       onUnauthorized,
     });
     await expect(client.getCurrentState()).rejects.toBeInstanceOf(BackendAuthError);
-    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+    expect(onUnauthorized).toHaveBeenCalledWith("expired");
   });
 
   it("refuses to call protected endpoints without a token", async () => {

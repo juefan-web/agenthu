@@ -73,8 +73,16 @@ export default function App() {
   }
 
   async function backendLogout() {
-    await backendSession?.logout();
-    await queryClient.invalidateQueries();
+    try {
+      await backendSession?.logout();
+    } catch (error) {
+      setNotice(errorText(error));
+    }
+    try {
+      await queryClient.invalidateQueries();
+    } catch (error) {
+      setNotice(errorText(error));
+    }
   }
 
   useEffect(() => {

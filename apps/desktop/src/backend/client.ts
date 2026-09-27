@@ -34,8 +34,8 @@ export interface BackendClientOptions {
   fetcher?: typeof fetch;
   /** Returns the current bearer token, or null when the session is anonymous. */
   getToken?: () => string | null;
-  /** Called once when the Backend rejects the current token with 401. */
-  onUnauthorized?: () => void;
+  /** Called once when the Backend rejects the token used by a request with 401. */
+  onUnauthorized?: (token: string) => void;
 }
 
 export class BackendClient {
@@ -114,16 +114,17 @@ export class BackendClient {
 
   private async requestJson(path: string, init: RequestInit = {}, authenticated = true): Promise<unknown> {
     const headers = new Headers(init.headers);
+    let requestToken: string | null = null;
     if (authenticated) {
-      const token = this.options.getToken?.() ?? null;
-      if (!token) throw new BackendAuthError();
-      headers.set("Authorization", `Bearer ${token}`);
+      requestToken = this.options.getToken?.() ?? null;
+      if (!requestToken) throw new BackendAuthError();
+      headers.set("Authorization", `Bearer ${requestToken}`);
     }
     const response = await this.fetcher(`${this.options.baseUrl}${path}`, { ...init, headers, credentials: "omit" });
     if (!response.ok) {
       const message = await this.errorMessage(response);
       if (response.status === 401 && authenticated) {
-        this.options.onUnauthorized?.();
+        this.options.onUnauthorized?.(requestToken!);
         throw new BackendAuthError(message);
       }
       throw new Error(message);

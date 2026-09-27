@@ -8,7 +8,9 @@
 
 客户端耗时排查已确认 Tauri transport 原先每请求新建 HTTP Client，且每个响应都把会话快照重新写入 Stronghold；后者会阻塞请求热路径。现按会话复用重定向策略对应的 Client，登录成功时由显式 `campus_save_session` 保存快照，普通校园请求只在内存更新 Cookie，不再同步写 Stronghold。采集流程用校历学期 ID 取课程，省去重复学期请求，并让课表与课程/作业链并行；UI 分开显示采集、保存和同步阶段及完成耗时。登录后的身份探测仍保留。测试覆盖快照未变/变化与采集并行顺序。真实校园网络和账号下的登录、2FA、采集耗时尚未重新测量；OneTHU 仍会为每门课请求三类作业，上游延迟可能占主导。
 
-本轮风险修复：校园请求完成后会按快照内容变化持久化刷新 Cookie；LocalEventQueue 分别恢复 events/cursor，损坏内容写入隔离备份；Event 去重键对反斜杠和分隔符转义，避免字段碰撞。对应回归测试已加入；客户端 Vitest 仍受当前 Windows 环境 pnpm store 权限和 `spawn EPERM` 限制，Rust 与 TypeScript 编译验证通过。
+本轮风险修复：校园请求完成后会按快照内容变化持久化刷新 Cookie；LocalEventQueue 分别恢复 events/cursor，损坏内容写入隔离备份；Event 去重键对反斜杠和分隔符转义，避免字段碰撞。对应回归测试已加入；Rust 与 TypeScript 编译验证通过。
+
+本轮完成 Backend JWT 客户端会话：`createBackendSession` 独立管理 Backend Token，与校园会话隔离；请求通过 `BackendClient` 统一注入 Bearer Token。登录先用 `/v1/auth/me` 验证候选 Token，再写入 TokenStore；验证失败或持久化失败时恢复旧 Token 和 UI 状态。重启恢复会跳过过期 Token、处理 `/me` 401，并对 TokenStore 读写/清理失败给出可见错误且不产生未处理拒绝。401 清理与 `restore/login/logout` 操作串行化，旧请求迟到时不会清除新会话；普通请求的 401 清理失败也有回归测试。新增 LocalTokenStore 与会话回归测试；本机桌面端 8 个测试文件、37 个测试、lint、typecheck 和 build 已通过。
 
 ## 尚未满足的验收项
 
@@ -25,6 +27,6 @@
 ## 下一步
 
 1. 开发者 A 先修正 OAuth2/OpenAPI `tokenUrl`，补齐 Bearer JWT fixture、主链路 API 联调测试，并把 OpenAPI/Zod 漂移检查纳入 CI。详见 `TASKS/backend-auth-contract-integration.md`。
-2. 开发者 B 实现独立的 Backend JWT 会话、Stronghold Token 存储、Bearer 注入、401/过期恢复，并完成客户端主链路联调。详见 `TASKS/client-backend-session-integration.md`。
-3. 两位开发者共同在 Windows 构建包验收校园登录/2FA、重启恢复、Event 同步、计划确认、Focus 完成、断网重试和冲突处理。
+2. 开发者 B 将 Backend JWT 会话接入 Windows 构建包，验证 Stronghold 凭据存储、重启恢复和真实 API 联调；当前代码仍未替代构建包人工验收。
+3. 两位开发者共同在 Windows 构建包验收校园登录/2FA、Event 同步、计划确认、Focus 完成、断网重试和冲突处理。
 4. 主链路稳定后再推进 Android 凭据存储/通知、Agent 动态重规划、Memory/Grounding 和 OneTHU 分发许可审查。
