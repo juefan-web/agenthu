@@ -131,6 +131,43 @@ def register_exception_handlers(app: FastAPI) -> None:
             headers=getattr(exc, "headers", None),
         )
 
+    @app.exception_handler(Exception)
+    async def _unhandled_error_handler(request: Request, exc: Exception) -> JSONResponse:
+        # Unhandled exceptions surface through ServerErrorMiddleware, which
+        # sits *outside* CORSMiddleware: the client receives a bare 500 with
+        # no CORS headers, which the WebView reports as a CORS failure and
+        # masks the real server error (merge-1 report D5). Mirror the CORS
+        # response headers an allowed origin would have received and answer
+        # with the standard envelope. Exception details are never included.
+        return _envelope(
+            code="internal_error",
+            message="Internal server error",
+            status_code=500,
+            headers=_cors_response_headers(request),
+        )
+
+
+def _cors_response_headers(request: Request) -> dict[str, str]:
+    """CORS headers mirroring what CORSMiddleware would have returned.
+
+    Only meaningful for responses produced outside the middleware stack
+    (unhandled-exception 500s); matching CORSMiddleware semantics: no headers
+    for missing or non-allowlisted origins.
+    """
+
+    origin = request.headers.get("origin")
+    if not origin:
+        return {}
+    from backend.config import get_settings
+
+    settings = get_settings()
+    if origin not in settings.cors_origins:
+        return {}
+    headers = {"Access-Control-Allow-Origin": origin, "Vary": "Origin"}
+    if settings.cors_allow_credentials:
+        headers["Access-Control-Allow-Credentials"] = "true"
+    return headers
+
 
 def _serialize_errors(exc: RequestValidationError) -> list[dict[str, Any]]:
     serialized: list[dict[str, Any]] = []

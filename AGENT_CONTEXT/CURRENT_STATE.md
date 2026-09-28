@@ -8,6 +8,8 @@ Updated: 2026-09-28 · Milestone: **M0 (engineering baseline + frozen contracts)
 属实）。修复任务已立项：A 见 `TASKS/backend-merge1-review-fixes.md`（D5/D7），
 B 见 `TASKS/client-merge1-review-fixes.md`（D1/D2/D3/D4/D6）。登录链修复参照上游
 OneTHU dev3 实现，要求一次登录不重复认证。
+· **开发者 A 的 merge-1 修复（D5/D7）已完成**（见下方第四轮修复之后的新条目）；
+B 的 D1/D2/D3/D4/D6 仍待客户端侧实施。
 
 ## 开发者 A：Backend（`m0/backend-foundation` @ `61fcf82`）
 
@@ -36,6 +38,23 @@ OneTHU dev3 实现，要求一次登录不重复认证。
 - 验证快照：ruff/format/pyright 干净；全量 pytest（db/redis/s3mock）**182 passed**，
   1 skipped；漂移检查（`--require-zod`）通过；迁移 up→down→up + `alembic check` 通过；
   远端 CI run `36408669500` 绿。
+- **Merge-1 人工测试修复（2026-09-28，本分支）**：
+  - **D5**：`get_or_create_state` 改幂等插入（PostgreSQL `INSERT ... ON CONFLICT
+    DO NOTHING`，其他方言 savepoint + IntegrityError 回退），并发首请求不再 500；
+    注册 app 级 `Exception` handler——未处理异常返回约定 envelope 并按 Origin
+    匹配补齐 CORS 头（`ServerErrorMiddleware` 在 CORS 之外，500 曾被 WebView
+    显示为 CORS 错误）。回归：`test_current_state_concurrency.py`（5 连接 barrier
+    竞态，恰好一行 state）+ `test_cors.py` 两个 500 envelope/CORS 断言。
+  - **D7**：`latest_open_plan` 复用条件加「items 非空 或 无 pending tasks」——
+    当日空草稿不再吞掉新建任务（`is_client_valid_plan` 对空 items 恒真的盲区）。
+    回归：空草稿 → 建任务 → today 重排含新任务（`test_plans.py`）。
+  - 协作项（D4）后端侧确认：联合 drift check（真实 `packages/contracts` +
+    冻结快照）无漂移，`title` 保持"允许的额外字段"直到 B 落地
+    `PlanItemSchema.title` 后双方同步冻结基线。
+  - 文档：`HANDOFF/2026-09-28-merge1-manual-test-report.md` 补录（修复
+    CURRENT_STATE 的悬空引用）。
+  - 验证快照：ruff/pyright 干净；全量 pytest **187 passed**，1 skipped；漂移检查
+    （`--require-zod`，双 Zod 源）通过。
 
 ## 开发者 B：客户端（`feature/client-tauri-campus-adapter` @ `a2693e9`）
 

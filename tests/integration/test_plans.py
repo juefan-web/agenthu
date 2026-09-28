@@ -355,3 +355,29 @@ def test_current_state_never_serves_client_invalid_current_plan(
         assert item["task_id"] is not None
         assert item["start_at"] is not None
         assert item["end_at"] is not None
+
+
+def test_today_regenerates_when_tasks_added_after_empty_draft(client, auth_headers) -> None:
+    """An empty same-day draft must not hide newly created tasks (D7).
+
+    ``is_client_valid_plan`` treats empty items as valid, so without the
+    "items non-empty or no pending tasks" reuse condition, today would keep
+    returning the empty draft until it was manually cancelled.
+    """
+
+    # No tasks yet: today produces the empty baseline draft (D-019) and
+    # repeated reads stay idempotent.
+    empty = client.get("/v1/plans/today", headers=auth_headers).json()
+    assert empty["items"] == []
+    again = client.get("/v1/plans/today", headers=auth_headers).json()
+    assert again["id"] == empty["id"]
+
+    # Adding a task must be absorbed by a fresh plan.
+    task = _make_task(client, auth_headers, title="HW3", days=1)
+    regenerated = client.get("/v1/plans/today", headers=auth_headers).json()
+    assert regenerated["id"] != empty["id"]
+    assert [item["task_id"] for item in regenerated["items"]] == [task["id"]]
+
+    # And the regenerated plan is the one that gets reused from now on.
+    settled = client.get("/v1/plans/today", headers=auth_headers).json()
+    assert settled["id"] == regenerated["id"]

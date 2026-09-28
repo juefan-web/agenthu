@@ -11,6 +11,8 @@ import uuid
 from datetime import timedelta
 
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.db.base import utcnow
@@ -32,10 +34,30 @@ _RECENT_EVENT_SCAN = 20
 
 def get_or_create_state(session: Session, user_id: uuid.UUID) -> CurrentState:
     state = session.scalar(select(CurrentState).where(CurrentState.user_id == user_id))
-    if state is None:
-        state = CurrentState(user_id=user_id, version=0, current_time=utcnow())
-        session.add(state)
-        session.flush()
+    if state is not None:
+        return state
+
+    # Two concurrent first requests can both observe "no state"; without an
+    # idempotent insert the loser hits `uq_current_states_user` and the API
+    # returns a 500 (merge-1 report D5). On PostgreSQL the INSERT ... ON
+    # CONFLICT DO NOTHING makes the race a no-op for the losing request;
+    # other dialects fall back to a savepoint + IntegrityError retry.
+    if session.get_bind().dialect.name == "postgresql":
+        session.execute(
+            pg_insert(CurrentState)
+            .values(user_id=user_id, version=0, current_time=utcnow())
+            .on_conflict_do_nothing(constraint="uq_current_states_user")
+        )
+    else:
+        try:
+            with session.begin_nested():
+                session.add(CurrentState(user_id=user_id, version=0, current_time=utcnow()))
+                session.flush()
+        except IntegrityError:
+            pass
+    state = session.scalar(select(CurrentState).where(CurrentState.user_id == user_id))
+    if state is None:  # pragma: no cover - defensive: the row must exist here
+        raise RuntimeError("CurrentState row missing after idempotent insert")
     return state
 
 

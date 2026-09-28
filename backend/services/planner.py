@@ -13,7 +13,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from backend.config import get_settings
@@ -147,11 +147,26 @@ def latest_open_plan(
     ``planned_start`` / ``planned_end``) rather than by scanning a fixed number
     of rows in Python: a fixed scan window could skip a valid plan sitting
     behind several invalid proposals and generate a duplicate.
+
+    An empty draft is only reusable while the user has no pending tasks
+    (merge-1 report D7): ``is_client_valid_plan`` treats empty items as valid,
+    so reusing an empty draft once tasks exist would hide those tasks from
+    today until the draft is manually cancelled.
     """
 
+    has_any_item = select(PlanItem.id).where(PlanItem.plan_id == Plan.id).exists()
+    has_pending_tasks = (
+        select(Task.id)
+        .where(
+            Task.user_id == user_id,
+            Task.status.in_((TaskStatus.TODO, TaskStatus.IN_PROGRESS)),
+        )
+        .exists()
+    )
     conditions = [
         Plan.user_id == user_id,
         Plan.status.in_([PlanStatus.DRAFT, PlanStatus.PENDING_CONFIRMATION]),
+        or_(has_any_item, ~has_pending_tasks),
         ~client_invalid_item_exists(),
     ]
     if since is not None:

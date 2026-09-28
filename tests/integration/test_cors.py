@@ -99,3 +99,40 @@ def test_wildcard_origin_disables_credentials(monkeypatch) -> None:
         assert "access-control-allow-credentials" not in {key.lower() for key in response.headers}
     finally:
         clear_settings_cache()
+
+
+def test_unhandled_exception_returns_envelope_with_cors_headers(app) -> None:
+    """Unhandled 500s must carry the error envelope and CORS headers (D5).
+
+    The Exception handler runs in ServerErrorMiddleware, outside
+    CORSMiddleware: without explicit headers the WebView reports the failure
+    as a CORS error, hiding the real 500.
+    """
+
+    def _boom() -> None:
+        raise RuntimeError("unhandled test failure")
+
+    app.add_api_route("/v1/__test/boom", _boom, methods=["GET"], include_in_schema=False)
+
+    with TestClient(app, raise_server_exceptions=False) as test_client:
+        response = test_client.get("/v1/__test/boom", headers={"Origin": CLIENT_ORIGIN})
+
+    assert response.status_code == 500
+    body = response.json()
+    assert body["error"]["code"] == "internal_error"
+    assert body["error"]["message"] == "Internal server error"
+    assert response.headers["access-control-allow-origin"] == CLIENT_ORIGIN
+    assert response.headers["access-control-allow-credentials"] == "true"
+
+
+def test_unhandled_exception_omits_cors_headers_for_unknown_origin(app) -> None:
+    def _boom() -> None:
+        raise RuntimeError("unhandled test failure")
+
+    app.add_api_route("/v1/__test/boom", _boom, methods=["GET"], include_in_schema=False)
+
+    with TestClient(app, raise_server_exceptions=False) as test_client:
+        response = test_client.get("/v1/__test/boom", headers={"Origin": "https://evil.example"})
+
+    assert response.status_code == 500
+    assert "access-control-allow-origin" not in response.headers
