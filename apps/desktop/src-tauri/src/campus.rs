@@ -90,6 +90,45 @@ pub struct CampusResponse {
     headers: HashMap<String, String>,
     body: String,
     final_url: String,
+    /// Read-only cookie mirror for the TS adapter layer: name/value/host
+    /// triples for the touched campus hosts only. The native store stays
+    /// authoritative; raw Set-Cookie lines and other attributes never cross
+    /// the IPC boundary (privacy boundary change, see CURRENT_STATE.md).
+    cookies: Vec<MirroredCookie>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MirroredCookie {
+    host: String,
+    name: String,
+    value: String,
+    host_only: bool,
+}
+
+/// 投影受影响 URL 的 cookie（仅 *.tsinghua.edu.cn；匹配用 crate 自带的
+/// RFC 6265 语义，域属性缺省 = host-only，带 Domain 的取其去点形式并标记
+/// host_only=false 以保留子域匹配）。
+fn mirror_cookies(store: &CookieStore, urls: &[&url::Url]) -> Vec<MirroredCookie> {
+    store.iter_unexpired().filter_map(|cookie| {
+        let matched = urls.iter().find(|url| cookie.matches(url))?;
+        // cookie_store 约定：domain() 为 Some（去点形式）= 显式 Domain 属性
+        // （子域可匹配）；None = host-only，归属到命中 URL 的 host。
+        let (host, host_only) = match cookie.domain() {
+            Some(domain) if !domain.is_empty() => (domain.trim_start_matches('.').to_lowercase(), false),
+            _ => (matched.host_str().unwrap_or("").to_lowercase(), true),
+        };
+        let is_campus = host == "tsinghua.edu.cn" || host.ends_with(".tsinghua.edu.cn");
+        if !is_campus {
+            return None;
+        }
+        Some(MirroredCookie {
+            host,
+            name: cookie.name().to_string(),
+            value: cookie.value().to_string(),
+            host_only,
+        })
+    }).collect()
 }
 
 fn snapshot_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -162,11 +201,13 @@ pub async fn campus_request(app: tauri::AppHandle, state: tauri::State<'_, Campu
         client.clone()
     };
     let method = reqwest::Method::from_bytes(request.method.as_bytes()).map_err(|_| "Invalid method")?;
+    let request_url = url.clone();
     let mut builder = client.request(method, url).headers(request_headers(request.headers)?);
     if let Some(body) = request.body { builder = builder.body(body); }
     let mut response = builder.send().await.map_err(|_| "Campus network request failed")?;
     let status = response.status().as_u16();
     let final_url = response.url().to_string();
+    let final_url_obj = response.url().clone();
     let headers = response.headers().iter()
         .filter(|(name, _)| matches!(name.as_str(), "content-type" | "location"))
         .filter_map(|(name, value)| value.to_str().ok().map(|v| (name.to_string(), v.to_owned())))
@@ -180,7 +221,11 @@ pub async fn campus_request(app: tauri::AppHandle, state: tauri::State<'_, Campu
     // `persist` skips the encrypted write when the snapshot is unchanged.
     let mut session = state.0.lock().await;
     persist(&mut session, &snapshot_path(&app)?)?;
-    Ok(CampusResponse { status, headers, body: String::from_utf8_lossy(&body).into_owned(), final_url })
+    let cookies = mirror_cookies(
+        &*session.jar.lock().map_err(|_| STORAGE_ERROR)?,
+        &[&request_url, &final_url_obj],
+    );
+    Ok(CampusResponse { status, headers, body: String::from_utf8_lossy(&body).into_owned(), final_url, cookies })
 }
 
 #[tauri::command]
@@ -259,5 +304,31 @@ mod tests {
         session.jar.lock().unwrap().parse("JSESSIONID=changed; Secure; Path=/", &url).unwrap();
         let changed = snapshot_payload(&session).unwrap().unwrap();
         assert!(snapshot_changed(&session, &changed));
+    }
+
+    #[test]
+    fn mirrors_only_touched_campus_hosts_as_name_value_pairs() {
+        let webvpn = url::Url::parse("https://webvpn.tsinghua.edu.cn/").unwrap();
+        let learn = url::Url::parse("https://learn.tsinghua.edu.cn/").unwrap();
+        let mut store = CookieStore::default();
+        store.parse("XSRF-TOKEN=fixture-token; Path=/", &webvpn).unwrap();
+        store.parse("JSESSIONID=learn-session; Path=/", &learn).unwrap();
+
+        let mirrored = mirror_cookies(&store, &[&webvpn]);
+        assert_eq!(mirrored.len(), 1);
+        assert_eq!(mirrored[0].host, "webvpn.tsinghua.edu.cn");
+        assert_eq!(mirrored[0].name, "XSRF-TOKEN");
+        assert_eq!(mirrored[0].value, "fixture-token");
+        assert!(mirrored[0].host_only);
+
+        // domain cookie（Domain 属性）投影去点、host_only=false，URL 匹配交给 crate
+        store.parse("wide=fanout; Domain=.tsinghua.edu.cn; Path=/", &webvpn).unwrap();
+        let with_domain = mirror_cookies(&store, &[&webvpn]);
+        let wide = with_domain.iter().find(|c| c.name == "wide").expect("domain cookie mirrored");
+        assert_eq!(wide.host, "tsinghua.edu.cn");
+        assert!(!wide.host_only);
+
+        // 未触及的校园 host 不投影
+        assert!(!with_domain.iter().any(|c| c.name == "JSESSIONID"));
     }
 }

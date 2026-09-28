@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CampusSession } from "@onethu/core";
+import { AuthRequiredError, type CampusSession } from "@onethu/core";
 import { OneThuCampusAdapter } from "./onethuAdapter";
 import type { CampusAuthGateway, LoginInput, SessionStatus, Verify2FAInput } from "./types";
 import { mapAssignmentEvent, mapScheduleEvent } from "./events";
@@ -122,6 +122,15 @@ describe("OneThuCampusAdapter", () => {
     expect(scheduleCalls).toBe(1);
     finishHomework();
     await collection;
+  });
+
+  it("surfaces the underlying auth error message instead of a generic one", async () => {
+    const session = fakeSession();
+    session.info.getSchedule = async () => {
+      throw new AuthRequiredError("XSRF-TOKEN 缺失（wengine dance 后仍无）");
+    };
+    const adapter = new OneThuCampusAdapter({ session, auth });
+    await expect(adapter.collectSnapshot()).rejects.toThrow("XSRF-TOKEN 缺失（wengine dance 后仍无）");
   });
 
   it("uses stable schedule identities and changes assignment version when status changes", () => {

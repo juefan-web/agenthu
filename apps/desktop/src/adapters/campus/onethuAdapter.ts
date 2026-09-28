@@ -214,7 +214,8 @@ export class OneThuCampusAdapter implements CampusAdapter {
         ],
       };
     } catch (error) {
-      if (error instanceof AuthRequiredError) throw new CampusAuthError();
+      // 透出上游真实原因（如 XSRF 缺失、漫游失败），不再折叠成通用文案。
+      if (error instanceof AuthRequiredError) throw new CampusAuthError(error.message);
       throw error;
     }
   }
@@ -234,7 +235,7 @@ export class OneThuCampusAdapter implements CampusAdapter {
       } catch (retryError) {
         if (retryError instanceof AuthRequiredError || retryError instanceof CampusAuthError) {
           this.options.session.reset();
-          throw new CampusAuthError();
+          throw retryError instanceof CampusAuthError ? retryError : new CampusAuthError(retryError.message);
         }
         throw retryError;
       }

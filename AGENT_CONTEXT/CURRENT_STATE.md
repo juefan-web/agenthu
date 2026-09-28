@@ -107,6 +107,25 @@ D8 阻塞；转正门槛 = D8 修复 + 第三轮构建包人工验收。
     根级 `pnpm lint/typecheck/test`（4 workspace）、`cargo test`（tauri.conf.json 编译期
     校验）全绿；`ENVIRONMENT=local check_contract_drift --zod` 无漂移；guard 缺 IPC 源
     失败路径实测拦截。
+- **Merge-2 修复（2026-09-28 深夜，见 `TASKS/client-merge2-d8-info-xsrf.md`）**：
+  - **D8（P0）Info 域 XSRF 读取失败**：`campus_request` 响应新增只读 Cookie 镜像
+    （`cookies` 字段：受影响 host 的 host/name/value/hostOnly 四元组，仅
+    `*.tsinghua.edu.cn`，匹配交给 cookie_store 的 RFC 6265 语义）；`tauriFetch` 在
+    resolve 前并入 TS 侧镜像 jar（`cookieMirror.ts`：按 host 整体替换、`setRaw` 支撑
+    wengine dance 注入、`clear` 接 `session.reset`）；`runtime.ts` 换掉空壳 jar。XSRF
+    读取（webvpn 域）与 dance（请求→投影→注入→重读）时序成立，课表侧不再必然失败。
+    Rust 侧新增 `mirror_cookies` 纯函数单测；TS 侧新增 dance→read 回归测试。
+  - **隐私边界变化（待 A 联审，AGENTS.md §3）**：原保证「Set-Cookie 永不进 WebView」
+    收窄为「原始 Set-Cookie 头与其余属性（Expires/HttpOnly/SameSite 等）不进 WebView；
+    campus 域（仅 `*.tsinghua.edu.cn`）的 host/name/value/hostOnly 经 IPC 镜像给 TS
+    适配层」。custody 仍在 Rust 原生仓（唯一权威，TS 镜像只读 + dance 注入）。
+  - 附带：采集路径 `AuthRequiredError` 的底层 message 直接透出（不再折叠为通用
+    「校园会话已失效」，附回归测试）；`http.debug` 构建包 opt-in 接线（构建期
+    `VITE_CAMPUS_DEBUG=1` 或 DevTools `localStorage["agenthu.campus-debug"]="1"`，
+    默认关闭；日志行仅 cookie 名与截断 URL，不含值，`.env.example` 已记录）。
+  - 21ms 瞬态失败项按任务文件先观察，未改代码。
+  - 验证：desktop 9 文件/50 测试、build、根级 lint/typecheck/test、`cargo test`
+    7 测试全绿。
 - 验证：桌面端 lint/typecheck/39 测试/build（含 CSP guard）与 `cargo test`（6 测试）
   通过；CI（Client checks）绿。
 

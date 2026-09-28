@@ -1,10 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
+import { applyCampusCookieMirror, type MirroredCookie } from "./cookieMirror";
 
 interface NativeResponse {
   status: number;
   headers: Record<string, string>;
   body: string;
   finalUrl: string;
+  cookies: MirroredCookie[];
 }
 
 export function isTauriRuntime(): boolean {
@@ -42,6 +44,9 @@ export async function tauriFetch(input: RequestInfo | URL, init: RequestInit = {
       redirect: init.redirect ?? "follow",
     },
   });
+  // 镜像在 resolve 前并入：vendored 读取方（Info XSRF）在同一轮
+  // 请求→dance→重读的时序里就能看到本轮权威投影。
+  applyCampusCookieMirror(native.cookies ?? []);
   const responseHeaders = new Headers(native.headers);
   responseHeaders.set("x-onethu-final-url", native.finalUrl);
   const response = new Response([204, 205, 304].includes(native.status) ? null : native.body, { status: native.status, headers: responseHeaders });
