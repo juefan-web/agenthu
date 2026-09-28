@@ -58,6 +58,7 @@ export const CurrentStateSchema = z.object({
 
 export const PlanItemSchema = z.object({
   task_id: z.string(),
+  title: z.string(),
   start_at: IsoDateTime,
   end_at: IsoDateTime,
   reason: z.string(),

@@ -62,6 +62,14 @@ if (!problems.length) {
   if (unsafeScript.length) {
     problems.push(`script-src must not contain wildcards or unsafe-* tokens (${unsafeScript.join(" ")})`);
   }
+  // Positive requirement: Tauri v2 IPC origins must be allowlisted, or the
+  // packaged WebView falls back to the slow postMessage channel and logs CSP
+  // violations ('self' is the app page origin, not the IPC origin).
+  const requiredIpc = ["ipc:", "http://ipc.localhost"];
+  const missingIpc = requiredIpc.filter((token) => !connect.includes(token));
+  if (missingIpc.length) {
+    problems.push(`connect-src must include the Tauri IPC origins (${missingIpc.join(" ")}); without them packaged IPC degrades to postMessage`);
+  }
   const origin = backendOrigin(problems);
   if (origin && !connect.includes(origin)) {
     problems.push(`VITE_BACKEND_URL origin ${origin} is not allowlisted in app.security.csp connect-src; add it to apps/desktop/src-tauri/tauri.conf.json before building`);

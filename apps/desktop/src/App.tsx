@@ -35,7 +35,12 @@ function syncResultText(result: Awaited<ReturnType<EventSyncCoordinator["flush"]
 }
 
 function applySession(status: SessionStatus): void {
-  useSessionStore.getState().setTwoFactor(status.state === "need-2fa" ? status.methods : [], status.state === "need-2fa" && !!status.codeSent, status.state === "need-2fa" ? status.selectedMethod : undefined);
+  useSessionStore.getState().setTwoFactor(
+    status.state === "need-2fa" ? status.methods : [],
+    status.state === "need-2fa" && !!status.codeSent,
+    status.state === "need-2fa" ? status.selectedMethod : undefined,
+    status.state === "need-2fa" ? status.notice : undefined,
+  );
   useSessionStore.getState().setStatus(
     status.state,
     status.username,
@@ -229,7 +234,7 @@ export default function App() {
 }
 
 function CampusConnection({ onError }: { onError: (error: unknown) => void }) {
-  const { status, message, methods, codeSent, selectedMethod } = useSessionStore();
+  const { status, message, methods, codeSent, selectedMethod, notice } = useSessionStore();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [method, setMethod] = useState("totp");
@@ -268,6 +273,7 @@ function CampusConnection({ onError }: { onError: (error: unknown) => void }) {
   if (!isTauriRuntime()) return <p className="empty-state">校园登录仅在 Tauri 客户端中可用。</p>;
   return <>
     {message && <p className="error-text" role="alert">{message}</p>}
+    {status === "need-2fa" && notice && <p className="empty-state" role="status">{notice}</p>}
     {status === "need-2fa" ? <form className="inline-form" onSubmit={(event) => void verify(event)}>
       <label>验证方式<select value={codeSent ? selectedMethod : activeMethod} disabled={busy || codeSent} onChange={(event) => setMethod(event.target.value)}>{methods.map((item) => <option key={item} value={item}>{({ totp: "TOTP", mobile: "短信", wechat: "企业微信" } as Record<string, string>)[item] ?? item}</option>)}</select></label>
       {!codeSent && <button type="button" className="primary-button" disabled={busy || !activeMethod} onClick={() => void sendCode()}>{activeMethod === "totp" ? "使用验证器" : "发送验证码"}</button>}
@@ -295,7 +301,7 @@ function PlanView({ plan, loading, error, onChanged }: { plan: Awaited<ReturnTyp
   if (loading) return <p className="empty-state">正在读取计划…</p>;
   if (error) return <p className="error-text">计划读取失败：{errorText(error)}</p>;
   if (!plan || plan.items.length === 0) return <p className="empty-state">今天还没有计划。</p>;
-  return <><div className="plan-list">{plan.items.map((item) => <div className="plan-row" key={`${item.task_id}:${item.start_at}`}><time>{new Date(item.start_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time><div><strong>{item.task_id}</strong><span>{item.reason}</span></div></div>)}</div>{plan.confirmation_required && plan.status === "draft" && <button className="primary-button" disabled={confirm.isPending} onClick={() => confirm.mutate()}>确认计划</button>}{confirm.error && <p className="error-text">{errorText(confirm.error)}</p>}</>;
+  return <><div className="plan-list">{plan.items.map((item) => <div className="plan-row" key={`${item.task_id}:${item.start_at}`}><time>{new Date(item.start_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time><div><strong>{item.title}</strong><span>{item.reason}</span></div></div>)}</div>{plan.confirmation_required && plan.status === "draft" && <button className="primary-button" disabled={confirm.isPending} onClick={() => confirm.mutate()}>确认计划</button>}{confirm.error && <p className="error-text">{errorText(confirm.error)}</p>}</>;
 }
 
 function FocusView({ tasks }: { tasks: Task[] }) {

@@ -2,7 +2,7 @@ import type { EventEnvelope } from "@agenthu/contracts";
 
 export type SessionStatus =
   | { state: "idle"; username: null }
-  | { state: "need-2fa"; username: string; methods: string[]; codeSent?: boolean; selectedMethod?: string }
+  | { state: "need-2fa"; username: string; methods: string[]; codeSent?: boolean; selectedMethod?: string; notice?: string }
   | { state: "ready"; username: string }
   | { state: "error"; username: string | null; message: string };
 

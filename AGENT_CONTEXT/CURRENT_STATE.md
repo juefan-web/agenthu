@@ -8,8 +8,9 @@ Updated: 2026-09-28 · Milestone: **M0 (engineering baseline + frozen contracts)
 属实）。修复任务已立项：A 见 `TASKS/backend-merge1-review-fixes.md`（D5/D7），
 B 见 `TASKS/client-merge1-review-fixes.md`（D1/D2/D3/D4/D6）。登录链修复参照上游
 OneTHU dev3 实现，要求一次登录不重复认证。
-· **开发者 A 的 merge-1 修复（D5/D7）已完成**（见下方第四轮修复之后的新条目）；
-B 的 D1/D2/D3/D4/D6 仍待客户端侧实施。
+· **A 的 D5/D7 与 B 的 D1/D2/D3/D4/D6 修复均已完成并推送到本分支**（A 见下方
+第四轮修复之后的新条目，B 见客户端小节），双侧自动检查全绿；剩余前置门槛为
+Windows 构建包人工复验。
 
 ## 开发者 A：Backend（`m0/backend-foundation` @ `61fcf82`）
 
@@ -71,7 +72,35 @@ B 的 D1/D2/D3/D4/D6 仍待客户端侧实施。
   移入 `devCsp`）；`scripts/check-csp.mjs` 挂入 build 拒绝回归；Backend 登录发起前清
   密码 state；Rust `queue_list` 逐行容错（坏行跳过+日志+不删数据，附单测）；
   `createCampusRuntime` 只暴露 `adapter`。
+- **安全加固（2026-09-28 审阅分配，见 `TASKS/client-security-hardening.md`）**：
+  生产 CSP 收紧为 `self` + 本地 Backend 源（移除 `https:` 通配与 `unsafe-eval`，开发源
+  移入 `devCsp`）；`scripts/check-csp.mjs` 挂入 build 拒绝回归；Backend 登录发起前清
+  密码 state；Rust `queue_list` 逐行容错（坏行跳过+日志+不删数据，附单测）；
+  `createCampusRuntime` 只暴露 `adapter`。
   2FA 等待期密码驻留不修：vendored info-lib 的 id roam 需重放明文密码，属上游约束。
+- **Merge-1 修复（2026-09-28，见 `TASKS/client-merge1-review-fixes.md`，参照上游 OneTHU
+  dev3 `infoLib.ts`/`clients.ts`）**：
+  - **D1**：登录链成功后显式 `roam(helper,"id","bb5df852…/0")` 建立 learn 会话（失败容忍，
+    采集时 resume/凭据链兜底）；`runtime.ts` 接线 `learn.credentialProvider` → gateway
+    `silentReloginCredentials()`（仅登录链内存凭据期间供应，指纹/受信凭据取自 helper，
+    避免与 session 展示指纹分叉）。
+  - **D2**：设备指纹与 finger3 从 Stronghold 元数据回填（restore 探活前与每次 login 前），
+    指纹跨登录稳定 → 受信设备 roam 重放免第二轮 2FA；未受信设备第二轮触发时状态携带
+    `notice`（「安全策略要求对本机再次验证」）由 UI 显式展示，不再静默回选方式页。
+  - **D3**：methodGate/codeGate 每轮由 hook 重建（多轮 2FA 原生支持）；验证码错误等使链
+    settle 后，`send2fa`/`verify2fa` 用内存凭据自动重启链并应答方式（上游自愈同义，链纪元
+    守卫防旧链收尾清掉新链状态）；上游 `LoginError` 中文文案直接透出（英文诊断折叠）；
+    180s 超时改为每轮空闲独立计时，超时/取消文案分离。
+  - **D4**：`PlanItemSchema` 增加 `title: z.string()`（与 A 的 D-021 冻结快照对齐，联合
+    drift check 通过）；今日计划显示 `title`，`task_id` 仅作 key。
+  - **D6**：`csp`/`devCsp` 的 `connect-src` 增加 `ipc: http://ipc.localhost`（Tauri v2 IPC）；
+    guard 增加正向校验，缺失即构建失败（失败路径已实测）。
+  - 凭据保留策略调整：校园账密在登录链存续期间保留于内存（链自愈与 learn 静默重登所
+    需，上游 inflight 同语义），logout/下次登录/超时即清；仍不落盘。
+  - 验证：桌面端 lint/typecheck/44 测试/build（含 CSP guard）、contracts lint/3 测试、
+    根级 `pnpm lint/typecheck/test`（4 workspace）、`cargo test`（tauri.conf.json 编译期
+    校验）全绿；`ENVIRONMENT=local check_contract_drift --zod` 无漂移；guard 缺 IPC 源
+    失败路径实测拦截。
 - 验证：桌面端 lint/typecheck/39 测试/build（含 CSP guard）与 `cargo test`（6 测试）
   通过；CI（Client checks）绿。
 
