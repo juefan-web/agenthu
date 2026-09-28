@@ -1,8 +1,13 @@
 # CURRENT_STATE
 
 Updated: 2026-09-28 · Milestone: **M0 (engineering baseline + frozen contracts)**
-· 集成分支 `integration/study-time-m0` 已合并 Backend（`61fcf82`，含第四轮审阅修复）
-与客户端（`a2693e9`，含安全加固），`.gitignore` 与本文件的 add/add 冲突已解决。
+· 集成分支 `integration/study-time-m0` 已合并 Backend（`61fcf82`）与客户端
+（`a2693e9`），冲突已解决，双侧 CI 与联合 drift check 全绿（draft PR #1）。
+· **Merge-1 Windows 构建包人工测试结论：不建议转正合并**（见
+`HANDOFF/2026-09-28-merge1-manual-test-report.md`，D1-D7 七项缺陷经代码复核全部
+属实）。修复任务已立项：A 见 `TASKS/backend-merge1-review-fixes.md`（D5/D7），
+B 见 `TASKS/client-merge1-review-fixes.md`（D1/D2/D3/D4/D6）。登录链修复参照上游
+OneTHU dev3 实现，要求一次登录不重复认证。
 
 ## 开发者 A：Backend（`m0/backend-foundation` @ `61fcf82`）
 
