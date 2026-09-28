@@ -59,3 +59,59 @@
 
 - Backend 侧无对应改动；不重构 vendor 的 CookieJar 接口语义（如需改动先提
   契约讨论）。
+
+---
+
+## 开发者 A 联合 review：隐私边界变化（2026-09-28，AGENTS.md §3）
+
+Review 依据：`campus.rs`（Rust `cookie_provider` 权威 + `Snapshot{version, metadata,
+cookies}` 持久化结构）、`runtime.ts:15-16`（空壳 jar）、`tauriTransport.ts`、
+vendored `http.ts`（`CookieJar` 接口、`#cookieHeaderFor`、`#emitDebug`、
+`nativeSeedHook`）、vendored `info/client.ts`（`#csrfToken` 读 jar、dance 的
+`setRaw`）、Backend `core/sensitive.py`（键名正则纵深）。
+
+**结论：A 案（受影响 host 的 name/value 对经 IPC 镜像给 TS 只读 jar）接受，
+custody 语义维持"Rust 权威、TS 只读镜像"，附四条要求（1 条 blocking、3 条
+验证项）。**
+
+### 1. 镜像范围（要求 #1，blocking）
+
+- 镜像**必须**限定 `*.tsinghua.edu.cn` 后缀域，且只含 `name`/`value` 对——
+  不含原始 `Set-Cookie` 头、`Expires`/`Domain`/`Path`/`Secure`/`HttpOnly` 等属性、
+  不含 raw 形态。任务文件已如此表述，review 确认这是功能必要的最小集：vendored
+  的两个 TS 侧 jar 消费方（`InfoClient.#csrfToken` 找 `XSRF-TOKEN`、
+  `http.ts #cookieHeaderFor` 拼请求头）都需要按 host 取多个 name/value，镜像再
+  收窄（例如只镜像 XSRF-TOKEN）会让 `#cookieHeaderFor` 对其余潜在调用方继续是
+  坏接口。当前粒度正确，**不得**扩大到非 campus 域或含属性。
+- TS 侧缓存 jar 的 `serialize()` 必须保持返回空/不可用形态（现
+  `runtime.ts:16` 为 `"[]"`），镜像不得使 TS 侧获得可持久化的完整 jar 表示。
+
+### 2. 日志面（要求 #2）
+
+- 镜像的 cookie **value** 不得出现在任何 console/日志/debug 通道。已核实现状：
+  vendored `#emitDebug` 仅输出 `lastCookieNames`（name 列表，不含 value），debug
+  通道为宿主 opt-in 注入（默认无）。要求 B 补一条回归测试：开启 debug 通道跑
+  dance 流程，断言输出中不含任何已镜像 cookie 的 value 字符串。
+- 同轮附带项 2（构建包接线 `http.debug`）与本条正交：debug 默认关闭的原则
+  维持，开启时也不得输出镜像 value（同测试覆盖）。
+
+### 3. Event 面（要求 #3）
+
+- campus cookie（name 或 value）不得进入 Event 的 `data`/`context`/`provenance`。
+  服务端纵深已存在并经测试：`backend/core/sensitive.py` 的键名正则
+  （`cookie|set-cookie|token|session…`）在 EventCreate 与 batch 摄取两层拒绝
+  该类 payload，镜像不改变此边界。客户端侧仍要求 `assertSafeEvent` 对
+  campus 事件生效（B 已有实现，验证项而非新要求）。
+
+### 4. Stronghold 快照语义（要求 #4）
+
+- 现快照 payload 完全由 Rust 构造（`campus.rs snapshot_payload` 序列化 Rust
+  `CookieStore`），TS 镜像 jar 不在持久化路径上——**语义不变**。镜像落地后
+  `campus_snapshot_round_trip` 既有测试仍须通过，且 TS 侧不得新增对镜像 jar 的
+  serialize/hydrate/persist 调用（第 1 条的 `serialize()==\"[]\"` 断言覆盖）。
+
+### 放大面检查结果
+
+未发现需要 B 收窄的放大面：镜像是单向（Rust→TS）、只读、按响应增量更新、
+随 `clear()`/logout 同步清空（要求 logout 同时清 TS 镜像——若 B 实现中
+`clear()` 仍为空壳，须改为清空缓存，属 A 案实现细节，不构成边界变化）。

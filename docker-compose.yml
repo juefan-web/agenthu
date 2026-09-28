@@ -72,7 +72,10 @@ services:
       timeout: 5s
       retries: 30
 
-  api:
+  # Shared api service shape (build/env/volumes/dependencies). Split into
+  # `api` (production-like, no code mounting, healthchecked) and `api-dev`
+  # (explicit `dev` profile, bind mounts + --reload for local iteration).
+  x-api-common: &api-common
     build: .
     env_file:
       - path: .env
@@ -84,6 +87,33 @@ services:
       DATABASE_URL: postgresql+psycopg://agenthu:agenthu@db:5432/agenthu
       REDIS_URL: redis://redis:6379/0
       S3_ENDPOINT_URL: http://minio:9000
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  api:
+    <<: *api-common
+    command: >
+      /bin/sh -c "alembic upgrade head &&
+      uvicorn backend.main:app --host 0.0.0.0 --port 8000"
+    ports:
+      - "8000:8000"
+    healthcheck:
+      # Readiness endpoint: db reachability + object storage, not just the
+      # process being up.
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/health/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  api-dev:
+    <<: *api-common
+    # Explicit dev profile only: `docker compose --profile dev up api-dev`.
+    # Autoreload is a development convenience, not a deployment default.
+    profiles: ["dev"]
     command: >
       /bin/sh -c "alembic upgrade head &&
       uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload"
@@ -94,11 +124,6 @@ services:
       - ./migrations:/app/migrations
       - ./tests:/app/tests
       - ./alembic.ini:/app/alembic.ini
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
 
   worker:
     build: .
@@ -118,6 +143,17 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      # arq's worker writes `arq:queue:health-check` via PSETEX every
+      # health_check_interval (30s here) with a TTL of interval+1 — so the
+      # key expiring means the worker loop is dead, not just idle.
+      test:
+        - CMD-SHELL
+        - python -c 'import os,redis; r=redis.Redis.from_url(os.environ["REDIS_URL"]); exit(0 if r.exists("arq:queue:health-check") else 1)'
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
 
 volumes:
   pgdata:

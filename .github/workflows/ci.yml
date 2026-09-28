@@ -99,3 +99,41 @@ jobs:
 
       - name: Run tests
         run: pytest
+
+  pip-audit:
+    name: Dependency vulnerability audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Audits the fully resolved environment (pip install -e ".[dev]"), not
+      # just declared ranges. Known-but-accepted findings can be waived with
+      # `--ignore-vuln <ID>` plus a justification comment here; the bar for a
+      # waiver is: dev-only dependency, not shipped in the runtime image, with
+      # an upstream fix pending. (No waivers needed today.)
+      - name: Install dependencies and audit
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/pip install -e ".[dev]"
+          .venv/bin/pip install pip-audit
+          .venv/bin/pip-audit
+
+  docker-build:
+    name: Docker image build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # Build-only validation so Dockerfile drift (base image, layer order,
+      # copied files) fails CI instead of surfacing on the next deploy. The
+      # image is intentionally not pushed.
+      - name: Build Backend image
+        run: docker build --tag agenthu-backend:ci .

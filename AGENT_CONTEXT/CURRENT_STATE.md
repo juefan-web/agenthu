@@ -62,6 +62,24 @@ D8 阻塞；转正门槛 = D8 修复 + 第三轮构建包人工验收。
     CURRENT_STATE 的悬空引用）。
   - 验证快照：ruff/pyright 干净；全量 pytest **187 passed**，1 skipped；漂移检查
     （`--require-zod`，双 Zod 源）通过。
+- **Merge-2 期间 Backend 加固（2026-09-28，非合并门槛，见
+  `TASKS/backend-merge2-hardening.md`）**：
+  - `docker-compose.yml`：`api` 补 readiness 探针（`/health/ready`，含 db+存储
+    检查）、`worker` 补 arq 心跳键探针（`arq:queue:health-check` 为 PSETEX TTL
+    键，过期即 worker 死亡）；`--reload` 与代码 bind mount 移入显式 `dev`
+    profile 的 `api-dev`（`docker compose --profile dev up api-dev`），`api`
+    变为 production-like。两条探针命令均已在本地真实 uvicorn/arq 服务上验证
+    通过（镜像构建因本机无法访问 Docker Hub 留给 CI docker-build job 首跑）。
+  - CI 新增 `pip-audit` job（全环境漏洞扫描；当前 0 漏洞 0 豁免——唯一发现
+    pytest 8.4.2 PYSEC-2026-1845 已通过升级消除：pytest 9.0.3 + pytest-asyncio
+    1.4.0，187 测试全绿、警告 12→2）与 `docker-build` job（只构建不推送，防
+    Dockerfile 漂移）。
+  - **D8 隐私边界联合 review 已给出**（全文见 `TASKS/client-merge2-d8-info-xsrf.md`
+    末节）：接受 A 案（campus 域 name/value 对经 IPC 镜像给 TS 只读 jar），
+    1 条 blocking 要求（镜像限定 `*.tsinghua.edu.cn` 且不含 Set-Cookie 原始头/
+    属性，TS `serialize()` 保持空）+ 3 条验证项（debug 通道不含 value 的回归
+    测试、Event 面服务端纵深已确认、Stronghold 快照路径不含 TS 镜像）；未发现
+    需要收窄的放大面。
 
 ## 开发者 B：客户端（`feature/client-tauri-campus-adapter` @ `a2693e9`）
 
