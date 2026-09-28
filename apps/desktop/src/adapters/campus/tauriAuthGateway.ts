@@ -241,18 +241,16 @@ export class TauriCampusAuthGateway implements CampusAuthGateway {
     return "校园认证失败，请检查账号、密码、验证码或网络后重试";
   }
 
-  /** 链死自愈（上游 libSend2FA/libVerify2FA 同义）：验证码错误等使整链
-   *  settle 后，用内存凭据重启登录链并自动应答方式选择，用户原地重试。
-   *  返回重启后的 completion；null 表示无凭据可复活。受信设备重启后可能
-   *  直接就绪（不再要求 2FA），调用方以 methodGate 是否存在区分。 */
-  private async restartChain(): Promise<{ completion: Promise<SessionStatus> } | null> {
-    if (!this.credentials || !this.methods.length) return null;
+  /** 链死自愈核心（上游 libSend2FA/libVerify2FA 同义）：用内存凭据重启整链
+   *  并等待「方式选择出现」或「链直接 settle」。指纹与受信凭据保持现值：
+   *  受信设备重启后免 2FA 直接就绪。 */
+  private async reviveChain(): Promise<{ completion: Promise<SessionStatus> } | null> {
+    if (!this.credentials) return null;
     this.round = 0;
     this.timedOut = false;
     this.trust = false;
     this.helper.userId = this.credentials.username;
     this.helper.password = this.credentials.password;
-    // 指纹与受信凭据保持现值：受信设备重启后免 2FA 直接完成。
     clearOutstandingLogin();
     const completion = this.startChain();
     await Promise.race([
@@ -260,6 +258,29 @@ export class TauriCampusAuthGateway implements CampusAuthGateway {
       completion.then(() => undefined),
     ]);
     return { completion };
+  }
+
+  /** 2FA 链内的原地重试入口：要求上一轮 methods 已知（send2fa/verify2fa 的
+   *  守卫语义依赖它）。 */
+  private async restartChain(): Promise<{ completion: Promise<SessionStatus> } | null> {
+    if (!this.credentials || !this.methods.length) return null;
+    return this.reviveChain();
+  }
+
+  /** 错误态是否可原地重试（凭据仍在内存、未被 logout/超时清除）。 */
+  canRetryTwoFactor(): boolean {
+    return !!this.credentials;
+  }
+
+  /** 错误态「重试验证」再入口（受控暴露链自愈，链纪元语义不变）：用同一
+   *  设备身份与内存凭据重启整链。受信设备可能直接就绪；需要验证则回到
+   *  2FA 表单；凭据已清返回 null（UI 维持完整登录表单）。 */
+  async retryTwoFactor(): Promise<SessionStatus | null> {
+    if (!this.canRetryTwoFactor()) return null;
+    const revived = await this.reviveChain();
+    if (!revived) return null;
+    if (!this.methodGate) return revived.completion;
+    return this.twoFactorStatus(false);
   }
 
   async send2fa(method: string): Promise<SessionStatus> {

@@ -68,9 +68,25 @@ pub struct CampusState(Mutex<CampusSession>);
 
 pub fn allowed_campus_url(url: &url::Url) -> bool {
     let host = url.host_str().unwrap_or("");
-    url.scheme() == "https" && url.username().is_empty() && url.password().is_none()
-        && url.port_or_known_default() == Some(443)
-        && (host == "tsinghua.edu.cn" || host.ends_with(".tsinghua.edu.cn"))
+    if url.username().is_empty() && url.password().is_none() {
+        // 教务网关只监听 80：vendor 实测 webvpn 包装 zhjw 撞引导壳（教务 host
+        // 的 wengine 票从未建立，http.ts PUBLIC_DIRECT_HOSTS 注释），上游
+        // 2026-09-19 起教务访问统一直连——单 host 精确窄口，不做子域通配、
+        // 不放开其他 http host；重定向策略复用本函数自然继承。
+        if url.scheme() == "http"
+            && url.port_or_known_default() == Some(80)
+            && host == "zhjw.cic.tsinghua.edu.cn"
+        {
+            return true;
+        }
+        if url.scheme() == "https"
+            && url.port_or_known_default() == Some(443)
+            && (host == "tsinghua.edu.cn" || host.ends_with(".tsinghua.edu.cn"))
+        {
+            return true;
+        }
+    }
+    false
 }
 
 #[derive(Deserialize)]
@@ -268,8 +284,21 @@ mod tests {
     #[test]
     fn restricts_urls_and_secret_header_injection() {
         assert!(allowed_campus_url(&url::Url::parse("https://learn.tsinghua.edu.cn/").unwrap()));
-        for url in ["http://learn.tsinghua.edu.cn/", "https://tsinghua.edu.cn.evil.test/", "https://evil-tsinghua.edu.cn/", "https://user:pass@id.tsinghua.edu.cn/", "https://id.tsinghua.edu.cn:8443/"] {
-            assert!(!allowed_campus_url(&url::Url::parse(url).unwrap()));
+        // 教务网关单 host 窄口：http:80 仅放行精确 host
+        assert!(allowed_campus_url(&url::Url::parse("http://zhjw.cic.tsinghua.edu.cn/jxmh_out.do?m=bks_jxrl").unwrap()));
+        for url in [
+            "http://learn.tsinghua.edu.cn/",
+            "https://tsinghua.edu.cn.evil.test/",
+            "https://evil-tsinghua.edu.cn/",
+            "https://user:pass@id.tsinghua.edu.cn/",
+            "https://id.tsinghua.edu.cn:8443/",
+            // 其他 http host、zhjw 的其他端口、http 的子域伪造一律拒绝
+            "http://id.tsinghua.edu.cn/",
+            "http://zhjw.cic.tsinghua.edu.cn:8080/",
+            "http://x.zhjw.cic.tsinghua.edu.cn/",
+            "http://zhjw.cic.tsinghua.edu.cn.evil.test/",
+        ] {
+            assert!(!allowed_campus_url(&url::Url::parse(url).unwrap()), "{url} should be rejected");
         }
         let headers = request_headers(HashMap::from([("Cookie".into(), "secret".into()), ("Authorization".into(), "secret".into())])).unwrap();
         assert!(headers.is_empty());

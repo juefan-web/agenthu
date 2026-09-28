@@ -82,6 +82,10 @@ export interface CampusAuthGateway {
   login(input: LoginInput): Promise<SessionStatus>;
   send2fa(method: string): Promise<SessionStatus>;
   verify2fa(input: Verify2FAInput): Promise<SessionStatus>;
+  /** 错误态原地重试是否可用（凭据仍在内存）。 */
+  canRetryTwoFactor(): boolean;
+  /** 错误态「重试验证」：重启整链回 2FA 表单或直接就绪；凭据已清返回 null。 */
+  retryTwoFactor(): Promise<SessionStatus | null>;
   logout(): Promise<void>;
 }
 
@@ -90,6 +94,8 @@ export interface CampusAdapter {
   login(input: LoginInput): Promise<SessionStatus>;
   send2fa(method: string): Promise<SessionStatus>;
   verify2fa(input: Verify2FAInput): Promise<SessionStatus>;
+  canRetryTwoFactor(): boolean;
+  retryTwoFactor(): Promise<SessionStatus | null>;
   logout(): Promise<void>;
   getCourses(): Promise<CampusCourse[]>;
   getAssignments(): Promise<CampusAssignment[]>;

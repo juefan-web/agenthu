@@ -1,0 +1,19 @@
+# CI compose-smoke override (used by .github/workflows/ci.yml):
+# - point api/worker object storage at the s3mock profile service, because the
+#   default `minio` image is unavailable upstream (Docker Hub 404, see
+#   CURRENT_STATE blockers); compose merges `environment` maps per key.
+# - pin the stack to the test environment with a dummy strong secret so the
+#   fail-closed config guard stays honest (same values as the backend job).
+# Usage: docker compose -f docker-compose.yml -f docker-compose.ci-smoke.yml \
+#        --profile s3mock up -d --wait db redis s3mock api worker
+services:
+  api:
+    environment:
+      ENVIRONMENT: test
+      SECRET_KEY: ci-compose-smoke-secret-key-not-for-production
+      S3_ENDPOINT_URL: http://s3mock:9090
+  worker:
+    environment:
+      ENVIRONMENT: test
+      SECRET_KEY: ci-compose-smoke-secret-key-not-for-production
+      S3_ENDPOINT_URL: http://s3mock:9090

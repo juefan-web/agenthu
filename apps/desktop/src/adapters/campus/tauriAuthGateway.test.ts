@@ -130,6 +130,49 @@ describe("TauriCampusAuthGateway", () => {
     expect(attempts).toBe(2);
   });
 
+  it("offers an in-place retry from the error state while credentials are held", async () => {
+    let attempts = 0;
+    const gateway = new TauriCampusAuthGateway(dependencies(async (helper) => {
+      await helper.twoFactorMethodHook?.(false, "", true);
+      const code = await helper.twoFactorAuthHook?.();
+      attempts += 1;
+      if (attempts === 1) throw new Error("验证码不正确");
+    }));
+    await expect(gateway.login({ username: "12345678", password: "secret" }))
+      .resolves.toMatchObject({ state: "need-2fa" });
+    await expect(gateway.send2fa("totp")).resolves.toMatchObject({ state: "need-2fa", codeSent: true });
+    await expect(gateway.verify2fa({ method: "totp", code: "111111", trustDevice: false }))
+      .resolves.toMatchObject({ state: "error", message: "验证码不正确" });
+    // 错误态原地重试：免重输密码，回到 2FA 表单
+    expect(gateway.canRetryTwoFactor()).toBe(true);
+    await expect(gateway.retryTwoFactor()).resolves.toMatchObject({ state: "need-2fa", codeSent: false });
+    await expect(gateway.send2fa("totp")).resolves.toMatchObject({ state: "need-2fa", codeSent: true });
+    await expect(gateway.verify2fa({ method: "totp", code: "654321", trustDevice: false }))
+      .resolves.toEqual({ state: "ready", username: "12345678" });
+    // logout 后凭据清空：入口关闭
+    await gateway.logout();
+    expect(gateway.canRetryTwoFactor()).toBe(false);
+    await expect(gateway.retryTwoFactor()).resolves.toBe(null);
+  });
+
+  it("retry lands ready directly when the restarted chain needs no 2FA", async () => {
+    let askedTwoFactor = true;
+    const gateway = new TauriCampusAuthGateway(dependencies(async (helper) => {
+      if (askedTwoFactor) {
+        askedTwoFactor = false;
+        await helper.twoFactorMethodHook?.(false, "", true);
+        await helper.twoFactorAuthHook?.();
+        throw new Error("验证码不正确");
+      }
+      // 受信设备重启链不再要求 2FA
+    }));
+    await gateway.login({ username: "12345678", password: "secret" });
+    await gateway.send2fa("totp");
+    await expect(gateway.verify2fa({ method: "totp", code: "000000", trustDevice: false }))
+      .resolves.toMatchObject({ state: "error" });
+    await expect(gateway.retryTwoFactor()).resolves.toEqual({ state: "ready", username: "12345678" });
+  });
+
   it("establishes the learn session right after the login chain and tolerates its failure", async () => {
     let roams = 0;
     const ok = new TauriCampusAuthGateway({

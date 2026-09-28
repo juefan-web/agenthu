@@ -6,7 +6,7 @@ import {
   webvpnWrap,
 } from "@onethu/core";
 import { OneThuCampusAdapter } from "./onethuAdapter";
-import { campusCookieJar } from "./cookieMirror";
+import { campusCookieJar, redactCampusDebugLine } from "./cookieMirror";
 import { createTauriAuthGateway } from "./tauriAuthGateway";
 import { tauriFetch } from "./tauriTransport";
 
@@ -26,7 +26,8 @@ export function createCampusRuntime() {
     jar: campusCookieJar(),
   });
   http.webVPNEncoder = webvpnWrap;
-  if (campusDebugEnabled()) http.debug = (line) => console.debug(`[campus] ${line}`);
+  // 脱敏后落 DevTools：只留 cookie 名与 URL，令牌形值一律遮蔽
+  if (campusDebugEnabled()) http.debug = (line) => console.debug(`[campus] ${redactCampusDebugLine(line)}`);
   const learn = new LearnClient(http);
   const info = new InfoClient(http);
   const session = new CampusSession({

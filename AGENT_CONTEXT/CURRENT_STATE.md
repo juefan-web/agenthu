@@ -156,6 +156,37 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   - 21ms 瞬态失败项按任务文件先观察，未改代码。
   - 验证：desktop 9 文件/50 测试、build、根级 lint/typecheck/test、`cargo test`
     7 测试全绿。
+- **Merge-3 修复（2026-09-29，见 `TASKS/client-merge3-d9-and-residuals.md`，A 临时
+  不在本轮全部归 B）**：
+  - **D9（P0）教务课表直连被拒**：`allowed_campus_url` 为 `zhjw.cic.tsinghua.edu.cn`
+    单 host 开 `http:80` 精确窄口（方案 a；b 案 webvpn /http/ 被 vendor 加白注释
+    证伪——教务 host 的 wengine 票从未建立，上游 2026-09-19 起统一直连）。不做子域
+    通配、不放开其他 http；重定向策略复用同函数自然继承。Rust 单测覆盖：接受
+    zhjw http:80，拒绝其他 http host、zhjw 其他端口、`x.zhjw.…` 子域伪造与
+    `zhjw.cic.tsinghua.edu.cn.evil.test` 后缀伪造。
+  - **隐私/安全边界变化（A 回归后补联合 review 与 DECISIONS 编号）**：该 host 的
+    教务会话 cookie 以明文 http:80 传输，范围限单 host，与上游实测路径一致。
+  - **D3 残留（错误态原地重试）**：gateway 受控暴露 `canRetryTwoFactor`/
+    `retryTwoFactor`（内部从 `restartChain` 提取 `reviveChain`，链纪元语义不变）；
+    凭据仍在内存时 UI 错误态显示「重试验证（免重输密码）」——重启整链回 2FA
+    表单或受信直接就绪；凭据已清（logout/超时后）维持完整登录表单。回归测试
+    覆盖两分支（回表单 / 直接就绪）与入口关闭。
+  - **错误码透出时延结论（观察项，未改代码）**：~30s 上限与 Rust transport 的
+    单请求超时一致（`CampusClients` reqwest `timeout(30s)`）——上游 VERITY_CODE
+    挂起时错误在超时点才落地；请求 settle 后客户端传播是微任务级
+    （hook → signal.resolve → Promise.race，无额外轮询/退避）。收紧上限会误伤
+    慢校园页面，维持 30s；若 round-4 实测需要更快反馈，候选方案是验证提交后的
+    中间「正在完成登录」状态（需适配器自动应用终态，另行立项）。
+  - **继承 A 的移交项**：①CI 新增 `compose-smoke` job（`docker compose -f …
+    docker-compose.ci-smoke.yml --profile s3mock up -d --wait db redis s3mock api
+    worker` + `/health/ready` 冒烟 + teardown；override 文件把 api/worker 的对象
+    存储指向 s3mock 并钉 test 环境——compose healthy 人工移交终结）；②debug 通道
+    脱敏 `redactCampusDebugLine`（`name=token` 形态 ≥20 字符长值遮蔽、cookie 名单
+    与 URL 保留、超长行截断），runtime sink 接线，附「不含 cookie value」回归断言
+    测试（A 的非阻塞建议）。
+  - 验证：desktop 9 文件/53 测试、build、`cargo test` 7 测试、ci.yml 与 compose
+    override YAML 校验通过；compose 真实拉起由 CI `compose-smoke` job 验证（本机
+    无 Docker）。
 - 验证：桌面端 lint/typecheck/39 测试/build（含 CSP guard）与 `cargo test`（6 测试）
   通过；CI（Client checks）绿。
 

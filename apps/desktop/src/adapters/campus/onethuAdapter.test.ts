@@ -65,6 +65,8 @@ const auth: CampusAuthGateway = {
   login: async (_input: LoginInput) => ({ state: "ready", username: "u" }),
   send2fa: async () => ({ state: "need-2fa", username: "u", methods: ["totp"] }),
   verify2fa: async (_input: Verify2FAInput) => ({ state: "ready", username: "u" }),
+  canRetryTwoFactor: () => false,
+  retryTwoFactor: async () => null,
   logout: async () => undefined,
 };
 

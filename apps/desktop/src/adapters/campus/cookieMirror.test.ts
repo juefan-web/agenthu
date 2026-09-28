@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyCampusCookieMirror, campusCookieJar } from "./cookieMirror";
+import { applyCampusCookieMirror, campusCookieJar, redactCampusDebugLine } from "./cookieMirror";
 
 /** vendored INFO_PREFIX 同款包装 URL：host 落在 webvpn.tsinghua.edu.cn。 */
 const INFO_URL = "https://webvpn.tsinghua.edu.cn/https/77726476706e69737468656265737421f9f9479369247b59700f81b9991b2631506205de/b/info/gxfw_fg/common/grjbxx";
@@ -45,5 +45,24 @@ describe("campus cookie mirror jar", () => {
     expect(campusCookieJar().getCookies(new URL("https://evil.example.com/"))).toHaveLength(0);
     campusCookieJar().clear();
     expect(campusCookieJar().getCookies(new URL(INFO_URL))).toHaveLength(0);
+  });
+
+  it("redacts token-shaped values from debug lines but keeps cookie names and URLs", () => {
+    // cookie 名单原样保留（值不出现）
+    expect(redactCampusDebugLine("[HTTP-WENGINE] cookies=wengine_vpn_ticket,XSRF-TOKEN body(1024)=…"))
+      .toContain("cookies=wengine_vpn_ticket,XSRF-TOKEN");
+    // 令牌形长值（cookie 值 / CAS ticket / _csrf）遮蔽
+    expect(redactCampusDebugLine("XSRF-TOKEN=AbCdEf012345678901234567")).not.toContain("AbCdEf012345678901234567");
+    expect(redactCampusDebugLine("?_csrf=Z0FxYjRzNWw4OHJnNHF6ZDR2ZTF3ZWR4"))
+      .not.toContain("Z0FxYjRzNWw4OHJnNHF6ZDR2ZTF3ZWR4");
+    expect(redactCampusDebugLine("ticket=ST-1234567890abcdefghijklmnopqrstu")).not.toContain("ST-1234567890");
+    // URL（含 ://、点、斜杠）不匹配令牌形态，原样保留
+    const urlLine = "final=https://learn.tsinghua.edu.cn/b/j_spring_security_thauth_roaming_entry?ticket=x1";
+    expect(redactCampusDebugLine(urlLine)).toContain("https://learn.tsinghua.edu.cn");
+    // 超长行（wengine body 转储，含空格分段不做值级 redact）截断
+    const long = "[HTTP-WENGINE] body=" + "seg1 seg2 seg3 ".repeat(400);
+    const truncated = redactCampusDebugLine(long);
+    expect(truncated.length).toBeLessThanOrEqual(4013);
+    expect(truncated.endsWith("…<truncated>")).toBe(true);
   });
 });

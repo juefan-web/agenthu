@@ -269,11 +269,20 @@ function CampusConnection({ onError }: { onError: (error: unknown) => void }) {
     catch (error) { onError(error); }
     finally { setBusy(false); }
   }
+  async function retryVerification() {
+    setBusy(true);
+    try {
+      const status = await campus.retryTwoFactor();
+      if (status) applySession(status);
+    } catch (error) { onError(error); }
+    finally { setBusy(false); }
+  }
   if (status === "ready") return <p className="connected-message">校园会话已连接，可采集最新数据。</p>;
   if (!isTauriRuntime()) return <p className="empty-state">校园登录仅在 Tauri 客户端中可用。</p>;
   return <>
     {message && <p className="error-text" role="alert">{message}</p>}
     {status === "need-2fa" && notice && <p className="empty-state" role="status">{notice}</p>}
+    {status === "error" && campus.canRetryTwoFactor() && <div className="section-actions"><button type="button" className="primary-button" disabled={busy} onClick={() => void retryVerification()}>重试验证（免重输密码）</button></div>}
     {status === "need-2fa" ? <form className="inline-form" onSubmit={(event) => void verify(event)}>
       <label>验证方式<select value={codeSent ? selectedMethod : activeMethod} disabled={busy || codeSent} onChange={(event) => setMethod(event.target.value)}>{methods.map((item) => <option key={item} value={item}>{({ totp: "TOTP", mobile: "短信", wechat: "企业微信" } as Record<string, string>)[item] ?? item}</option>)}</select></label>
       {!codeSent && <button type="button" className="primary-button" disabled={busy || !activeMethod} onClick={() => void sendCode()}>{activeMethod === "totp" ? "使用验证器" : "发送验证码"}</button>}

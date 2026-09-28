@@ -137,3 +137,29 @@ jobs:
       # image is intentionally not pushed.
       - name: Build Backend image
         run: docker build --tag agenthu-backend:ci .
+
+  compose-smoke:
+    name: Compose smoke (api + worker healthy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # Terminal check for the compose stack: build the images, boot db/redis/
+      # s3mock/api/worker with the CI override, and hold until every service
+      # reports healthy (`--wait` fails on any unhealthy service). api applies
+      # migrations in its command before uvicorn starts, so /health/ready
+      # proving db + object storage closes the old manual "compose healthy"
+      # handoff for good. Budget: image build ~2-4 min + api start_period 30s
+      # + worker first heartbeat <=30s.
+      - name: Bring up the stack and wait for health
+        run: >
+          docker compose -f docker-compose.yml -f docker-compose.ci-smoke.yml
+          --profile s3mock up -d --wait db redis s3mock api worker
+
+      - name: Smoke-check the API readiness endpoint
+        run: curl -fsS http://127.0.0.1:8000/health/ready
+
+      - name: Teardown
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.ci-smoke.yml down -v

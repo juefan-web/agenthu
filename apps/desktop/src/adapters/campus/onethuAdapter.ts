@@ -126,6 +126,15 @@ export class OneThuCampusAdapter implements CampusAdapter {
     return this.applyStatus(await this.options.auth.verify2fa(input));
   }
 
+  canRetryTwoFactor(): boolean {
+    return this.options.auth.canRetryTwoFactor();
+  }
+
+  async retryTwoFactor(): Promise<SessionStatus | null> {
+    const status = await this.options.auth.retryTwoFactor();
+    return status === null ? null : this.applyStatus(status);
+  }
+
   async logout(): Promise<void> {
     await this.options.auth.logout();
     this.options.session.reset();
