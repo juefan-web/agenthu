@@ -51,6 +51,29 @@ def test_complete_twice_does_not_double_count(client, auth_headers) -> None:
     assert events["total"] == 1
 
 
+def test_explicit_zero_actual_minutes_is_preserved(client, auth_headers) -> None:
+    task = _task(client, auth_headers)
+    session = client.post(
+        "/v1/focus-sessions", json={"task_id": task["id"]}, headers=auth_headers
+    ).json()
+
+    completed = client.patch(
+        f"/v1/focus-sessions/{session['id']}",
+        json={"status": "completed", "actual_minutes": 0},
+        headers=auth_headers,
+    )
+    assert completed.status_code == 200, completed.text
+    assert completed.json()["actual_minutes"] == 0
+
+    event = client.get(
+        "/v1/events", params={"type": "focus.completed"}, headers=auth_headers
+    ).json()["items"][0]
+    assert event["data"]["actual_minutes"] == 0
+
+    task_after = client.get(f"/v1/tasks/{task['id']}", headers=auth_headers).json()
+    assert task_after["actual_duration_minutes"] == 0
+
+
 def test_pause_and_resume(client, auth_headers) -> None:
     task = _task(client, auth_headers)
     session = client.post(

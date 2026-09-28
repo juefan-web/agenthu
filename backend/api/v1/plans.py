@@ -127,6 +127,10 @@ def get_one(plan_id: uuid.UUID, user: CurrentUser, db: DBSession) -> ClientPlan:
 @router.post("/{plan_id}/confirm", response_model=ClientPlan)
 def confirm(plan_id: uuid.UUID, user: CurrentUser, db: DBSession) -> ClientPlan:
     plan = get_plan(db, user_id=user.id, plan_id=plan_id)
+    # Confirmation is a retry-safe command. A client may replay the request
+    # after a timeout, and an already-confirmed plan is the desired result.
+    if plan.status == PlanStatus.CONFIRMED:
+        return _client(plan)
     if plan.status not in _CONFIRMABLE:
         raise ConflictError(f"Plan in status {plan.status.value} cannot be confirmed")
     # User-initiated confirmation goes through the shared permission layer so

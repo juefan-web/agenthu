@@ -45,6 +45,12 @@ def test_manual_plan_create_read_confirm_cancel(client, auth_headers) -> None:
     assert confirmed.json()["status"] == "confirmed"
     assert confirmed.json()["confirmation_required"] is False
 
+    confirmed_at = confirmed.json()["confirmed_at"]
+    retried = client.post(f"/v1/plans/{plan['id']}/confirm", headers=auth_headers)
+    assert retried.status_code == 200
+    assert retried.json()["status"] == "confirmed"
+    assert retried.json()["confirmed_at"] == confirmed_at
+
     other = client.post(
         "/v1/plans", json={"title": "Draft", "items": []}, headers=auth_headers
     ).json()

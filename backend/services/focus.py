@@ -8,10 +8,11 @@ the task's actual duration is not accumulated twice.
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.core.errors import ConflictError, ValidationError
@@ -80,7 +81,23 @@ def active_session_for_task(
     return session.scalar(stmt)
 
 
+def _focus_lock_key(user_id: uuid.UUID, task_id: uuid.UUID) -> int:
+    """Return a stable PostgreSQL advisory-lock key for one active task."""
+
+    material = f"focus:{user_id}:{task_id}".encode()
+    return int.from_bytes(hashlib.blake2b(material, digest_size=8).digest(), "big", signed=True)
+
+
+def lock_focus_start(session: Session, *, user_id: uuid.UUID, task_id: uuid.UUID) -> None:
+    """Serialize active-session lookup and creation for one user/task pair."""
+
+    if session.get_bind().dialect.name != "postgresql":
+        return
+    session.execute(select(func.pg_advisory_xact_lock(_focus_lock_key(user_id, task_id))))
+
+
 def create_focus_session(session: Session, *, user_id: uuid.UUID, task: Task) -> FocusSession:
+    lock_focus_start(session, user_id=user_id, task_id=task.id)
     existing = active_session_for_task(session, user_id=user_id, task_id=task.id)
     if existing is not None:
         # Starting a task that already has an active session is idempotent.
@@ -154,7 +171,11 @@ def _complete(
     now = utcnow()
     focus.status = FocusSessionStatus.COMPLETED
     focus.ended_at = now
-    focus.actual_minutes = payload.actual_minutes or _elapsed_minutes(focus.started_at, now)
+    focus.actual_minutes = (
+        payload.actual_minutes
+        if payload.actual_minutes is not None
+        else _elapsed_minutes(focus.started_at, now)
+    )
     if task.status != TaskStatus.COMPLETED:
         _emit(
             session,
