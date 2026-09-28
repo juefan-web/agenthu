@@ -35,7 +35,7 @@ astra6 review fixes + A/B contract integration + merge-gate hardening
 
 - `ruff check` / `ruff format --check`: pass
 - `pyright`: 0 errors
-- `pytest` full suite with db/redis/s3mock up: **156 passed, 1 skipped** (storage marker),
+- `pytest` full suite with db/redis/s3mock up: **160 passed** (storage test included),
   including the advisory-lock concurrency test and the runtime Zod-snapshot validation.
 - OpenAPI/Zod drift check: pass (`python -m backend.scripts.check_contract_drift`)
 - S3Storage round-trip against `s3mock`: pass

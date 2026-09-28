@@ -45,7 +45,8 @@ def test_valid_default_timezone_is_accepted(timezone: str) -> None:
     assert Settings(default_timezone=timezone).default_timezone == timezone
 
 
-def test_invalid_default_timezone_fails_at_settings_load() -> None:
+@pytest.mark.parametrize("timezone", ["Not/AZone", "", "UTC+8"])
+def test_invalid_default_timezone_fails_at_settings_load(timezone: str) -> None:
     # Must fail when settings load, not later as a 500 on a plans request.
     with pytest.raises(ValidationError):
-        Settings(default_timezone="Not/AZone")
+        Settings(default_timezone=timezone)

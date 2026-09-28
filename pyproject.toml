@@ -20,6 +20,9 @@ dependencies = [
     "pyjwt>=2.9,<3.0",
     "bcrypt>=4.2,<5.0",
     "python-multipart>=0.0.12,<1.0",
+    # Explicit IANA database: `python:*-slim` images have no system zoneinfo and
+    # psycopg only pulls tzdata on Windows, but Settings validates DEFAULT_TIMEZONE.
+    "tzdata>=2024.1",
 ]
 
 [project.optional-dependencies]

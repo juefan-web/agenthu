@@ -75,6 +75,9 @@ def is_client_valid_plan(plan: Plan) -> bool:
     ``reason`` is intentionally not checked here: ``client_view.plan_to_client``
     always produces a non-empty value (item notes -> plan strategy ->
     replan_reason -> "planned"), covered by ``tests/unit/test_client_view.py``.
+
+    ``latest_open_plan`` expresses the same rule in SQL for an already-loaded
+    plan; keep the two in sync.
     """
 
     return all(

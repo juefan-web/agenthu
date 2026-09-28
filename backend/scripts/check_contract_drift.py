@@ -206,7 +206,9 @@ def _ztype(expr: str, consts: dict[str, str], *, depth: int = 0) -> ZType:
         return _ztype(expanded, consts, depth=depth + 1)
 
     nullable = ".nullable()" in expr
-    optional = ".optional()" in expr
+    # `.optional()` allows the key to be absent; `.default(...)` lets Zod fill
+    # it in, so an omitted key is still valid.
+    optional = ".optional()" in expr or ".default(" in expr
     types: set[str] = set()
     ref: str | None = None
     fields: dict[str, ZType] | None = None

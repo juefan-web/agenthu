@@ -96,6 +96,25 @@ def test_runtime_validator_allows_nullable_fields() -> None:
     assert validate_client_value(payload, _fixture_source(), "TaskSchema") == []
 
 
+def test_runtime_validator_allows_defaulted_field_to_be_omitted() -> None:
+    # EventEnvelopeSchema.context has `.default({})`, so it may be absent.
+    payload = {
+        "client_event_id": "c-1",
+        "type": "study.assignment.discovered",
+        "occurred_at": "2026-09-26T10:00:00+08:00",
+        "source": "onethu",
+        "data": {},
+        "provenance": {
+            "connector": "onethu",
+            "connector_version": "v1",
+            "upstream_id": "u-1",
+            "semantic_version": "v1",
+            "fetched_at": "2026-09-26T10:00:01+08:00",
+        },
+    }
+    assert validate_client_value(payload, _fixture_source(), "EventEnvelopeSchema") == []
+
+
 def test_runtime_validator_rejects_bad_enum_datetime_and_bound() -> None:
     payload = {
         "id": "t1",
