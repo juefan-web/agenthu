@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Query, Response, status
@@ -16,6 +17,7 @@ from backend.schemas.common import Page
 from backend.schemas.plan import (
     PlanCreate,
     PlanGenerateRequest,
+    PlanItemCreate,
     PlanItemUpdate,
     PlanRead,
     PlanReplanRequest,
@@ -24,7 +26,8 @@ from backend.services import permissions
 from backend.services.client_view import plan_to_client
 from backend.services.current_state import recompute_current_state
 from backend.services.lookup import ensure_owned_tasks, get_goal, get_plan
-from backend.services.planner import generate_plan, replan, resolve_today_plan
+from backend.services.plan_validity import is_client_valid_plan
+from backend.services.planner import DEFAULT_TASK_MINUTES, generate_plan, replan, resolve_today_plan
 
 router = APIRouter(prefix="/plans", tags=["plans"])
 
@@ -36,6 +39,45 @@ def _client(plan: Plan) -> ClientPlan:
     return plan_to_client(PlanRead.model_validate(plan))
 
 
+def _prepare_manual_items(items: list[PlanItemCreate]) -> list[PlanItemCreate]:
+    """Make manually created items satisfy the client contract (D-023).
+
+    The client's ``PlanItemSchema`` requires non-null ``task_id``/``start_at``/
+    ``end_at`` on every item. ``task_id`` cannot be invented, so an item
+    without one is rejected; ``planned_start``/``planned_end`` default from
+    ``planned_minutes`` so manual plans remain usable without full scheduling
+    input. This stops client-invalid plans at the source: none can be created,
+    so none can later be confirmed and served by current-state.
+    """
+
+    missing = [item.title for item in items if item.task_id is None]
+    if missing:
+        raise ValidationError(
+            "Every plan item requires a task_id (the client contract has no task-less plan item)",
+            details={"items_without_task": missing[:10]},
+        )
+
+    cursor = utcnow()
+    for item in items:
+        minutes = item.planned_minutes
+        if item.planned_start is None and item.planned_end is not None:
+            # Keep the provided end; place the start far enough back.
+            if minutes is None:
+                minutes = DEFAULT_TASK_MINUTES
+                item.planned_minutes = minutes
+            item.planned_start = item.planned_end - timedelta(minutes=minutes)
+        else:
+            if item.planned_start is None:
+                item.planned_start = cursor
+            if item.planned_end is None:
+                if minutes is None:
+                    minutes = DEFAULT_TASK_MINUTES
+                    item.planned_minutes = minutes
+                item.planned_end = item.planned_start + timedelta(minutes=minutes)
+        cursor = item.planned_end
+    return items
+
+
 @router.post("", response_model=ClientPlan, status_code=status.HTTP_201_CREATED)
 def create(payload: PlanCreate, user: CurrentUser, db: DBSession) -> ClientPlan:
     if payload.goal_id is not None:
@@ -43,6 +85,7 @@ def create(payload: PlanCreate, user: CurrentUser, db: DBSession) -> ClientPlan:
     # P1: a plan item may not reference another user's task.
     task_ids = [item.task_id for item in payload.items if item.task_id is not None]
     ensure_owned_tasks(db, user_id=user.id, task_ids=task_ids)
+    items = _prepare_manual_items(payload.items)
 
     plan = Plan(
         user_id=user.id,
@@ -53,7 +96,7 @@ def create(payload: PlanCreate, user: CurrentUser, db: DBSession) -> ClientPlan:
         permission_level=payload.permission_level,
         generated_by="manual",
     )
-    for item in payload.items:
+    for item in items:
         plan.items.append(PlanItem(**item.model_dump()))
     db.add(plan)
     db.flush()
@@ -133,6 +176,15 @@ def confirm(plan_id: uuid.UUID, user: CurrentUser, db: DBSession) -> ClientPlan:
         return _client(plan)
     if plan.status not in _CONFIRMABLE:
         raise ConflictError(f"Plan in status {plan.status.value} cannot be confirmed")
+    # A confirmed plan becomes the user's current plan, which is served through
+    # the client contract; a client-invalid plan must never reach that state
+    # (D-023). Creation backfills make this unreachable for new plans; the
+    # guard also covers legacy rows.
+    if not is_client_valid_plan(plan):
+        raise ValidationError(
+            "Plan cannot be confirmed: items are missing task_id/start/end and "
+            "would violate the client contract"
+        )
     # User-initiated confirmation goes through the shared permission layer so
     # the decision is auditable and reusable by the Agent.
     decision = permissions.evaluate_permission(

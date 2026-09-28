@@ -78,6 +78,9 @@ services:
       - path: .env
         required: false
     environment:
+      # Dev stack default; a production-like run overrides ENVIRONMENT (and
+      # must then also provide strong SECRET_KEY/S3_SECRET_KEY, see config.py).
+      ENVIRONMENT: ${ENVIRONMENT:-local}
       DATABASE_URL: postgresql+psycopg://agenthu:agenthu@db:5432/agenthu
       REDIS_URL: redis://redis:6379/0
       S3_ENDPOINT_URL: http://minio:9000
@@ -103,6 +106,7 @@ services:
       - path: .env
         required: false
     environment:
+      ENVIRONMENT: ${ENVIRONMENT:-local}
       DATABASE_URL: postgresql+psycopg://agenthu:agenthu@db:5432/agenthu
       REDIS_URL: redis://redis:6379/0
       S3_ENDPOINT_URL: http://minio:9000

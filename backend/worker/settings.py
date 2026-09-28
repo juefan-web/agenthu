@@ -10,7 +10,7 @@ from __future__ import annotations
 from arq.connections import RedisSettings
 
 from backend.config import get_settings
-from backend.worker.tasks import ping, recompute_user_current_state
+from backend.worker.tasks import ping
 
 
 def _redis_settings() -> RedisSettings:
@@ -18,7 +18,7 @@ def _redis_settings() -> RedisSettings:
 
 
 class WorkerSettings:
-    functions = [ping, recompute_user_current_state]
+    functions = [ping]
     redis_settings = _redis_settings()
     max_tries = 3
     job_timeout = 300

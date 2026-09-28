@@ -88,10 +88,16 @@ def record_audit(
 
 
 def safe_record_audit(session: Session, **kwargs: Any) -> None:
-    """Best-effort audit write that never breaks the caller."""
+    """Best-effort audit write that never breaks the caller.
+
+    The write runs inside its own SAVEPOINT: on failure only that savepoint
+    rolls back. A bare ``session.rollback()`` here would destroy the caller's
+    uncommitted work (e.g. a just-inserted Event), which is exactly what this
+    helper must never do.
+    """
 
     try:
-        record_audit(session, **kwargs)
+        with session.begin_nested():
+            record_audit(session, **kwargs)
     except Exception:  # pragma: no cover - defensive
         logger.exception("Failed to write audit record", extra={"action": kwargs.get("action")})
-        session.rollback()

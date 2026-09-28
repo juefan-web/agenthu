@@ -13,7 +13,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.config import get_settings
@@ -29,6 +29,7 @@ from backend.services.current_state import (
     pending_tasks,
     recompute_current_state,
 )
+from backend.services.plan_validity import client_invalid_item_exists, is_client_valid_plan
 
 DEFAULT_TASK_MINUTES = 60
 STRATEGY = "deadline_then_priority"
@@ -65,25 +66,6 @@ def lock_today_proposal(session: Session, *, user_id: uuid.UUID, day_start: date
     if session.get_bind().dialect.name != "postgresql":
         return
     session.execute(select(func.pg_advisory_xact_lock(_today_lock_key(user_id, day_start))))
-
-
-def is_client_valid_plan(plan: Plan) -> bool:
-    """Whether every plan item satisfies the desktop client's PlanItemSchema.
-
-    The client requires non-null ``task_id``, ``start_at`` and ``end_at``. Manual
-    plans may omit them, so they must never be served by ``/v1/plans/today``.
-    ``reason`` is intentionally not checked here: ``client_view.plan_to_client``
-    always produces a non-empty value (item notes -> plan strategy ->
-    replan_reason -> "planned"), covered by ``tests/unit/test_client_view.py``.
-
-    ``latest_open_plan`` expresses the same rule in SQL for an already-loaded
-    plan; keep the two in sync.
-    """
-
-    return all(
-        item.task_id is not None and item.planned_start is not None and item.planned_end is not None
-        for item in plan.items
-    )
 
 
 def generate_plan(
@@ -167,22 +149,10 @@ def latest_open_plan(
     behind several invalid proposals and generate a duplicate.
     """
 
-    invalid_item = (
-        select(PlanItem.id)
-        .where(
-            PlanItem.plan_id == Plan.id,
-            or_(
-                PlanItem.task_id.is_(None),
-                PlanItem.planned_start.is_(None),
-                PlanItem.planned_end.is_(None),
-            ),
-        )
-        .exists()
-    )
     conditions = [
         Plan.user_id == user_id,
         Plan.status.in_([PlanStatus.DRAFT, PlanStatus.PENDING_CONFIRMATION]),
-        ~invalid_item,
+        ~client_invalid_item_exists(),
     ]
     if since is not None:
         conditions.append(Plan.created_at >= since)

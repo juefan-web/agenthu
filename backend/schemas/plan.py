@@ -7,15 +7,15 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from backend.models.enums import PlanItemStatus, PlanStatus
-from backend.schemas.common import ORMModel
+from backend.schemas.common import ORMModel, UTCDatetime
 
 
 class PlanItemCreate(BaseModel):
     title: str = Field(min_length=1, max_length=300)
     task_id: uuid.UUID | None = None
     order_index: int = 0
-    planned_start: datetime | None = None
-    planned_end: datetime | None = None
+    planned_start: UTCDatetime | None = None
+    planned_end: UTCDatetime | None = None
     planned_minutes: int | None = Field(default=None, ge=0, le=60 * 24 * 30)
     notes: str | None = None
 
@@ -54,7 +54,7 @@ class PlanGenerateRequest(BaseModel):
     """Deterministic baseline planner input (no LLM in M0)."""
 
     goal_id: uuid.UUID | None = None
-    start_at: datetime | None = None
+    start_at: UTCDatetime | None = None
     horizon_minutes: int = Field(default=240, ge=15, le=60 * 24 * 7)
     max_tasks: int = Field(default=10, ge=1, le=100)
 

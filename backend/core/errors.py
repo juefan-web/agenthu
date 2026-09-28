@@ -29,6 +29,7 @@ class AppError(Exception):
         code: str | None = None,
         status_code: int | None = None,
         details: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> None:
         super().__init__(message)
         self.message = message
@@ -37,6 +38,7 @@ class AppError(Exception):
         if status_code is not None:
             self.status_code = status_code
         self.details = details or {}
+        self.headers = headers
 
 
 class NotFoundError(AppError):
@@ -79,6 +81,11 @@ class ServiceUnavailableError(AppError):
     code = "service_unavailable"
 
 
+class RateLimitError(AppError):
+    status_code = status.HTTP_429_TOO_MANY_REQUESTS
+    code = "rate_limited"
+
+
 def _envelope(
     *,
     code: str,
@@ -103,7 +110,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             message=exc.message,
             details=exc.details,
             status_code=exc.status_code,
-            headers=headers,
+            headers=headers or exc.headers,
         )
 
     @app.exception_handler(RequestValidationError)

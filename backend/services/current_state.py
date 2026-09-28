@@ -23,6 +23,7 @@ from backend.schemas.current_state import CurrentStateRead, CurrentStateUpdate
 from backend.schemas.plan import PlanRead
 from backend.schemas.task import TaskRead
 from backend.services.lookup import ensure_owned_tasks
+from backend.services.plan_validity import client_invalid_item_exists
 
 _PENDING_STATUSES = (TaskStatus.TODO, TaskStatus.IN_PROGRESS)
 _RECENT_WINDOW = timedelta(hours=24)
@@ -61,11 +62,20 @@ def current_plan_for(session: Session, user_id: uuid.UUID) -> Plan | None:
 
     Unconfirmed proposals are intentionally excluded: they are not yet the
     user's current plan, even though they are visible via the Plans API.
+
+    Client-invalid plans are excluded too: the current plan is served through
+    the frozen client contract, whose ``PlanItemSchema`` requires non-null
+    ``task_id``/``start_at``/``end_at`` — serving an invalid plan here would
+    break the client's Zod parse instead of degrading gracefully (D-023).
     """
 
     stmt = (
         select(Plan)
-        .where(Plan.user_id == user_id, Plan.status == PlanStatus.CONFIRMED)
+        .where(
+            Plan.user_id == user_id,
+            Plan.status == PlanStatus.CONFIRMED,
+            ~client_invalid_item_exists(),
+        )
         .order_by(Plan.confirmed_at.desc().nulls_last(), Plan.created_at.desc())
         .limit(1)
     )

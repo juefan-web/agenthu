@@ -16,6 +16,10 @@ os.environ.setdefault("DATABASE_URL", _DEFAULT_TEST_DB)
 os.environ.setdefault("STORAGE_BACKEND", "memory")
 os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-production")
 os.environ.setdefault("AUDIT_ENABLED", "false")
+# ENVIRONMENT defaults to "production" (fail closed); tests opt into the local
+# set explicitly, and auth rate limiting is off unless a test enables it.
+os.environ.setdefault("ENVIRONMENT", "test")
+os.environ.setdefault("AUTH_RATE_LIMIT_MAX", "0")
 
 import socket  # noqa: E402
 import uuid  # noqa: E402

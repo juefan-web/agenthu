@@ -26,11 +26,16 @@ docker compose up -d
 python -m venv .venv
 . .venv/Scripts/activate        # Windows PowerShell: .venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
-docker compose up -d db redis minio createbuckets
+docker compose up -d db redis minio
 alembic upgrade head
 uvicorn backend.main:app --reload
 pytest
 ```
+
+`ENVIRONMENT` defaults to `production` (fail closed): outside `local`/`dev`/`test`,
+settings refuse to load with a weak `SECRET_KEY` or `S3_SECRET_KEY`. The local
+dev stack sets `ENVIRONMENT=local` via `docker-compose.yml`; keep the strong
+secrets when overriding it.
 
 Contract checks (run before committing a contract change):
 

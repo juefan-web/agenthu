@@ -74,6 +74,54 @@ def test_explicit_zero_actual_minutes_is_preserved(client, auth_headers) -> None
     assert task_after["actual_duration_minutes"] == 0
 
 
+def test_second_session_time_still_accumulates(client, auth_headers) -> None:
+    """Time worked after the first completion must not be lost (C2).
+
+    A task finished once is COMPLETED; a later focus session on the same task
+    still contributes its actual minutes to the task and the confirmed plan
+    item, without regressing the completion state.
+    """
+
+    task = _task(client, auth_headers)
+
+    first = client.post(
+        "/v1/focus-sessions", json={"task_id": task["id"]}, headers=auth_headers
+    ).json()
+    client.patch(
+        f"/v1/focus-sessions/{first['id']}",
+        json={"status": "completed", "actual_minutes": 30},
+        headers=auth_headers,
+    )
+    task_after_first = client.get(f"/v1/tasks/{task['id']}", headers=auth_headers).json()
+    assert task_after_first["status"] == "done"
+    assert task_after_first["actual_duration_minutes"] == 30
+    completed_at_first = task_after_first["completed_at"]
+
+    second = client.post(
+        "/v1/focus-sessions", json={"task_id": task["id"]}, headers=auth_headers
+    ).json()
+    assert second["id"] != first["id"]
+    client.patch(
+        f"/v1/focus-sessions/{second['id']}",
+        json={"status": "completed", "actual_minutes": 25},
+        headers=auth_headers,
+    )
+
+    task_after = client.get(f"/v1/tasks/{task['id']}", headers=auth_headers).json()
+    # Every session's time is kept; the completion state is sticky.
+    assert task_after["status"] == "done"
+    assert task_after["actual_duration_minutes"] == 55
+    assert task_after["completed_at"] == completed_at_first
+
+    # The second session emitted its own focus.completed event (one per
+    # session, deduplicated per session).
+    events = client.get(
+        "/v1/events", params={"type": "focus.completed"}, headers=auth_headers
+    ).json()
+    assert events["total"] == 2
+    assert {event["data"]["actual_minutes"] for event in events["items"]} == {30, 25}
+
+
 def test_pause_and_resume(client, auth_headers) -> None:
     task = _task(client, auth_headers)
     session = client.post(

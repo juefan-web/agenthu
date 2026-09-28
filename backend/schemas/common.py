@@ -1,6 +1,25 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from datetime import UTC, datetime
+from typing import Annotated
+
+from pydantic import AfterValidator, BaseModel, ConfigDict
+
+
+def normalize_naive_utc(value: datetime) -> datetime:
+    """Treat a naive datetime as UTC (the single rule for every datetime input).
+
+    Client timestamps must be timezone-aware ISO-8601; when one arrives naive
+    anyway, labeling it UTC keeps stored values consistent instead of letting
+    the database interpret local time (an 8-hour skew for Asia/Shanghai). This
+    mirrors what ``EventCreate.timestamp`` has always done — it is now the
+    contract for every datetime the API accepts.
+    """
+
+    return value if value.tzinfo else value.replace(tzinfo=UTC)
+
+
+UTCDatetime = Annotated[datetime, AfterValidator(normalize_naive_utc)]
 
 
 class ORMModel(BaseModel):

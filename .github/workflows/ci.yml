@@ -16,6 +16,9 @@ jobs:
     timeout-minutes: 30
 
     env:
+      # Local-set environment: CI is a test context, so the strong-secret
+      # guard stays permissive there and the real guards run at deploy time.
+      ENVIRONMENT: test
       DATABASE_URL: postgresql+psycopg://agenthu:agenthu@127.0.0.1:5432/agenthu
       TEST_DATABASE_URL: postgresql+psycopg://agenthu:agenthu@127.0.0.1:5432/agenthu_test
       REDIS_URL: redis://127.0.0.1:6379/0
@@ -85,9 +88,11 @@ jobs:
       # Fail fast when the committed `openapi.json` is stale or the shared client
       # contract (`packages/contracts`, snapshot in `tests/fixtures/client_contract.ts`)
       # no longer matches the Backend schemas. Must run *before* the export step,
-      # otherwise the artifact is regenerated and drift is masked.
+      # otherwise the artifact is regenerated and drift is masked. `--require-zod`
+      # makes a missing Zod source a hard failure: the frozen snapshot must
+      # always exist, so the check can never silently degrade to OpenAPI-only.
       - name: Check OpenAPI / client contract drift
-        run: python -m backend.scripts.check_contract_drift
+        run: python -m backend.scripts.check_contract_drift --require-zod
 
       - name: Export OpenAPI contract
         run: python -m backend.scripts.export_openapi --output openapi.json

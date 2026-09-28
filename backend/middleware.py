@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 import uuid
@@ -11,7 +12,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from backend.db.session import session_scope
-from backend.services.audit import safe_record_audit
+from backend.services.audit import record_audit
 
 logger = logging.getLogger(__name__)
 
@@ -32,10 +33,35 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         return response
 
 
+def _persist_audit(request: Request, response: Response, duration_ms: int) -> None:
+    """Synchronous audit write; runs on a worker thread, never the event loop."""
+
+    path = request.url.path
+    user_id = getattr(request.state, "user_id", None)
+    actor = getattr(request.state, "actor", "anonymous" if user_id is None else "user")
+    with session_scope() as session:
+        record_audit(
+            session,
+            action=f"{request.method.lower()} {path}",
+            actor=actor,
+            user_id=user_id,
+            method=request.method,
+            path=path,
+            status_code=response.status_code,
+            duration_ms=duration_ms,
+            permission_level=2,
+            decision="allow" if response.status_code < 400 else "deny",
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        )
+
+
 class AuditMiddleware(BaseHTTPMiddleware):
     """Record mutating requests in the audit trail.
 
     Best-effort: an audit write failure must never break the user's request.
+    The (synchronous, blocking) database write is dispatched to a worker thread
+    so it never stalls the event loop serving other requests.
     """
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
@@ -45,25 +71,9 @@ class AuditMiddleware(BaseHTTPMiddleware):
         if request.method not in _AUDITED_METHODS or path.startswith(_SKIP_PREFIXES):
             return response
 
-        user_id = getattr(request.state, "user_id", None)
-        actor = getattr(request.state, "actor", "anonymous" if user_id is None else "user")
         duration_ms = int((time.perf_counter() - start) * 1000)
         try:
-            with session_scope() as session:
-                safe_record_audit(
-                    session,
-                    action=f"{request.method.lower()} {path}",
-                    actor=actor,
-                    user_id=user_id,
-                    method=request.method,
-                    path=path,
-                    status_code=response.status_code,
-                    duration_ms=duration_ms,
-                    permission_level=2,
-                    decision="allow" if response.status_code < 400 else "deny",
-                    ip_address=request.client.host if request.client else None,
-                    user_agent=request.headers.get("user-agent"),
-                )
+            await asyncio.to_thread(_persist_audit, request, response, duration_ms)
         except Exception:  # pragma: no cover - defensive
             logger.warning("Audit middleware could not persist a record", exc_info=True)
         return response

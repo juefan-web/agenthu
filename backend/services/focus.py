@@ -176,19 +176,25 @@ def _complete(
         if payload.actual_minutes is not None
         else _elapsed_minutes(focus.started_at, now)
     )
-    if task.status != TaskStatus.COMPLETED:
-        _emit(
-            session,
-            user_id=user_id,
-            event_type="focus.completed",
-            focus=focus,
-            task=task,
-            extra={
-                "actual_minutes": focus.actual_minutes,
-                "completed": True,
-                "notes": focus.deviation_note,
-            },
-        )
+    # Always emit: a task worked on across several sessions must accumulate
+    # every session's time. `completed` marks the session that finishes the
+    # task; later sessions on an already-completed task contribute time only
+    # (the handler never regresses status or rewrites completed_at). Duplicate
+    # "complete" taps on the *same* session stay deduplicated by the terminal
+    # early-return above plus the per-session event dedupe key.
+    task_was_completed = task.status == TaskStatus.COMPLETED
+    _emit(
+        session,
+        user_id=user_id,
+        event_type="focus.completed",
+        focus=focus,
+        task=task,
+        extra={
+            "actual_minutes": focus.actual_minutes,
+            "completed": not task_was_completed,
+            "notes": focus.deviation_note,
+        },
+    )
 
 
 def _elapsed_minutes(started_at: datetime, ended_at: datetime) -> int:

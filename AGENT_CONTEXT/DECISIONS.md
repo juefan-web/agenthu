@@ -203,3 +203,58 @@ frozen contract (marked `deprecated: true` in OpenAPI, `z.string().nullable()` i
 response compatibility; it must not be used by new client behavior and will be removed in the
 next contract version. Raising a real server-driven incremental sync cursor requires a fresh
 decision (it belongs to the M1 sync work, not the M0 batch contract).
+
+## Fourth review fixes (2026-09-28, Developer A)
+
+## D-023 — Client-invalid plans are impossible to create or confirm
+
+Status: accepted. Context: the integration review found that a manually created plan
+without `task_id`/`planned_start`/`planned_end`, once confirmed, was served by
+`GET /v1/current-state` and broke the desktop client's Zod `PlanItemSchema` parse
+(non-null `task_id`/`start_at`/`end_at`). The drift check cannot catch this because null
+widening is intentionally ignored there.
+
+Decision: enforce the invariant at three layers instead of filtering one endpoint:
+1. Creation (`POST /v1/plans`) rejects task-less items (the client contract has no
+   task-less plan item) and backfills `planned_start`/`planned_end` from `planned_minutes`
+   (default 60) so manual plans stay usable without full scheduling input.
+2. `POST /v1/plans/{id}/confirm` rejects client-invalid plans (422) — a confirmed plan
+   becomes the current plan, which is served through the client contract.
+3. `current_plan_for` filters client-invalid confirmed plans in SQL (shared
+   `backend/services/plan_validity.py`, home of both the Python and SQL forms) as
+   belt-and-braces for legacy rows written before this change.
+
+Rollback: revert the commit; no data migration is involved. Existing legacy plans keep
+their shape (they are simply no longer confirmable).
+
+## D-024 — `recompute_user_current_state` worker task removed
+
+Status: accepted. Context: the Arq task had no caller (dead code) and its semantics were
+underspecified (no trigger, no debouncing).
+
+Decision: delete it; `WorkerSettings.functions` now only registers `ping`. CurrentState is
+recomputed synchronously on the request path today. An off-request recompute belongs to M1
+and must arrive with a real caller and a decision about trigger points.
+
+## D-025 — Auth rate limiting and secrets fail closed
+
+Status: accepted. Context: the review flagged (a) `SECRET_KEY` strength only enforced when
+`ENVIRONMENT != "local"`, so a deployment that forgot to set `ENVIRONMENT` silently
+accepted the dev key and JWTs could be forged; (b) `/auth/register|login|token` had no
+brute-force throttle and leaked user existence through timing; (c) `GET /v1/jobs/{id}`
+returned any job's status/result to any authenticated user.
+
+Decision:
+- `ENVIRONMENT` now defaults to `production` (fail closed): without explicit
+  `local`/`dev`/`test`, weak `SECRET_KEY` **and** weak `S3_SECRET_KEY` (was the hardcoded
+  `agenthu123` default) are rejected at settings load. Local dev opts in via
+  `.env.example` / `docker-compose.yml` (`ENVIRONMENT=local`), CI sets `ENVIRONMENT=test`.
+- Auth endpoints share an in-process sliding-window limiter (10 req/min per client IP by
+  default, `AUTH_RATE_LIMIT_MAX=0` disables; tests disable). Over-limit returns the frozen
+  429 `rate_limited` envelope plus `Retry-After`. Login paths burn a bcrypt comparison
+  against a cached dummy hash for unknown emails so response timing does not reveal
+  account existence.
+- Arq job ids are prefixed with the owning user id (`{user_id}:...`); `GET /v1/jobs/{id}`
+  checks the prefix before any Redis round-trip and answers other users with 404.
+- The rate limiter is per-process (single uvicorn worker in M0); swapping in a
+  Redis-backed limiter is the documented seam for multi-worker deployments.

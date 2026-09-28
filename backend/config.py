@@ -15,6 +15,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_SECRET_KEY = "dev-insecure-change-me"
 MIN_SECRET_KEY_LENGTH = 32
+# Fail closed: an operator who configures nothing must not silently get a
+# forgeable JWT key or the development object-storage credential.
+DEFAULT_ENVIRONMENT = "production"
+_WEAK_SECRET_KEYS = {DEFAULT_SECRET_KEY, "", "secret", "changeme"}
+_WEAK_S3_SECRET_KEYS = {"agenthu123", "", "secret", "changeme"}
+MIN_S3_SECRET_KEY_LENGTH = 16
 
 
 class Settings(BaseSettings):
@@ -27,7 +33,10 @@ class Settings(BaseSettings):
 
     # --- Application -------------------------------------------------------
     app_name: str = "AgentHU"
-    environment: str = "local"
+    # Defaults to "production": forgetting to set ENVIRONMENT must fail closed
+    # (weak SECRET_KEY / S3_SECRET_KEY rejected), not silently pass. Local
+    # development opts in explicitly via ENVIRONMENT=local (see .env.example).
+    environment: str = DEFAULT_ENVIRONMENT
     debug: bool = False
     log_level: str = "INFO"
     api_v1_prefix: str = "/v1"
@@ -48,6 +57,8 @@ class Settings(BaseSettings):
     arq_queue_name: str = "arq:queue"
 
     # --- Auth --------------------------------------------------------------
+    auth_rate_limit_max: int = 10
+    auth_rate_limit_window_seconds: int = 60
     secret_key: str = DEFAULT_SECRET_KEY
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24 * 7
@@ -98,10 +109,10 @@ class Settings(BaseSettings):
         return value
 
     @model_validator(mode="after")
-    def _enforce_strong_secret_outside_local(self) -> Settings:
+    def _enforce_strong_secrets_outside_local(self) -> Settings:
         if self.is_local:
             return self
-        if self.secret_key in {DEFAULT_SECRET_KEY, "", "secret", "changeme"}:
+        if self.secret_key in _WEAK_SECRET_KEYS:
             raise ValueError(
                 "SECRET_KEY must be set to a strong, unique value outside local environments"
             )
@@ -109,6 +120,12 @@ class Settings(BaseSettings):
             raise ValueError(
                 f"SECRET_KEY must be at least {MIN_SECRET_KEY_LENGTH} characters outside "
                 "local environments"
+            )
+        if self.s3_secret_key in _WEAK_S3_SECRET_KEYS or (
+            len(self.s3_secret_key) < MIN_S3_SECRET_KEY_LENGTH
+        ):
+            raise ValueError(
+                "S3_SECRET_KEY must be set to a strong, unique value outside local environments"
             )
         return self
 

@@ -65,3 +65,36 @@ def test_plan_status_values_are_stable() -> None:
         "COMPLETED",
         "SUPERSEDED",
     }
+
+
+def test_naive_datetimes_are_normalized_to_utc() -> None:
+    """Every datetime input shares EventCreate's naive->UTC rule (C4)."""
+
+    from datetime import UTC, datetime
+
+    from backend.schemas.goal import GoalCreate
+    from backend.schemas.plan import PlanGenerateRequest, PlanItemCreate
+    from backend.schemas.task import TaskCreate
+
+    naive = datetime(2030, 1, 1, 9, 0, 0)
+    cases = [
+        TaskCreate(title="T", deadline=naive),
+        GoalCreate(title="G", target_date=naive),
+        PlanItemCreate(title="P", planned_start=naive, planned_end=naive),
+        PlanGenerateRequest(start_at=naive),
+    ]
+    for model in cases:
+        fields = [
+            value
+            for name in (
+                "deadline",
+                "target_date",
+                "planned_start",
+                "planned_end",
+                "start_at",
+            )
+            if isinstance(value := getattr(model, name, None), datetime)
+        ]
+        assert fields, f"{type(model).__name__} carried no datetime to check"
+        for value in fields:
+            assert value.tzinfo is UTC

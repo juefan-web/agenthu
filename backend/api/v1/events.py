@@ -15,7 +15,7 @@ from backend.schemas.client_contract import (
     EventBatchRequest,
     EventBatchResponse,
 )
-from backend.schemas.common import Page
+from backend.schemas.common import Page, normalize_naive_utc
 from backend.schemas.event import EventCreate, EventRead
 from backend.services.events import create_event, ingest_event_batch, list_events
 
@@ -50,8 +50,10 @@ def list_all(
         user_id=user.id,
         event_type=event_type,
         source=source,
-        since=since,
-        until=until,
+        # Query params bypass the schema layer, so the naive->UTC rule that
+        # every body datetime follows is applied here too.
+        since=normalize_naive_utc(since) if since is not None else None,
+        until=normalize_naive_utc(until) if until is not None else None,
         limit=pagination.limit,
         offset=pagination.offset,
     )

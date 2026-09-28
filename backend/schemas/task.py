@@ -7,7 +7,7 @@ from typing import Any
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 from backend.models.enums import TaskStatus
-from backend.schemas.common import ORMModel
+from backend.schemas.common import ORMModel, UTCDatetime
 
 # Accept both the internal enum names and the client contract values.
 _CLIENT_TASK_STATUS = {
@@ -32,7 +32,7 @@ class TaskCreate(BaseModel):
     description: str | None = None
     source: str = Field(default="manual", max_length=50)
     status: TaskStatus = TaskStatus.TODO
-    deadline: datetime | None = Field(
+    deadline: UTCDatetime | None = Field(
         default=None, validation_alias=AliasChoices("deadline", "due_at")
     )
     estimated_duration_minutes: int | None = Field(
@@ -58,7 +58,7 @@ class TaskUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=300)
     description: str | None = None
     status: TaskStatus | None = None
-    deadline: datetime | None = Field(
+    deadline: UTCDatetime | None = Field(
         default=None, validation_alias=AliasChoices("deadline", "due_at")
     )
     estimated_duration_minutes: int | None = Field(

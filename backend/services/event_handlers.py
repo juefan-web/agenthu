@@ -5,8 +5,9 @@ into domain changes (Task status, CurrentState, and later Memory). This keeps
 projection logic in one place instead of scattering it across adapters.
 
 Handlers run inside the ingestion transaction *before* commit. A failing
-handler must not lose the raw Event, so failures are logged and audited rather
-than propagated.
+handler must not lose the raw Event, so each handler runs inside its own
+SAVEPOINT: on failure only the savepoint rolls back, the Event insert and the
+rest of the transaction survive, and the failure is logged and audited.
 """
 
 from __future__ import annotations
@@ -54,7 +55,11 @@ def handlers_for(event_type: str) -> list[EventHandler]:
 def process_event(session: Session, event: Event) -> None:
     for handler in handlers_for(event.type):
         try:
-            handler(session, event)
+            # A savepoint (not a bare try/except): a DB-level handler failure
+            # poisons the transaction, and only rolling back to the savepoint
+            # leaves the outer transaction usable for the audit write below.
+            with session.begin_nested():
+                handler(session, event)
         except Exception:  # pragma: no cover - defensive, audited below
             logger.exception(
                 "Event handler failed",
@@ -100,12 +105,19 @@ def handle_focus_completed(session: Session, event: Event) -> None:
         actual: int | None = None
         if isinstance(minutes, int | float) and minutes >= 0:
             actual = int(minutes)
+            # Accumulate: a task worked on across several focus sessions
+            # contributes every session's actual time (each session emits its
+            # own focus.completed with a per-session dedupe key).
             task.actual_duration_minutes = (task.actual_duration_minutes or 0) + actual
-        if event.data.get("completed", True):
-            task.status = TaskStatus.COMPLETED
-            task.completed_at = event.timestamp
-        else:
-            task.status = TaskStatus.IN_PROGRESS
+        # COMPLETED is sticky: it is set only by the session that finishes the
+        # task (completed=True). Later sessions on an already-completed task
+        # add time without regressing status or overwriting completed_at.
+        if task.status != TaskStatus.COMPLETED:
+            if event.data.get("completed", True):
+                task.status = TaskStatus.COMPLETED
+                task.completed_at = event.timestamp
+            else:
+                task.status = TaskStatus.IN_PROGRESS
         _mark_confirmed_plan_items(session, task.id, actual)
     _recompute(session, event.user_id)
 
@@ -121,7 +133,9 @@ def _mark_confirmed_plan_items(
     for item in session.scalars(stmt):
         item.status = PlanItemStatus.COMPLETED
         if actual_minutes is not None:
-            item.actual_minutes = actual_minutes
+            # Accumulated, mirroring Task.actual_duration_minutes so the plan
+            # item and the task never disagree about time spent.
+            item.actual_minutes = (item.actual_minutes or 0) + actual_minutes
 
 
 @register("task.*")

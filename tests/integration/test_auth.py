@@ -132,3 +132,66 @@ def test_oauth2_form_token_rejects_bad_credentials(client: TestClient) -> None:
         data={"username": "nobody@example.com", "password": "wrong-password"},
     )
     _assert_unauthorized(response)
+
+
+def test_login_is_rate_limited_per_client_ip(client: TestClient, register_user) -> None:
+    """Brute-force protection: over-limit auth attempts get 429 + Retry-After."""
+
+    import backend.api.v1.auth as auth_module
+    from backend.core.rate_limit import RateLimiter
+
+    original = auth_module._auth_limiter
+    auth_module._auth_limiter = RateLimiter(max_requests=3, window_seconds=60)
+    try:
+        payload = {"email": "rl@example.com", "password": "password123"}
+        codes = [client.post("/v1/auth/login", json=payload).status_code for _ in range(5)]
+        assert codes[:3] == [401, 401, 401]
+        assert codes[3] == 429
+        assert codes[4] == 429
+
+        throttled = client.post("/v1/auth/login", json=payload)
+        assert throttled.status_code == 429
+        assert throttled.json()["error"]["code"] == "rate_limited"
+        assert int(throttled.headers["Retry-After"]) >= 1
+    finally:
+        auth_module._auth_limiter = original
+
+
+def test_register_is_rate_limited(client: TestClient) -> None:
+    import backend.api.v1.auth as auth_module
+    from backend.core.rate_limit import RateLimiter
+
+    original = auth_module._auth_limiter
+    auth_module._auth_limiter = RateLimiter(max_requests=2, window_seconds=60)
+    try:
+        codes = [
+            client.post(
+                "/v1/auth/register",
+                json={
+                    "email": f"u{i}@example.com",
+                    "password": "password123",
+                    "display_name": "Rate Limit Probe",
+                },
+            ).status_code
+            for i in range(3)
+        ]
+        assert codes == [201, 201, 429]
+    finally:
+        auth_module._auth_limiter = original
+
+
+def test_jobs_status_hides_other_users_jobs(client: TestClient, auth_factory) -> None:
+    """Job ids are user-scoped; another user's job id is a 404, not a leak."""
+
+    alice = auth_factory()
+    bob = auth_factory()
+    me = client.get("/v1/auth/me", headers=alice).json()
+    foreign_id = f"{me['id']}:ping:abc123"
+
+    # Ownership is enforced before any Redis round-trip, so no queue is needed.
+    response = client.get(f"/v1/jobs/{foreign_id}", headers=bob)
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "not_found"
+
+    own = client.get(f"/v1/jobs/{foreign_id}", headers=alice)
+    assert own.status_code in (200, 503)
