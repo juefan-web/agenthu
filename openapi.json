@@ -3336,7 +3336,7 @@
           "plans"
         ],
         "summary": "Today",
-        "description": "Return the client's \"today\" plan.\n\nThe confirmed plan is returned when present; otherwise a deterministic\nbaseline plan is generated (pending confirmation) so the client always has\nsomething to display and confirm.",
+        "description": "Return the client's \"today\" plan.\n\nThe confirmed plan is returned when present; otherwise a deterministic\nbaseline plan is generated (pending confirmation) so the client always has\nsomething to display and confirm. Selection and per-user/day idempotency\nlive in ``planner.resolve_today_plan`` (DECISIONS.md D-019).",
         "operationId": "today_v1_plans_today_get",
         "responses": {
           "200": {
@@ -6159,7 +6159,8 @@
                 "type": "null"
               }
             ],
-            "title": "Next Cursor"
+            "title": "Next Cursor",
+            "deprecated": true
           }
         },
         "type": "object",

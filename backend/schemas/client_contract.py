@@ -61,7 +61,10 @@ class EventBatchResponse(BaseModel):
     accepted_event_ids: list[str] = Field(default_factory=list)
     duplicate_event_ids: list[str] = Field(default_factory=list)
     rejected: list[EventBatchRejection] = Field(default_factory=list)
-    next_cursor: str | None = None
+    # Deprecated placeholder: it echoes the request's client_cursor back and
+    # carries no server-side sync state (see DECISIONS.md D-022). The client
+    # owns cursor progress; do not build new behavior on this field.
+    next_cursor: str | None = Field(default=None, deprecated=True)
 
 
 class ClientTask(BaseModel):

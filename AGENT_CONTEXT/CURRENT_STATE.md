@@ -32,6 +32,13 @@ astra6 review fixes + A/B contract integration + merge-gate hardening
 - `DEFAULT_TIMEZONE` validated at settings load; CORS preflight covers `Authorization`/POST/PATCH and
   all frozen client origins; runtime payloads validated against the Zod snapshot
   (`validate_client_value`) in `test_client_contract.py` (D-019/D-021).
+- Integration-review blocking items (2026-09-28): Focus concurrent start is serialized by a
+  PostgreSQL transaction-level advisory lock keyed by (user, task) — the read-then-insert race that
+  created two RUNNING sessions on real PostgreSQL is reproduced and fixed by
+  `tests/integration/test_focus_concurrency.py`; `PlanItem.title` is frozen into the client Zod
+  snapshot (Developer B must mirror it in `packages/contracts/src/index.ts`); `next_cursor` is
+  deprecated, not implemented (D-022). Note: the review's cherry-pick target `cbe30f7` does not
+  exist on any remote branch; equivalent fixes were made directly here.
 - Docs: `README.md`, `DEVELOPMENT.md` (status + review fixes), `M0_HANDOFF.md`, `AGENT_CONTEXT/`;
   Flutter references removed from `PROJECT.md` / `HANDOFF/M0.md` (D-009).
 
@@ -39,8 +46,9 @@ astra6 review fixes + A/B contract integration + merge-gate hardening
 
 - `ruff check` / `ruff format --check`: pass
 - `pyright`: 0 errors
-- `pytest` full suite with db/redis/s3mock up: **165 passed** (storage test included),
-  including the advisory-lock concurrency test and the runtime Zod-snapshot validation.
+- `pytest` full suite with db/redis/s3mock up: **166 passed** (storage test included),
+  including the advisory-lock concurrency tests for today-plan and Focus start and the runtime
+  Zod-snapshot validation.
 - OpenAPI/Zod drift check: pass (`python -m backend.scripts.check_contract_drift`)
 - S3Storage round-trip against `s3mock`: pass
 - Arq worker (Redis → Arq → task): pass
@@ -48,7 +56,11 @@ astra6 review fixes + A/B contract integration + merge-gate hardening
 
 ## In progress / pending
 
-- Nothing blocking. M1 work not started.
+- Joint acceptance with Developer B is still open (integration review): plan loading, duplicate
+  confirmation, Focus start/complete, `actual_minutes=0`, offline retry, and the Windows build
+  package. Merge to `main` waits on it.
+- `packages/contracts` on `feature/client-tauri-campus-adapter` must mirror the frozen
+  `PlanItem.title` (see the header note in `tests/fixtures/client_contract.ts`).
 
 ## Blockers / decisions needed
 

@@ -3,6 +3,13 @@
 // Source: `packages/contracts/src/index.ts` on branch
 // `feature/client-tauri-campus-adapter` @ c581226ca702ba66a484576547bc37bc893a2e0f.
 //
+// Backend-side contract freeze (2026-09-28, integration review): `title` was
+// added to `PlanItemSchema` to match the served `ClientPlanItem` (OpenAPI
+// already had it as required). Developer B must mirror this exact line in
+// `packages/contracts/src/index.ts`; the drift check fails until both copies
+// agree. `next_cursor` is deprecated server-side (D-010) and kept here for
+// response compatibility (D-022).
+//
 // The desktop client (Developer B) owns this contract. The Backend serves these
 // exact shapes under `/v1` (DECISIONS.md D-009) and the drift check in
 // `backend/scripts/check_contract_drift.py` reads this file so CI can report an
@@ -40,6 +47,7 @@ export const EventBatchRequestSchema = z.object({
   client_cursor: z.string().nullable(),
 });
 
+// Deprecated D-022: echoes the request's client_cursor; client owns sync progress.
 export const EventBatchResponseSchema = z.object({
   accepted_event_ids: z.array(z.string()),
   duplicate_event_ids: z.array(z.string()),
@@ -74,6 +82,7 @@ export const PlanItemSchema = z.object({
   task_id: z.string(),
   start_at: IsoDateTime,
   end_at: IsoDateTime,
+  title: z.string(),
   reason: z.string(),
 });
 

@@ -189,3 +189,17 @@ enforced because the Backend uses it to represent absence; runtime shapes are as
 `tests/integration/test_client_contract.py`.
 
 The check is exposed as `agenthu-contract-drift`; `--write` refreshes `openapi.json`.
+
+## D-022 — `EventBatchResponse.next_cursor` is deprecated, not implemented
+
+Status: accepted (2026-09-28, A/B contract integration review blocking item). Context: the batch
+ingestion response returned `next_cursor` as a placeholder that only echoed the request's
+`client_cursor`, which looked like a real incremental sync cursor but carried no server-side state.
+
+Decision: deprecate rather than implement. The client's sync coordinator already owns cursor
+progress (it resends unacked envelopes until they are accepted/deduplicated), so a server-side
+cursor would duplicate the same state the client is required to keep. The field stays in the
+frozen contract (marked `deprecated: true` in OpenAPI, `z.string().nullable()` in Zod) for
+response compatibility; it must not be used by new client behavior and will be removed in the
+next contract version. Raising a real server-driven incremental sync cursor requires a fresh
+decision (it belongs to the M1 sync work, not the M0 batch contract).
