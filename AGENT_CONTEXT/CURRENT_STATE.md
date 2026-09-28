@@ -9,8 +9,14 @@ Updated: 2026-09-28 · Milestone: **M0 (engineering baseline + frozen contracts)
 B 见 `TASKS/client-merge1-review-fixes.md`（D1/D2/D3/D4/D6）。登录链修复参照上游
 OneTHU dev3 实现，要求一次登录不重复认证。
 · **A 的 D5/D7 与 B 的 D1/D2/D3/D4/D6 修复均已完成并推送到本分支**（A 见下方
-第四轮修复之后的新条目，B 见客户端小节），双侧自动检查全绿；剩余前置门槛为
-Windows 构建包人工复验。
+第四轮修复之后的新条目，B 见客户端小节），双侧自动检查全绿。
+· **Merge-2 验收结论（2026-09-28，`bcd53c8`）：仍不建议转正**（见
+`HANDOFF/2026-09-28-merge1-acceptance-round2-report.md`）。D2/D4/D5/D6/D7 现场
+确认修复通过；D1 的 learn 域修复生效，但采集卡在新的 **D8（P0）**：Info 域
+XSRF 依赖惰性 jar（`InfoClient.#csrfToken` 读 `getCookies`，桌面 jar 为空壳），
+确定性失败，已立项 `TASKS/client-merge2-d8-info-xsrf.md`（B）。A 的非阻塞
+加固项立项 `TASKS/backend-merge2-hardening.md`。断网重试/队列恢复验收仍被
+D8 阻塞；转正门槛 = D8 修复 + 第三轮构建包人工验收。
 
 ## 开发者 A：Backend（`m0/backend-foundation` @ `61fcf82`）
 
