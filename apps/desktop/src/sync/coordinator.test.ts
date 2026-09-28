@@ -33,19 +33,25 @@ function queue(): EventQueue {
 }
 
 describe("EventSyncCoordinator", () => {
-  it("removes accepted and duplicate events but retains rejected events", async () => {
+  it("removes accepted, duplicate, and rejected events and returns rejection details", async () => {
     const q = queue();
     const backend = {
       pushEvents: async () => ({
-        accepted_event_ids: ["event-1"],
+        accepted_event_ids: [],
         duplicate_event_ids: [],
-        rejected: [],
+        rejected: [{ client_event_id: "event-1", reason: "data.secret is not allowed" }],
         next_cursor: "cursor-1",
       }),
     } as never;
     const coordinator = new EventSyncCoordinator(backend, q);
     const result = await coordinator.flush();
-    expect(result).toEqual({ sent: 1, duplicates: 0, rejected: 0, pending: 0 });
+    expect(result).toEqual({
+      sent: 0,
+      duplicates: 0,
+      rejected: 1,
+      rejections: [{ client_event_id: "event-1", reason: "data.secret is not allowed" }],
+      pending: 0,
+    });
   });
 
   it("sends at most 500 events per batch", async () => {
@@ -65,7 +71,31 @@ describe("EventSyncCoordinator", () => {
     } as never;
     const result = await new EventSyncCoordinator(backend, q).flush();
     expect(sizes).toEqual([500, 1]);
-    expect(result).toEqual({ sent: 501, duplicates: 0, rejected: 0, pending: 0 });
+    expect(result).toEqual({ sent: 501, duplicates: 0, rejected: 0, rejections: [], pending: 0 });
+  });
+
+  it("removes a mixed batch and leaves no pending events", async () => {
+    const q = queue();
+    await q.remove([event.client_event_id]);
+    await q.add([
+      { ...event, client_event_id: "accepted" },
+      { ...event, client_event_id: "duplicate" },
+      { ...event, client_event_id: "rejected" },
+    ]);
+    const backend = {
+      pushEvents: async () => ({
+        accepted_event_ids: ["accepted"],
+        duplicate_event_ids: ["duplicate"],
+        rejected: [{ client_event_id: "rejected", reason: "payload too large" }],
+        next_cursor: "cursor-2",
+      }),
+    } as never;
+
+    const result = await new EventSyncCoordinator(backend, q).flush();
+
+    expect(result.pending).toBe(0);
+    expect(result.rejected).toBe(1);
+    expect(result.rejections[0]?.reason).toBe("payload too large");
   });
 
   it("deduplicates repeated IDs within one local add", async () => {

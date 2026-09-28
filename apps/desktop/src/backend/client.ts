@@ -18,6 +18,8 @@ import {
   type User,
 } from "@agenthu/contracts";
 
+export type FocusSessionUpdate = Partial<Pick<FocusSession, "status" | "actual_minutes" | "deviation_note">>;
+
 export class BackendAuthError extends Error {
   constructor(message = "Backend 登录已失效，请重新登录") {
     super(message);
@@ -104,7 +106,7 @@ export class BackendClient {
     });
   }
 
-  async updateFocus(sessionId: string, patch: Partial<FocusSession>): Promise<FocusSession> {
+  async updateFocus(sessionId: string, patch: FocusSessionUpdate): Promise<FocusSession> {
     return this.requestValidated(`/v1/focus-sessions/${encodeURIComponent(sessionId)}`, FocusSessionSchema, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },

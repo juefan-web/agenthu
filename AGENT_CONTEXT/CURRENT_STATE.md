@@ -1,4 +1,4 @@
-# 当前进度（2026-09-27）
+# 当前进度（2026-09-28）
 
 ## 开发者 B：客户端与校园适配
 
@@ -16,7 +16,9 @@
 
 - 真实校园账号登录、2FA、会话恢复和失效重试仍需在构建后的 Windows 客户端中人工验收；当前已有 OneTHU 认证适配、Stronghold 加密快照和脱敏状态测试。
 - Rust SQLite 待同步 Event 与 Backend 对账、冲突提示和 Focus 偏差重规划依赖开发者 A 的最终契约与实现。
-- `VITE_BACKEND_URL` 未配置时客户端可展示本地状态，但无法读取 Backend Current State、Task 和 Plan。
+- `VITE_BACKEND_URL` 的示例和构建包 CSP 已补齐；未配置时客户端仍可展示本地状态，但无法读取 Backend Current State、Task 和 Plan。
+- Event 同步现已将 Backend rejected 事件移出待同步队列，并将拒绝原因返回给 UI；仍需在真实 Backend 上验证敏感字段、大小和深度限制的提示。
+- Focus PATCH 现只发送 Backend 支持的 `status`、`actual_minutes`、`deviation_note` 字段；实际时长仍由 Backend 完成接口根据时间计算。
 - 还需要 Testing Library 和 Playwright 用户流程测试，以及 Android 凭据存储、通知和同步恢复。
 - 发布前仍需完成 OneTHU BSL 1.1、LearnX 及依赖许可的逐文件分发审查。
 
@@ -26,7 +28,8 @@
 
 ## 下一步
 
-1. 开发者 A 先修正 OAuth2/OpenAPI `tokenUrl`，补齐 Bearer JWT fixture、主链路 API 联调测试，并把 OpenAPI/Zod 漂移检查纳入 CI。详见 `TASKS/backend-auth-contract-integration.md`。
-2. 开发者 B 将 Backend JWT 会话接入 Windows 构建包，验证 Stronghold 凭据存储、重启恢复和真实 API 联调；当前代码仍未替代构建包人工验收。
-3. 两位开发者共同在 Windows 构建包验收校园登录/2FA、Event 同步、计划确认、Focus 完成、断网重试和冲突处理。
-4. 主链路稳定后再推进 Android 凭据存储/通知、Agent 动态重规划、Memory/Grounding 和 OneTHU 分发许可审查。
+1. A/B 共同冻结 `PlanItem.title` 契约：A 更新 Backend OpenAPI/快照和 fixture，B 更新 Zod/UI，并共同跑漂移检查；当前不能把 A 分支直接合并到 main。
+2. 解决两个分支合并时的 `.gitignore`、`AGENT_CONTEXT/CURRENT_STATE.md` add/add 冲突，再在集成分支跑完整 Backend 与客户端检查。
+3. 开发者 B 将当前 Backend JWT 会话接入 Windows 构建包，验证 Stronghold 凭据存储、重启恢复和真实 API 联调；当前代码仍未替代构建包人工验收。
+4. 两位开发者共同在 Windows 构建包验收校园登录/2FA、Event 同步、计划确认、Focus 完成、断网重试和冲突处理。
+5. 主链路稳定后再推进 Android 凭据存储/通知、Agent 动态重规划、Memory/Grounding 和 OneTHU 分发许可审查。

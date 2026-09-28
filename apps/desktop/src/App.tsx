@@ -27,6 +27,13 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function syncResultText(result: Awaited<ReturnType<EventSyncCoordinator["flush"]>>): string {
+  const rejectionSummary = result.rejections.length > 0
+    ? `拒绝 ${result.rejections.length} 条：${result.rejections.slice(0, 3).map(({ reason }) => reason).join("；")}${result.rejections.length > 3 ? `；另有 ${result.rejections.length - 3} 条` : ""}`
+    : "";
+  return `上传 ${result.sent} 条，重复 ${result.duplicates} 条${rejectionSummary ? `，${rejectionSummary}` : ""}，待同步 ${result.pending} 条。`;
+}
+
 function applySession(status: SessionStatus): void {
   useSessionStore.getState().setTwoFactor(status.state === "need-2fa" ? status.methods : [], status.state === "need-2fa" && !!status.codeSent, status.state === "need-2fa" ? status.selectedMethod : undefined);
   useSessionStore.getState().setStatus(
@@ -91,6 +98,7 @@ export default function App() {
       void sync.flush()
         .then((result) => {
           setPending(result.pending);
+          if (result.rejected > 0) setNotice(`重新连接后同步完成：${syncResultText(result)}`);
           if (result.sent || result.duplicates) void queryClient.invalidateQueries();
         })
         .catch(() => undefined);
@@ -128,7 +136,7 @@ export default function App() {
     },
     onSuccess: ({ collected, collectionSeconds, syncSeconds, result }) => {
       setNotice(result
-        ? `采集 ${collected} 条（${collectionSeconds} 秒），同步 ${syncSeconds} 秒；上传 ${result.sent} 条，重复 ${result.duplicates} 条，待同步 ${result.pending} 条。`
+        ? `采集 ${collected} 条（${collectionSeconds} 秒），同步 ${syncSeconds} 秒；${syncResultText(result)}`
         : `采集 ${collected} 条（${collectionSeconds} 秒），已保存到本地队列；配置 Backend 后可上传。`);
       void queryClient.invalidateQueries();
     },
@@ -159,7 +167,7 @@ export default function App() {
       return result;
     },
     onSuccess: (result) => {
-      setNotice(`上传 ${result.sent} 条，重复 ${result.duplicates} 条，待同步 ${result.pending} 条。`);
+      setNotice(syncResultText(result));
       void queryClient.invalidateQueries();
     },
     onError: (error) => setNotice(errorText(error)),
@@ -320,7 +328,7 @@ function FocusView({ tasks }: { tasks: Task[] }) {
     if (!backend || !active) return;
     setBusy(true);
     try {
-      const next = await backend.updateFocus(active.id, { status, deviation_note: status === "completed" ? note || null : active.deviation_note, ended_at: status === "completed" ? new Date().toISOString() : null });
+      const next = await backend.updateFocus(active.id, { status, deviation_note: status === "completed" ? note || null : active.deviation_note });
       setActive(status === "completed" ? null : next); setError(null);
       if (status === "completed") setNote("");
       await focusDraft.write(status === "completed" ? null : { session: next, note });

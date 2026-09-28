@@ -55,4 +55,27 @@ describe("BackendClient authentication", () => {
     await expect(client.login("student@example.com", "wrong-password")).rejects.toThrow("Invalid email or password");
     expect(new Headers(fetcher.mock.calls[0][1]?.headers).has("Authorization")).toBe(false);
   });
+
+  it("sends only fields supported by the Focus PATCH contract", async () => {
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => json({
+      id: "focus-1",
+      task_id: "task-1",
+      started_at: "2026-09-28T10:00:00+08:00",
+      ended_at: null,
+      actual_minutes: null,
+      status: "paused",
+      deviation_note: "Interrupted by a meeting",
+    }));
+    const client = new BackendClient({ baseUrl: "http://backend", fetcher, getToken: () => "jwt" });
+
+    await client.updateFocus("focus-1", {
+      status: "paused",
+      deviation_note: "Interrupted by a meeting",
+    });
+
+    expect(JSON.parse(String(fetcher.mock.calls[0][1]?.body))).toEqual({
+      status: "paused",
+      deviation_note: "Interrupted by a meeting",
+    });
+  });
 });
