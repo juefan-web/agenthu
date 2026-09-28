@@ -17,6 +17,18 @@ XSRF 依赖惰性 jar（`InfoClient.#csrfToken` 读 `getCookies`，桌面 jar �
 确定性失败，已立项 `TASKS/client-merge2-d8-info-xsrf.md`（B）。A 的非阻塞
 加固项立项 `TASKS/backend-merge2-hardening.md`。断网重试/队列恢复验收仍被
 D8 阻塞；转正门槛 = D8 修复 + 第三轮构建包人工验收。
+· **Merge-3 验收结论（2026-09-28，`bad00c7`）：仍不建议转正**（见
+`HANDOFF/2026-09-28-merge1-acceptance-round3-report.md`）。D8 修复验证通过
+（镜像 jar 打通 info 域 XSRF，learn 全链 success）；D2 未受信双轮提示与 D3
+错误透出真实环境确认。新阻塞 **D9（P0）**：vendor 教务课表直连
+`http://zhjw.cic.tsinghua.edu.cn:80`，Rust 白名单仅放行 https:443 双处拒绝
+（根因含 vendor 加白注释：webvpn 包装 zhjw 曾实测撞引导壳，直连是上游验证
+过的路径，故修复采用单 host http 窄开口而非改走 webvpn）。另有 D3 残留
+（错误态缺原地重试入口）。**A 临时不在，本轮全部任务归 B**，见
+`TASKS/client-merge3-d9-and-residuals.md`（D9、D3 残留、时延复核、compose
+healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修复 +
+第四轮构建包人工验收（重点：采集 → 入队 → 断网重试与队列恢复 → 真实数据
+全链）。
 
 ## 开发者 A：Backend（`m0/backend-foundation` @ `61fcf82`）
 
