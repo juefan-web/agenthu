@@ -56,7 +56,7 @@ context lives under `AGENT_CONTEXT/`.
 
 - `ruff check` + `ruff format --check`: pass
 - `pyright`: 0 errors
-- `pytest` (full suite, all services up incl. S3Mock): **166 passed** in ~80s
+- `pytest` (full suite, all services up incl. S3Mock): **167 passed** in ~70s
 - OpenAPI/Zod contract drift check: pass (`python -m backend.scripts.check_contract_drift`)
 - `pytest -m storage` (S3Storage against `s3mock`): pass
 - Arq worker test (Redis → Arq → task): pass

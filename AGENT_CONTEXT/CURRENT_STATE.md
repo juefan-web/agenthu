@@ -33,12 +33,12 @@ astra6 review fixes + A/B contract integration + merge-gate hardening
   all frozen client origins; runtime payloads validated against the Zod snapshot
   (`validate_client_value`) in `test_client_contract.py` (D-019/D-021).
 - Integration-review blocking items (2026-09-28): Focus concurrent start is serialized by a
-  PostgreSQL transaction-level advisory lock keyed by (user, task) — the read-then-insert race that
-  created two RUNNING sessions on real PostgreSQL is reproduced and fixed by
-  `tests/integration/test_focus_concurrency.py`; `PlanItem.title` is frozen into the client Zod
+  PostgreSQL transaction-level advisory lock keyed by (user, task) — the read-then-insert race
+  that created two RUNNING sessions on real PostgreSQL was reproduced locally and fixed by
+  `cbe30f7` (rebased into this branch); the race regression test lives in
+  `tests/integration/test_focus_concurrency.py`. `PlanItem.title` is frozen into the client Zod
   snapshot (Developer B must mirror it in `packages/contracts/src/index.ts`); `next_cursor` is
-  deprecated, not implemented (D-022). Note: the review's cherry-pick target `cbe30f7` does not
-  exist on any remote branch; equivalent fixes were made directly here.
+  deprecated, not implemented (D-022).
 - Docs: `README.md`, `DEVELOPMENT.md` (status + review fixes), `M0_HANDOFF.md`, `AGENT_CONTEXT/`;
   Flutter references removed from `PROJECT.md` / `HANDOFF/M0.md` (D-009).
 
@@ -46,7 +46,7 @@ astra6 review fixes + A/B contract integration + merge-gate hardening
 
 - `ruff check` / `ruff format --check`: pass
 - `pyright`: 0 errors
-- `pytest` full suite with db/redis/s3mock up: **166 passed** (storage test included),
+- `pytest` full suite with db/redis/s3mock up: **167 passed** (storage test included),
   including the advisory-lock concurrency tests for today-plan and Focus start and the runtime
   Zod-snapshot validation.
 - OpenAPI/Zod drift check: pass (`python -m backend.scripts.check_contract_drift`)
