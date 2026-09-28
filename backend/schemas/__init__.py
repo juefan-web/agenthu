@@ -1,8 +1,8 @@
 """Pydantic API schemas.
 
-These models are the frozen M0 contract shared with the Flutter client. Any
-change here must be accompanied by a contract note and, if persisted, a
-migration.
+These models are the frozen M0 contract shared with the React/Tauri client
+(D-009). Any change here must be accompanied by a contract note and, if
+persisted, a migration.
 """
 
 from backend.schemas.audit import AuditLogRead

@@ -74,8 +74,8 @@ Decision: for the endpoints the client consumes, the Backend serves the client's
 Additional Backend-only fields are kept (Zod strips unknown keys). The API prefix moved from
 `/api/v1` to `/v1`. Contract mappers live in `backend/services/client_view.py`.
 
-Consequence: `TECH_STACK_AND_WORKPLAN.md` still says Flutter; that needs a coordinated doc update
-(it is a project-level decision, not a Backend-only change).
+Consequence: `TECH_STACK_AND_WORKPLAN.md` was realigned to React/Tauri, and the stale Flutter
+references in `AGENT_CONTEXT/` and the Backend comments were removed so the docs match this decision.
 
 ## D-010 — Event dedupe key is computed on the Backend
 
@@ -142,6 +142,16 @@ cookie session. Campus (OneTHU) accounts and Backend accounts are separate and m
 - never reuses a cross-day draft, and never returns a task-less manual plan
   (`task_id`/`start_at`/`end_at` must be non-null for every item);
 - otherwise generates a deterministic plan.
+
+Confirmed-plan semantics: a confirmed plan is the user's **global current plan**, not a per-day
+object. It is returned regardless of the local day it was created, because confirmation is an
+explicit user decision that stays in force until the plan is cancelled, superseded by a re-plan, or
+completed. Only *unconfirmed* proposals are day-scoped (`created since the start of today`), so a
+stale draft from a previous day is never reused.
+
+Concurrent first requests for the same user/day are serialized by a PostgreSQL transaction-level
+advisory lock keyed by (user, local day) (`planner.lock_today_proposal`), so two simultaneous
+`GET /v1/plans/today` calls cannot both observe "no proposal" and insert duplicates.
 
 ## D-020 — CORS uses explicit client origins
 

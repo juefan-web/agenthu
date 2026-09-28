@@ -38,3 +38,14 @@ def test_non_local_environment_accepts_strong_secret() -> None:
         secret_key="a-very-strong-and-long-secret-key-value-1234567890",
     )
     assert not settings.is_local
+
+
+@pytest.mark.parametrize("timezone", ["UTC", "Asia/Shanghai", "America/New_York"])
+def test_valid_default_timezone_is_accepted(timezone: str) -> None:
+    assert Settings(default_timezone=timezone).default_timezone == timezone
+
+
+def test_invalid_default_timezone_fails_at_settings_load() -> None:
+    # Must fail when settings load, not later as a 500 on a plans request.
+    with pytest.raises(ValidationError):
+        Settings(default_timezone="Not/AZone")

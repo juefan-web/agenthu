@@ -27,6 +27,7 @@ import json
 import re
 import sys
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -84,6 +85,10 @@ class ZType:
     ref: str | None = None
     fields: dict[str, ZType] | None = None
     items: ZType | None = None
+    enum: tuple[str, ...] | None = None
+    is_datetime: bool = False
+    minimum: int | float | None = None
+    optional: bool = False
 
 
 @dataclass
@@ -201,10 +206,14 @@ def _ztype(expr: str, consts: dict[str, str], *, depth: int = 0) -> ZType:
         return _ztype(expanded, consts, depth=depth + 1)
 
     nullable = ".nullable()" in expr
+    optional = ".optional()" in expr
     types: set[str] = set()
     ref: str | None = None
     fields: dict[str, ZType] | None = None
     items: ZType | None = None
+    enum_values: tuple[str, ...] | None = None
+    is_datetime = False
+    minimum: int | float | None = None
 
     array_body = _call_body(expr, "z.array(")
     object_body = _call_body(expr, "z.object(")
@@ -221,10 +230,20 @@ def _ztype(expr: str, consts: dict[str, str], *, depth: int = 0) -> ZType:
         }
     elif expr.startswith("z.record("):
         types.add("object")
-    elif expr.startswith("z.enum(") or expr.startswith("z.string"):
+    elif expr.startswith("z.enum("):
         types.add("string")
+        body = _call_body(expr, "z.enum(")
+        if body is not None:
+            enum_values = tuple(
+                first or second for first, second in re.findall(r"\"([^\"]*)\"|'([^']*)'", body)
+            )
+    elif expr.startswith("z.string"):
+        types.add("string")
+        is_datetime = ".datetime(" in expr
     elif expr.startswith("z.number"):
         types.add("integer" if ".int()" in expr else "number")
+        if ".nonnegative()" in expr:
+            minimum = 0
     elif expr.startswith("z.boolean"):
         types.add("boolean")
     else:
@@ -236,7 +255,16 @@ def _ztype(expr: str, consts: dict[str, str], *, depth: int = 0) -> ZType:
     if nullable:
         types.add("null")
 
-    return ZType(frozenset(types), ref=ref, fields=fields, items=items)
+    return ZType(
+        frozenset(types),
+        ref=ref,
+        fields=fields,
+        items=items,
+        enum=enum_values,
+        is_datetime=is_datetime,
+        minimum=minimum,
+        optional=optional,
+    )
 
 
 def parse_zod_schemas(source: str) -> dict[str, dict[str, ZType]]:
@@ -531,6 +559,106 @@ def check_client_alignment(zod_source: str, openapi: dict[str, Any]) -> list[str
     for zod_name, openapi_name in ZOD_TO_OPENAPI.items():
         alignment.check_mapping(zod_name, openapi_name, ZOD_DIRECTION.get(zod_name, "response"))
     return alignment.errors
+
+
+# --------------------------------------------------------------------------- #
+# Runtime payload validation against the parsed Zod contract
+# --------------------------------------------------------------------------- #
+
+
+def _validate_object(
+    value: Any,
+    fields: dict[str, ZType],
+    path: str,
+    schemas: dict[str, dict[str, ZType]],
+    errors: list[str],
+) -> None:
+    if not isinstance(value, dict):
+        errors.append(f"{path}: expected an object")
+        return
+    for name, expected in fields.items():
+        child = f"{path}.{name}"
+        if name not in value:
+            if not expected.optional:
+                errors.append(f"{child}: missing")
+            continue
+        _validate_value(value[name], expected, child, schemas, errors)
+
+
+def _validate_value(
+    value: Any,
+    expected: ZType,
+    path: str,
+    schemas: dict[str, dict[str, ZType]],
+    errors: list[str],
+) -> None:
+    if value is None:
+        if "null" not in expected.types:
+            errors.append(f"{path}: null is not allowed")
+        return
+    if expected.ref is not None:
+        nested = schemas.get(expected.ref)
+        if nested is None:
+            errors.append(f"{path}: Zod schema {expected.ref} not found")
+        else:
+            _validate_object(value, nested, path, schemas, errors)
+        return
+    if expected.fields is not None:
+        _validate_object(value, expected.fields, path, schemas, errors)
+        return
+    if expected.items is not None:
+        if not isinstance(value, list):
+            errors.append(f"{path}: expected an array")
+            return
+        for index, item in enumerate(value):
+            _validate_value(item, expected.items, f"{path}[{index}]", schemas, errors)
+        return
+
+    allowed = {kind for kind in expected.types if kind != "null"}
+    if "string" in allowed:
+        if not isinstance(value, str):
+            errors.append(f"{path}: expected a string")
+            return
+        if expected.is_datetime:
+            try:
+                datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                errors.append(f"{path}: {value!r} is not an ISO-8601 datetime")
+        if expected.enum is not None and value not in expected.enum:
+            errors.append(f"{path}: {value!r} is not one of {sorted(expected.enum)}")
+    elif "boolean" in allowed:
+        if not isinstance(value, bool):
+            errors.append(f"{path}: expected a boolean")
+    elif "integer" in allowed or "number" in allowed:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            errors.append(f"{path}: expected a number")
+        elif "integer" in allowed and not isinstance(value, int):
+            errors.append(f"{path}: expected an integer")
+        elif expected.minimum is not None and value < expected.minimum:
+            errors.append(f"{path}: {value} is below the minimum {expected.minimum}")
+    elif "object" in allowed:
+        if not isinstance(value, dict):
+            errors.append(f"{path}: expected an object")
+    elif "array" in allowed and not isinstance(value, list):
+        errors.append(f"{path}: expected an array")
+
+
+def validate_client_value(payload: Any, zod_source: str, schema_name: str) -> list[str]:
+    """Validate a runtime JSON payload against a Zod object schema.
+
+    This is the strongest check possible without a JS runtime: it enforces the
+    client's declared fields, nullability, base JSON types, ISO-8601 datetimes,
+    enum members and numeric bounds for one snapshot schema, following nested
+    references to other Zod schemas recursively.
+    """
+
+    schemas = parse_zod_schemas(zod_source)
+    fields = schemas.get(schema_name)
+    if fields is None:
+        return [f"{schema_name}: not found in the Zod contract"]
+    errors: list[str] = []
+    _validate_object(payload, fields, schema_name, schemas, errors)
+    return errors
 
 
 def _read_artifact(path: Path) -> dict[str, Any] | None:

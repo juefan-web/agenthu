@@ -19,7 +19,8 @@ Non-negotiables (from `AGENTS.md`):
 
 Two-developer split (from `TECH_STACK_AND_WORKPLAN.md`):
 - Developer A: Backend, data, contracts, worker, Agent foundations, permissions, storage, tests/CI.
-- Developer B: Flutter Android/Windows client, Study + Time UX, offline drafts.
+- Developer B: React/Tauri Android/Windows client (`packages/contracts` Zod schemas), Study + Time
+  UX, offline drafts.
 - Shared: Event/Memory/CurrentState/permission contracts; cross-boundary changes need a short ADR.
 
 Collaboration:

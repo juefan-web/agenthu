@@ -1,7 +1,7 @@
 # CURRENT_STATE
 
-Updated: 2026-09-27 · Milestone: **M0 (engineering baseline + frozen contracts)** +
-astra6 review fixes + A/B contract integration
+Updated: 2026-09-28 · Milestone: **M0 (engineering baseline + frozen contracts)** +
+astra6 review fixes + A/B contract integration + merge-gate hardening
 
 ## Done
 
@@ -22,13 +22,21 @@ astra6 review fixes + A/B contract integration
   (`tests/integration/test_client_main_chain.py`).
 - OpenAPI/Zod drift check (`backend/scripts/check_contract_drift.py`) wired into CI before the
   OpenAPI export; frozen client Zod snapshot in `tests/fixtures/client_contract.ts` (D-021).
-- Docs: `README.md`, `DEVELOPMENT.md` (status + review fixes), `M0_HANDOFF.md`, `AGENT_CONTEXT/`.
+- `GET /v1/plans/today` is concurrency-idempotent: PostgreSQL advisory lock keyed by (user, local
+  day); `latest_open_plan` filters client validity in SQL (no 10-row scan). Covered by
+  `tests/integration/test_plans_concurrency.py` and a >10 invalid-proposal regression test.
+- `DEFAULT_TIMEZONE` validated at settings load; CORS preflight covers `Authorization`/POST/PATCH and
+  all frozen client origins; runtime payloads validated against the Zod snapshot
+  (`validate_client_value`) in `test_client_contract.py` (D-019/D-021).
+- Docs: `README.md`, `DEVELOPMENT.md` (status + review fixes), `M0_HANDOFF.md`, `AGENT_CONTEXT/`;
+  Flutter references removed from `PROJECT.md` / `HANDOFF/M0.md` (D-009).
 
 ## Verification snapshot
 
 - `ruff check` / `ruff format --check`: pass
 - `pyright`: 0 errors
-- `pytest` full suite with db/redis/s3mock up: **137 passed, 1 skipped** (storage marker)
+- `pytest` full suite with db/redis/s3mock up: **156 passed, 1 skipped** (storage marker),
+  including the advisory-lock concurrency test and the runtime Zod-snapshot validation.
 - OpenAPI/Zod drift check: pass (`python -m backend.scripts.check_contract_drift`)
 - S3Storage round-trip against `s3mock`: pass
 - Arq worker (Redis → Arq → task): pass
@@ -42,8 +50,8 @@ astra6 review fixes + A/B contract integration
 
 - OneTHU source/API not accessible → adapter is a deliberate stub.
 - `minio/minio` Docker Hub image returns 404 upstream; `s3mock` profile used for local verification.
-- `TECH_STACK_AND_WORKPLAN.md` still describes a Flutter client; reality is React/Tauri. Needs a
-  coordinated doc update with Developer B (see DECISIONS D-009).
+- Joint A+B CI should run the authoritative `packages/contracts` Vitest/typecheck; the Backend branch
+  only has the frozen Zod snapshot stand-in (D-021).
 
 ## Next
 

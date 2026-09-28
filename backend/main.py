@@ -83,7 +83,7 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
     app.include_router(health_router)
     # Document the shared error envelope on every API operation so it is part of
-    # the frozen OpenAPI contract the Flutter client generates from.
+    # the frozen OpenAPI contract the React/Tauri client validates (D-009).
     app.include_router(
         api_router,
         prefix=settings.api_v1_prefix,

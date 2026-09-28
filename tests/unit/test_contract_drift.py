@@ -18,6 +18,7 @@ from backend.scripts.check_contract_drift import (
     compare_artifact,
     parse_zod_schemas,
     run,
+    validate_client_value,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -50,6 +51,87 @@ def test_zod_parser_extracts_client_fields() -> None:
     assert schemas["TaskSchema"]["status"].types == frozenset({"string"})
     assert schemas["PlanSchema"]["items"].items is not None
     assert schemas["PlanSchema"]["items"].items.ref == "PlanItemSchema"
+
+
+def test_zod_parser_extracts_enum_datetime_and_bound_metadata() -> None:
+    schemas = parse_zod_schemas(_fixture_source())
+    assert schemas["TaskSchema"]["status"].enum == (
+        "todo",
+        "in_progress",
+        "done",
+        "cancelled",
+    )
+    assert schemas["TaskSchema"]["due_at"].is_datetime is True
+    assert schemas["TaskSchema"]["estimate_minutes"].minimum == 0
+    assert schemas["PlanSchema"]["status"].enum == (
+        "draft",
+        "confirmed",
+        "active",
+        "completed",
+        "superseded",
+    )
+
+
+def test_runtime_validator_accepts_client_shaped_payload() -> None:
+    payload = {
+        "id": "t1",
+        "title": "HW",
+        "due_at": "2026-09-28T10:00:00+08:00",
+        "estimate_minutes": 60,
+        "status": "todo",
+        "source_event_ids": [],
+    }
+    assert validate_client_value(payload, _fixture_source(), "TaskSchema") == []
+
+
+def test_runtime_validator_allows_nullable_fields() -> None:
+    payload = {
+        "id": "t1",
+        "title": "HW",
+        "due_at": None,
+        "estimate_minutes": None,
+        "status": "in_progress",
+        "source_event_ids": [],
+    }
+    assert validate_client_value(payload, _fixture_source(), "TaskSchema") == []
+
+
+def test_runtime_validator_rejects_bad_enum_datetime_and_bound() -> None:
+    payload = {
+        "id": "t1",
+        "title": "HW",
+        "due_at": "yesterday",
+        "estimate_minutes": -1,
+        "status": "doing",
+        "source_event_ids": [],
+    }
+    errors = validate_client_value(payload, _fixture_source(), "TaskSchema")
+    assert any("TaskSchema.status" in error for error in errors)
+    assert any("TaskSchema.due_at" in error for error in errors)
+    assert any("TaskSchema.estimate_minutes" in error for error in errors)
+
+
+def test_runtime_validator_rejects_missing_field_and_non_nullable_null() -> None:
+    missing = validate_client_value(
+        {"id": "t1", "title": "HW", "status": "todo", "source_event_ids": []},
+        _fixture_source(),
+        "TaskSchema",
+    )
+    assert any("TaskSchema.due_at: missing" in error for error in missing)
+
+    bad_null = validate_client_value(
+        {
+            "id": "t1",
+            "title": None,
+            "due_at": None,
+            "estimate_minutes": None,
+            "status": "todo",
+            "source_event_ids": [],
+        },
+        _fixture_source(),
+        "TaskSchema",
+    )
+    assert any("TaskSchema.title: null is not allowed" in error for error in bad_null)
 
 
 def test_openapi_matches_client_zod_contract() -> None:

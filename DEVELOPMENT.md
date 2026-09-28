@@ -56,7 +56,7 @@ context lives under `AGENT_CONTEXT/`.
 
 - `ruff check` + `ruff format --check`: pass
 - `pyright`: 0 errors
-- `pytest` (full suite, all services up): **137 passed, 1 skipped** in ~64s
+- `pytest` (full suite, all services up): **156 passed, 1 skipped** in ~63s
 - OpenAPI/Zod contract drift check: pass (`python -m backend.scripts.check_contract_drift`)
 - `pytest -m storage` (S3Storage against `s3mock`): pass
 - Arq worker test (Redis → Arq → task): pass
@@ -75,10 +75,9 @@ context lives under `AGENT_CONTEXT/`.
   s3mock specifics: image is **pinned** (`adobe/s3mock:5.2.3`, not `latest`) so CI does not drift;
   the healthcheck uses **`wget`** (the image has no `curl`) against **`/favicon.ico`** (the root path
   is an unauthenticated ListBuckets that may return 403). CI mirrors the same readiness probe.
-- **Documentation mismatch (needs a coordinated decision)**: `TECH_STACK_AND_WORKPLAN.md` states the
-  client is Flutter generated from OpenAPI, but the real client is React/Tauri with hand-written Zod
-  contracts (`packages/contracts`). The Backend now conforms to the real client (see D-009), but the
-  project doc should be updated with Developer B.
+- ~~Documentation mismatch (Flutter vs React/Tauri)~~: resolved. `TECH_STACK_AND_WORKPLAN.md`,
+  `AGENT_CONTEXT/PROJECT.md`, `AGENT_CONTEXT/HANDOFF/M0.md` and the Backend comments now describe the
+  real React/Tauri client and `packages/contracts` (D-009).
 
 ## Resolved review items (astra6 report on e715f9e)
 
@@ -123,6 +122,21 @@ contract smoke** against `/v1` (12/12 checks pass).
   `tests/integration/test_client_main_chain.py`.
 - OpenAPI/Zod drift check (`backend/scripts/check_contract_drift.py`, D-021) plus the frozen client
   Zod snapshot and `tests/unit/test_contract_drift.py`; CI runs it before the OpenAPI export.
+- `GET /v1/plans/today` first-generation is now database-idempotent: a PostgreSQL transaction-level
+  advisory lock keyed by (user, local day) serializes concurrent requests (`planner.resolve_today_plan`
+  / `planner.lock_today_proposal`), covered by `tests/integration/test_plans_concurrency.py`.
+- `planner.latest_open_plan` enforces client validity in SQL and no longer scans a fixed 10 rows, so a
+  valid proposal behind invalid ones is still reused (`test_today_reuses_valid_plan_behind_invalid_proposals`).
+- `DEFAULT_TIMEZONE` is validated when settings load (invalid zones fail fast instead of a 500 on the
+  first `plans/today` request).
+- Runtime payloads are validated against the frozen Zod snapshot (fields, nullability, optionality,
+  ISO-8601 datetimes, enums, numeric bounds) in `tests/integration/test_client_contract.py` via
+  `check_contract_drift.validate_client_value`.
+- CORS preflight coverage now includes `Authorization` headers, POST/PATCH, all four frozen client
+  origins (`127.0.0.1:5173`, `tauri://localhost`, `http://tauri.localhost`), and the wildcard +
+  credentials fail-safe; `.env.example` documents Bearer-only auth instead of cookie credentials.
+- D-019 now states that a confirmed plan is the user's global current plan (not day-scoped), while only
+  unconfirmed proposals are day-scoped.
 
 ### Resolved decisions
 
@@ -161,7 +175,9 @@ contract smoke** against `/v1` (12/12 checks pass).
 4. Done (D-021): `backend/scripts/check_contract_drift.py` runs in CI before the OpenAPI export and
    fails when `openapi.json` is stale or the client's `packages/contracts` Zod contract drifts
    (frozen snapshot in `tests/fixtures/client_contract.ts`).
-5. Update `TECH_STACK_AND_WORKPLAN.md` (Flutter → React/Tauri) with Developer B.
+5. Run the authoritative `packages/contracts` Vitest/typecheck in the joint A+B integration CI once
+   Backend and client are checked out together; the frozen snapshot + `validate_client_value` are the
+   Backend-only stand-in (D-021).
 6. Decide credential storage (encryption + access control + deletion path) before any real campus
    data source is enabled.
 

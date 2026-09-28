@@ -8,8 +8,9 @@ file). Secrets never live in code. Field names map to upper-case env vars, e.g.
 from __future__ import annotations
 
 from functools import lru_cache
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_SECRET_KEY = "dev-insecure-change-me"
@@ -84,6 +85,17 @@ class Settings(BaseSettings):
     @property
     def is_local(self) -> bool:
         return self.environment.lower() in {"local", "dev", "development", "test"}
+
+    @field_validator("default_timezone")
+    @classmethod
+    def _validate_default_timezone(cls, value: str) -> str:
+        # Fail at settings load, not on the first `/v1/plans/today` request,
+        # where an invalid zone would surface as an opaque 500.
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError(f"Invalid DEFAULT_TIMEZONE {value!r}: {exc}") from exc
+        return value
 
     @model_validator(mode="after")
     def _enforce_strong_secret_outside_local(self) -> Settings:

@@ -1,7 +1,7 @@
 """Unified application error model and HTTP error responses.
 
 The error envelope is part of the frozen contract for M0 and shared with the
-Flutter client::
+React/Tauri client (D-009)::
 
     {"error": {"code": "not_found", "message": "...", "details": {...}}}
 """

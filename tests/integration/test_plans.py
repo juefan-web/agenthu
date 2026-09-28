@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from backend.models.enums import PlanStatus
-from backend.models.plan import Plan
+from backend.models.plan import Plan, PlanItem
 from tests.fixtures.payloads import task_payload
 
 pytestmark = pytest.mark.integration
@@ -121,6 +121,48 @@ def test_today_never_returns_manual_plan_without_task_ids(client, auth_headers) 
         assert item["task_id"] is not None
         assert item["start_at"] is not None
         assert item["end_at"] is not None
+
+
+def test_today_reuses_valid_plan_behind_invalid_proposals(client, auth_headers, db_session) -> None:
+    """A fixed scan window must not hide the only client-valid proposal."""
+
+    me = client.get("/v1/auth/me", headers=auth_headers).json()
+    user_id = uuid.UUID(me["id"])
+    task = _make_task(client, auth_headers, title="HW2", days=1)
+    base = datetime.now(UTC)
+
+    valid = Plan(
+        user_id=user_id,
+        title="Valid proposal",
+        status=PlanStatus.PENDING_CONFIRMATION,
+        created_at=base,
+    )
+    valid.items.append(
+        PlanItem(
+            task_id=uuid.UUID(task["id"]),
+            title="HW2",
+            order_index=0,
+            planned_start=base,
+            planned_end=base + timedelta(minutes=60),
+            planned_minutes=60,
+        )
+    )
+    db_session.add(valid)
+
+    # 11 newer proposals are client-invalid (null task_id / start / end).
+    for index in range(11):
+        invalid = Plan(
+            user_id=user_id,
+            title=f"Invalid {index}",
+            status=PlanStatus.PENDING_CONFIRMATION,
+            created_at=base + timedelta(seconds=index + 1),
+        )
+        invalid.items.append(PlanItem(title="task-less", order_index=0))
+        db_session.add(invalid)
+    db_session.flush()
+
+    today = client.get("/v1/plans/today", headers=auth_headers).json()
+    assert today["id"] == str(valid.id)
 
 
 def test_replan_supersedes_previous_plan(client, auth_headers) -> None:

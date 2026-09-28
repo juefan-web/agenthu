@@ -2,15 +2,32 @@
 
 These assertions mirror the Zod schemas the client validates responses with, so
 a Backend change that breaks client parsing fails here instead of at runtime.
+They also validate real response payloads against the frozen Zod snapshot in
+``tests/fixtures/client_contract.ts`` via
+``check_contract_drift.validate_client_value`` (fields, nullability, types,
+ISO-8601 datetimes, enums and numeric bounds).
 """
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
 
+from backend.scripts.check_contract_drift import validate_client_value
+
 pytestmark = pytest.mark.integration
+
+_CONTRACT_SOURCE = (
+    Path(__file__).resolve().parents[1] / "fixtures" / "client_contract.ts"
+).read_text(encoding="utf-8")
+
+
+def _assert_matches_contract(schema_name: str, payload: Any) -> None:
+    errors = validate_client_value(payload, _CONTRACT_SOURCE, schema_name)
+    assert errors == [], errors
+
 
 TASK_FIELDS = {"id", "title", "due_at", "estimate_minutes", "status", "source_event_ids"}
 CURRENT_STATE_FIELDS = {
@@ -66,9 +83,11 @@ def test_task_matches_client_schema(client, auth_headers) -> None:
     assert set(task) >= TASK_FIELDS
     assert task["status"] in TASK_STATUSES
     assert isinstance(task["source_event_ids"], list)
+    _assert_matches_contract("TaskSchema", task)
 
     listing = client.get("/v1/tasks", headers=auth_headers)
     assert isinstance(listing.json(), list)
+    _assert_matches_contract("TaskSchema", listing.json()[0])
 
 
 def test_current_state_matches_client_schema(client, auth_headers) -> None:
@@ -77,6 +96,7 @@ def test_current_state_matches_client_schema(client, auth_headers) -> None:
     assert set(state) >= CURRENT_STATE_FIELDS
     assert isinstance(state["tasks"], list)
     assert all(set(task) >= TASK_FIELDS for task in state["tasks"])
+    _assert_matches_contract("CurrentStateSchema", state)
 
 
 def test_today_plan_matches_client_schema(client, auth_headers) -> None:
@@ -91,6 +111,7 @@ def test_today_plan_matches_client_schema(client, auth_headers) -> None:
         assert item["start_at"] is not None
         assert item["end_at"] is not None
         assert item["reason"]
+    _assert_matches_contract("PlanSchema", plan)
 
 
 def test_focus_session_matches_client_schema(client, auth_headers) -> None:
@@ -100,6 +121,7 @@ def test_focus_session_matches_client_schema(client, auth_headers) -> None:
     ).json()
     assert set(session) >= FOCUS_FIELDS
     assert session["status"] in FOCUS_STATUSES
+    _assert_matches_contract("FocusSessionSchema", session)
 
     completed = client.patch(
         f"/v1/focus-sessions/{session['id']}",
@@ -109,16 +131,21 @@ def test_focus_session_matches_client_schema(client, auth_headers) -> None:
     assert completed["status"] == "completed"
     assert completed["actual_minutes"] == 30
     assert completed["ended_at"] is not None
+    _assert_matches_contract("FocusSessionSchema", completed)
 
 
 def test_event_batch_matches_client_schema(client, auth_headers) -> None:
     payload = {"events": [_envelope("c-1", "hw-1")], "client_cursor": None}
+    _assert_matches_contract("EventBatchRequestSchema", payload)
+
     response = client.post("/v1/events/batch", json=payload, headers=auth_headers).json()
     assert set(response) >= BATCH_FIELDS
     assert response["accepted_event_ids"] == ["c-1"]
+    _assert_matches_contract("EventBatchResponseSchema", response)
 
     again = client.post("/v1/events/batch", json=payload, headers=auth_headers).json()
     assert again["duplicate_event_ids"] == ["c-1"]
+    _assert_matches_contract("EventBatchResponseSchema", again)
 
 
 def test_missing_token_returns_401(client) -> None:

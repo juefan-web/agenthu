@@ -49,7 +49,9 @@ its exact shapes:
 - `GET /v1/tasks` — bare array: `{id, title, due_at, estimate_minutes, status, source_event_ids}`
   with status `todo|in_progress|done|cancelled`.
 - `GET /v1/current-state` — `{version, updated_at, now, context, tasks, available_minutes}`.
-- `GET /v1/plans/today` — the confirmed plan, or a freshly generated deterministic draft.
+- `GET /v1/plans/today` — the confirmed plan, otherwise a same-day client-valid draft, otherwise a
+  freshly generated deterministic draft. Concurrent first requests for the same user/day return the
+  same plan (PostgreSQL advisory lock; D-019).
 - `POST /v1/plans/{plan_id}/confirm` — client plan
   `{id, generated_at, items:[{task_id, start_at, end_at, reason}], confirmation_required, status}`.
 - `POST /v1/focus-sessions` — body `{task_id}`; returns a focus session.

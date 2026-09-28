@@ -1,6 +1,6 @@
 """Export the OpenAPI contract to a JSON file.
 
-Used by CI to freeze the Backend <-> Flutter client contract::
+Used by CI to freeze the Backend <-> React/Tauri client contract (D-009)::
 
     python -m backend.scripts.export_openapi --output openapi.json
 """
