@@ -115,3 +115,23 @@ custody 语义维持"Rust 权威、TS 只读镜像"，附四条要求（1 条 bl
 未发现需要 B 收窄的放大面：镜像是单向（Rust→TS）、只读、按响应增量更新、
 随 `clear()`/logout 同步清空（要求 logout 同时清 TS 镜像——若 B 实现中
 `clear()` 仍为空壳，须改为清空缓存，属 A 案实现细节，不构成边界变化）。
+
+### 实现核对（A，2026-09-28，`b9ac745` 落地后）
+
+逐条对照上述要求的闭环结论——**全部符合，无收窄要求**：
+
+- 要求 #1 ✅：Rust `mirror_cookies` 只回传请求涉及 host 的未过期 cookie，限定
+  `*.tsinghua.edu.cn`，四元组 `host/name/value/host_only`（host_only 为域匹配
+  语义必需的最小属性）；响应头过滤本就仅 `content-type`/`location`，Set-Cookie
+  原始头从不跨 IPC；TS `serialize()` 保持 `"[]"`、`hydrate()` 惰性。
+- 字面偏离（认可）：镜像 jar 并非纯只读——`setRaw` 接受 wengine dance 的
+  name=value 注入。这是 vendored `info/client.ts` dance 逻辑的功能必需；写入
+  同样限定 campus 域、同粒度数据，custody 仍在 Rust（权威投影整体替换本域），
+  不构成放大面。
+- 要求 #2 ✅（留一条非阻塞提示）：`VITE_CAMPUS_DEBUG=0` 默认关 +
+  localStorage opt-in，文档明确 debug 行只含 cookie 名与截断 URL、不含值；
+  镜像模块零 console。提示：**"开启 debug 后输出不含镜像 value"目前只有文档
+  承诺、无回归断言**，建议 B 在后续测试批次补上（非阻塞）。
+- 要求 #3 ✅：Event 路径未改动，服务端 `sensitive.py` 键名正则纵深维持。
+- 要求 #4 ✅：`snapshot_payload` 持久化路径未动（仍是 Rust jar 序列化），TS
+  镜像物理上不在 Stronghold 快照路径。
