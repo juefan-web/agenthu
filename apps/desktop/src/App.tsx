@@ -70,9 +70,11 @@ export default function App() {
     event.preventDefault();
     if (!backend) return;
     setBackendBusy(true);
+    const email = backendEmail;
+    const password = backendPassword;
+    setBackendPassword("");
     try {
-      await backendSession?.login(backendEmail, backendPassword);
-      setBackendPassword("");
+      await backendSession?.login(email, password);
       setNotice("Backend 已连接");
       await queryClient.invalidateQueries();
     } catch (error) { setNotice(errorText(error)); }

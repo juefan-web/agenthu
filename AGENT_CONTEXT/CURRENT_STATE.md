@@ -12,11 +12,13 @@
 
 本轮完成 Backend JWT 客户端会话：`createBackendSession` 独立管理 Backend Token，与校园会话隔离；请求通过 `BackendClient` 统一注入 Bearer Token。登录先用 `/v1/auth/me` 验证候选 Token，再写入 TokenStore；验证失败或持久化失败时恢复旧 Token 和 UI 状态。重启恢复会跳过过期 Token、处理 `/me` 401，并对 TokenStore 读写/清理失败给出可见错误且不产生未处理拒绝。401 清理与 `restore/login/logout` 操作串行化，旧请求迟到时不会清除新会话；普通请求的 401 清理失败也有回归测试。新增 LocalTokenStore 与会话回归测试；本机桌面端 8 个测试文件、37 个测试、lint、typecheck 和 build 已通过。
 
+本轮落实 2026-09-28 审阅分配的客户端安全修复（见 `TASKS/client-security-hardening.md`）：生产 CSP 收紧为 `self` + 本地 Backend 源，移除 `connect-src https:` 通配与 `script-src 'unsafe-eval'`，开发期源移入独立 `devCsp`；新增 `scripts/check-csp.mjs` 挂入 `pnpm build`，拒绝 scheme 通配、`unsafe-*` 与未加白的 `VITE_BACKEND_URL` 源（失败路径已实测拦截）。Backend 登录改为发起请求前立即清除密码 state；Rust `queue_list` 逐行容错，坏行跳过并记日志、不删数据，新增单测；`createCampusRuntime` 只返回 `adapter`，裸 `CampusSession` 不再跨模块暴露。桌面端 lint/typecheck/test/build 与 `cargo test`（6 测试）均通过。审阅中的 2FA 等待期密码驻留一项不修：vendored info-lib 在 2FA 验证后的 id roam 需重放明文密码，登录链存活期间无法丢弃；所有 settle/logout/超时路径均已清理，彻底消除需上游改造。
+
 ## 尚未满足的验收项
 
 - 真实校园账号登录、2FA、会话恢复和失效重试仍需在构建后的 Windows 客户端中人工验收；当前已有 OneTHU 认证适配、Stronghold 加密快照和脱敏状态测试。
 - Rust SQLite 待同步 Event 与 Backend 对账、冲突提示和 Focus 偏差重规划依赖开发者 A 的最终契约与实现。
-- `VITE_BACKEND_URL` 的示例和构建包 CSP 已补齐；未配置时客户端仍可展示本地状态，但无法读取 Backend Current State、Task 和 Plan。
+- `VITE_BACKEND_URL` 的示例和构建包 CSP 已补齐，非本地 Backend 源现在必须在 `tauri.conf.json` 显式加白（构建期 guard 强制）；未配置时客户端仍可展示本地状态，但无法读取 Backend Current State、Task 和 Plan。
 - Event 同步现已将 Backend rejected 事件移出待同步队列，并将拒绝原因返回给 UI；仍需在真实 Backend 上验证敏感字段、大小和深度限制的提示。
 - Focus PATCH 现只发送 Backend 支持的 `status`、`actual_minutes`、`deviation_note` 字段；实际时长仍由 Backend 完成接口根据时间计算。
 - 还需要 Testing Library 和 Playwright 用户流程测试，以及 Android 凭据存储、通知和同步恢复。

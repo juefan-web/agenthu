@@ -52,9 +52,30 @@ fn queue_list(app: tauri::AppHandle) -> Result<Vec<serde_json::Value>, String> {
         .map_err(|error| error.to_string())?;
     let rows = statement.query_map([], |row| row.get::<_, String>(0))
         .map_err(|error| error.to_string())?;
-    rows.map(|row| {
-        let payload = row.map_err(|error| error.to_string())?;
-        serde_json::from_str(&payload).map_err(|error| error.to_string())
+    Ok(collect_pending_events(rows))
+}
+
+/// One damaged row must not block the whole offline queue: unreadable or
+/// unparseable payloads are skipped so list, flush and future syncs keep
+/// working. Skipping is non-destructive; the row stays in SQLite.
+fn collect_pending_events<E: std::fmt::Display>(
+    rows: impl Iterator<Item = Result<String, E>>,
+) -> Vec<serde_json::Value> {
+    rows.filter_map(|row| {
+        let payload = match row {
+            Ok(payload) => payload,
+            Err(error) => {
+                eprintln!("agenthu: skipping unreadable pending event row: {error}");
+                return None;
+            }
+        };
+        match serde_json::from_str(&payload) {
+            Ok(event) => Some(event),
+            Err(error) => {
+                eprintln!("agenthu: skipping corrupt pending event payload: {error}");
+                None
+            }
+        }
     }).collect()
 }
 
@@ -165,4 +186,24 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running Agenthu");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn queue_listing_isolates_corrupt_rows() {
+        let rows = vec![
+            Ok(r#"{"client_event_id":"event-a"}"#.to_string()),
+            Err(rusqlite::Error::QueryReturnedNoRows),
+            Ok("{not json".to_string()),
+            Ok(r#"{"client_event_id":"event-b"}"#.to_string()),
+        ];
+        let events = collect_pending_events(rows.into_iter());
+        let ids: Vec<&str> = events.iter()
+            .filter_map(|event| event.get("client_event_id").and_then(serde_json::Value::as_str))
+            .collect();
+        assert_eq!(ids, ["event-a", "event-b"]);
+    }
 }

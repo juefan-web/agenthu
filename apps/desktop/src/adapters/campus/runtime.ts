@@ -25,8 +25,7 @@ export function createCampusRuntime() {
     fetchLike: (url, init) => tauriFetch(url, init),
   });
   const auth = createTauriAuthGateway();
-  return {
-    session,
-    adapter: new OneThuCampusAdapter({ session, auth }),
-  };
+  // Only the adapter crosses this boundary. The raw session (cookies,
+  // credential accessors) stays private to the runtime wiring.
+  return { adapter: new OneThuCampusAdapter({ session, auth }) };
 }
