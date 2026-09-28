@@ -1,7 +1,7 @@
 // Frozen snapshot of the desktop client's authoritative Zod contract.
 //
 // Source: `packages/contracts/src/index.ts` on branch
-// `feature/client-tauri-campus-adapter` @ 202e22799ec5eb1072b1d9e44bb8bb835acce674.
+// `feature/client-tauri-campus-adapter` @ c581226ca702ba66a484576547bc37bc893a2e0f.
 //
 // The desktop client (Developer B) owns this contract. The Backend serves these
 // exact shapes under `/v1` (DECISIONS.md D-009) and the drift check in
@@ -95,8 +95,72 @@ export const FocusSessionSchema = z.object({
   deviation_note: z.string().nullable(),
 });
 
-// Kept for parity with the authoritative contract; no Backend endpoint returns
-// this shape directly, so it has no ZOD_TO_OPENAPI mapping.
 export const SyncCursorSchema = z.object({
   value: z.string().nullable(),
 });
+
+export type EventProvenance = z.infer<typeof EventProvenanceSchema>;
+export type EventEnvelope = z.infer<typeof EventEnvelopeSchema>;
+export type EventBatchRequest = z.infer<typeof EventBatchRequestSchema>;
+export type EventBatchResponse = z.infer<typeof EventBatchResponseSchema>;
+export type Task = z.infer<typeof TaskSchema>;
+export type CurrentState = z.infer<typeof CurrentStateSchema>;
+export type Plan = z.infer<typeof PlanSchema>;
+export type FocusSession = z.infer<typeof FocusSessionSchema>;
+export type SyncCursor = z.infer<typeof SyncCursorSchema>;
+
+export function eventDedupeKey(event: Pick<EventEnvelope, "source" | "provenance">): string {
+  const escape = (part: string): string => part.replace(/[\\:]/g, (ch) => `\\${ch}`);
+  return [
+    escape(event.source),
+    escape(event.provenance.upstream_id),
+    escape(event.provenance.semantic_version),
+  ].join(":");
+}
+
+const sensitiveKey = /^(?:password|passwd|cookie|set-cookie|authorization|access[_-]?token|refresh[_-]?token|token|otp|2fa|verification[_-]?code)$/i;
+
+export function assertSafeEvent(event: EventEnvelope): void {
+  const visit = (value: unknown, path: string): void => {
+    if (!value || typeof value !== "object") return;
+    if (Array.isArray(value)) {
+      value.forEach((item, index) => visit(item, `${path}[${index}]`));
+      return;
+    }
+    for (const [key, child] of Object.entries(value)) {
+      if (sensitiveKey.test(key)) throw new Error(`敏感字段不得进入 Event: ${path}.${key}`);
+      visit(child, `${path}.${key}`);
+    }
+  };
+  visit(event.data, "data");
+  visit(event.context, "context");
+}
+
+export const LoginRequestSchema = z.object({
+  email: z.string().min(3).max(320),
+  password: z.string().min(1).max(128),
+});
+
+export const RegisterRequestSchema = z.object({
+  email: z.string().min(3).max(320),
+  password: z.string().min(8).max(128),
+  display_name: z.string().min(1).max(200),
+});
+
+export const TokenSchema = z.object({
+  access_token: z.string().min(1),
+  token_type: z.string().min(1).default("bearer"),
+  expires_in: z.number().int().positive(),
+});
+
+export const UserSchema = z.object({
+  id: z.string().min(1),
+  email: z.string().min(1),
+  display_name: z.string().min(1),
+  is_active: z.boolean(),
+});
+
+export type LoginRequest = z.infer<typeof LoginRequestSchema>;
+export type RegisterRequest = z.infer<typeof RegisterRequestSchema>;
+export type Token = z.infer<typeof TokenSchema>;
+export type User = z.infer<typeof UserSchema>;

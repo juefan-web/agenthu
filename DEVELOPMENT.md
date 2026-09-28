@@ -56,7 +56,7 @@ context lives under `AGENT_CONTEXT/`.
 
 - `ruff check` + `ruff format --check`: pass
 - `pyright`: 0 errors
-- `pytest` (full suite, all services up incl. S3Mock): **160 passed** in ~40s
+- `pytest` (full suite, all services up incl. S3Mock): **165 passed** in ~75s
 - OpenAPI/Zod contract drift check: pass (`python -m backend.scripts.check_contract_drift`)
 - `pytest -m storage` (S3Storage against `s3mock`): pass
 - Arq worker test (Redis → Arq → task): pass
@@ -137,6 +137,12 @@ contract smoke** against `/v1` (12/12 checks pass).
   credentials fail-safe; `.env.example` documents Bearer-only auth instead of cookie credentials.
 - D-019 now states that a confirmed plan is the user's global current plan (not day-scoped), while only
   unconfirmed proposals are day-scoped.
+- Event dedupe keys now escape `\` and `:` exactly like the client's `eventDedupeKey`, so adapter
+  values such as `upstream_id="assignment:hw-1"` cannot collide across field boundaries
+  (`tests/unit/test_dedupe_key.py`, D-010).
+- Frozen client Zod snapshot refreshed to Developer B's `feature/client-tauri-campus-adapter`
+  HEAD `c581226ca702ba66a484576547bc37bc893a2e0f` (now includes the auth schemas); the drift check
+  run against both the snapshot and B's real `packages/contracts/src/index.ts` reports no drift.
 
 ### Resolved decisions
 

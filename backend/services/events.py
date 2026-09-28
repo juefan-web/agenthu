@@ -19,11 +19,25 @@ from backend.schemas.event import EventCreate
 from backend.services.event_handlers import process_event
 
 
+def _escape_dedupe_part(part: str) -> str:
+    """Escape the separators exactly as the client's ``eventDedupeKey`` does.
+
+    Ordered ``\\`` before ``:`` so the backslashes it introduces are not
+    escaped twice.
+    """
+
+    return part.replace("\\", "\\\\").replace(":", "\\:")
+
+
 def compute_dedupe_key(source: str, provenance: dict[str, Any] | None) -> str | None:
     """Derive the canonical idempotency key: ``source:upstream_id:semantic_version``.
 
-    This is the client contract's ``eventDedupeKey``. It is computed on the
-    Backend so a client cannot weaken idempotency by omitting a key.
+    This mirrors the client contract's ``eventDedupeKey`` byte-for-byte,
+    including its ``\\``/``:`` escaping, so a value containing the separator
+    cannot collide with a different ``(source, upstream_id, semantic_version)``
+    triple (the adapter emits e.g. ``upstream_id="assignment:hw-1"``). It is
+    computed on the Backend so a client cannot weaken idempotency by omitting a
+    key.
     """
 
     if not isinstance(provenance, dict):
@@ -31,7 +45,9 @@ def compute_dedupe_key(source: str, provenance: dict[str, Any] | None) -> str | 
     upstream_id = provenance.get("upstream_id")
     semantic_version = provenance.get("semantic_version")
     if upstream_id and semantic_version:
-        return f"{source}:{upstream_id}:{semantic_version}"
+        return ":".join(
+            _escape_dedupe_part(str(part)) for part in (source, upstream_id, semantic_version)
+        )
     return None
 
 

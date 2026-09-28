@@ -83,6 +83,10 @@ references in `AGENT_CONTEXT/` and the Backend comments were removed so the docs
 Event provenance; a client-supplied `dedupe_key` is only an additional signal, never the trusted
 boundary. Enforced by the unique `(user_id, dedupe_key)` constraint.
 
+The three parts are escaped exactly like the client's `eventDedupeKey` (`\` -> `\\`, `:` -> `\:`
+before joining) so adapter values such as `upstream_id="assignment:hw-1"` cannot create a
+field-boundary collision between different triples.
+
 ## D-011 — Focus is a persisted session with an idempotent completion
 
 New `focus_sessions` table and `running -> paused/running -> completed|abandoned` transitions.
