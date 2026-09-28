@@ -46,11 +46,13 @@ Current State + Relevant Memory + Goals
 
 Backend 是跨设备的事实来源，负责身份、权限、Event、Task、Goal、Memory、Current State、Agent State、Knowledge 和同步。Android 与 Windows 不直接互相同步，客户端也不得各自维护一套业务逻辑。
 
-所有外部来源先转换成统一 Event。Event 至少包含：
+所有外部来源先转换成统一 Event。客户端上报的 Event envelope 至少包含：
 
 ```text
-id, type, timestamp, source, user_id, data, context, provenance
+client_event_id, type, occurred_at, source, data, context, provenance
 ```
+
+`provenance` 记录 connector、connector_version、upstream_id、semantic_version 和 fetched_at。Backend 接收时根据认证上下文写入可信 `user_id`，并生成服务端 Event ID；客户端不得自行提交可信用户身份。
 
 业务逻辑依赖 Event 契约和适配层，不直接绑定 OneTHU、微信、邮件或其他具体供应商 API。OneTHU 可以作为数据能力参考，但产品不能要求用户打开它才能工作。
 
@@ -94,10 +96,11 @@ Windows ──┘
 - Android 偏通知、信息流、采集、GPS、运动和主动提醒。
 - Windows 偏资料、PPT/PDF、作业、Focus 和桌面工作环境。
 - 两端共享 Event Schema、API、Memory、Agent 接口和权限模型。
-- 客户端不得直接访问数据库、模型供应商或校园 API；数据源必须通过 Backend 适配层接入。
+- React 页面不得直接访问数据库、模型供应商或校园 API；校园数据必须经过受控的 Tauri `CampusAdapter`，转换为统一 Event 后交给 Backend。
+- Tauri 原生 transport/适配层是本地数据边界，不是跨设备事实源；Backend 仍负责身份、权限、Event、Task、Memory、Current State 和同步。
 - 跨客户端的数据一致性由 Backend 保证；客户端只负责展示、明确授权的采集、本地缓存和待同步队列。
 
-第一阶段的详细技术栈、接口字段、里程碑和开发者 A/B 的负责范围以 `TECH_STACK_AND_WORKPLAN.md` 为准；发生冲突时，先记录决策再修改依赖方。
+第一阶段的详细技术栈、接口字段、里程碑和开发者 A/B 的负责范围以 `TECH_STACK_AND_WORKPLAN.md` 为准；发生冲突时，先记录决策再修改依赖方。GOALS.md 是产品构想参考，不是仓库规范。
 
 ## 5. 开发协作
 

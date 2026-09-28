@@ -1,0 +1,111 @@
+/** 网络学堂端点（验证自 thu-learn-lib） */
+// lib 单管线（P3）：learn 经 webvpn 包装（thu-info-lib HOST_MAP.learn 同款 hex）。
+// wengine 服务端透明完成 learn 的 CAS 认证，LearnClient 无需漫游/直连登录链。
+export const LEARN_PREFIX =
+  "https://webvpn.tsinghua.edu.cn/https/77726476706e69737468656265737421fcf2408e297e7c4377068ea48d546d30ca8cc97bcc";
+
+/**
+ * 页面里取到的 href → 可直接请求的绝对 URL。
+ *
+ * 为什么需要它：learn 页面是**经 webvpn 取回**的，wengine 会把页面里的链接改写成
+ * `/https/<hexLearn>/b/wlxt/…` 这种**已经包装形态**的相对路径；此时若照旧拼 LEARN_PREFIX
+ * （它本身就是包装后的 learn 根），就会得到 `/https/<hex>/https/<hex>/…` 的双重包装，
+ * 服务端直接 404。真机实测：通知附件下载地址被包了两层，预览与下载全废。
+ */
+export function learnAbsoluteUrl(href: string, fallbackPrefix: string = LEARN_PREFIX): string {
+  const h = String(href ?? "").trim();
+  if (!h) return h;
+  if (/^https?:\/\//i.test(h)) return h;                       // 已是绝对地址（可能已包装，别动）
+  const rest = h.replace(/^\/+/, "");
+  if (/^https?\//i.test(rest)) return `https://webvpn.tsinghua.edu.cn/${rest}`; // 网关相对路径：只补域名
+  return `${fallbackPrefix}/${rest}`;
+}
+
+export const LEARN_COURSE_LIST_PAGE = () => `${LEARN_PREFIX}/f/wlxt/index/course/student/`;
+
+export const LEARN_SEMESTER_LIST = () =>
+  `${LEARN_PREFIX}/b/wlxt/kc/v_wlkc_xs_xktjb_coassb/queryxnxq`;
+
+export const LEARN_CURRENT_SEMESTER = () =>
+  `${LEARN_PREFIX}/b/kc/zhjw_v_code_xnxq/getCurrentAndNextSemester`;
+
+export const LEARN_COURSE_LIST = (semester: string, lang: "zh" | "en" = "zh") =>
+  `${LEARN_PREFIX}/b/wlxt/kc/v_wlkc_xs_xkb_kcb_extend/student/loadCourseBySemesterId/${semester}/${lang}`;
+
+export const LEARN_COURSE_TIME_LOCATION = (courseId: string) =>
+  `${LEARN_PREFIX}/b/kc/v_wlkc_xk_sjddb/detail?id=${courseId}`;
+
+export const LEARN_COURSE_PAGE = (courseId: string) =>
+  `${LEARN_PREFIX}/f/wlxt/index/course/student/course?wlkcid=${courseId}`;
+
+export const LEARN_FILE_LIST = (courseId: string, size = 200) =>
+  `${LEARN_PREFIX}/b/wlxt/kj/wlkc_kjxxb/student/kjxxbByWlkcidAndSizeForStudent?wlkcid=${courseId}&size=${size}`;
+
+export const LEARN_FILE_DOWNLOAD = (fileId: string) =>
+  `${LEARN_PREFIX}/b/wlxt/kj/wlkc_kjxxb/student/downloadFile?sfgk=0&wjid=${fileId}`;
+
+export const LEARN_NOTIFICATION_LIST = (expired: boolean) =>
+  `${LEARN_PREFIX}/b/wlxt/kcgg/wlkc_ggb/student/pageListXsby${expired ? "Ygq" : "Wgq"}`;
+
+export const LEARN_NOTIFICATION_DETAIL = (courseId: string, notificationId: string) =>
+  `${LEARN_PREFIX}/f/wlxt/kcgg/wlkc_ggb/student/beforeViewXs?wlkcid=${courseId}&id=${notificationId}`;
+
+export const LEARN_HOMEWORK_LIST = {
+  /** 未提交 */
+  new: `${LEARN_PREFIX}/b/wlxt/kczy/zy/student/zyListWj`,
+  /** 已交未批 */
+  submitted: `${LEARN_PREFIX}/b/wlxt/kczy/zy/student/zyListYjwg`,
+  /** 已批 */
+  graded: `${LEARN_PREFIX}/b/wlxt/kczy/zy/student/zyListYpg`,
+} as const;
+
+export const LEARN_HOMEWORK_PAGE = (courseId: string, homeworkId: string) =>
+  `${LEARN_PREFIX}/f/wlxt/kczy/zy/student/viewCj?wlkcid=${courseId}&xszyid=${homeworkId}`;
+
+/** 作业提交页（tijiao）：提交表单（zynr textarea + fileupload input）在这里，
+ *  viewCj 是成绩详情页——未交作业的 viewCj 上没有表单（thu-app learnApi 同款双页解析） */
+export const LEARN_HOMEWORK_SUBMIT_PAGE = (courseId: string, homeworkId: string) =>
+  `${LEARN_PREFIX}/f/wlxt/kczy/zy/student/tijiao?wlkcid=${courseId}&xszyid=${homeworkId}`;
+
+/** 作业详情（form POST id=zyid，响应 msg 为说明 HTML）—— thu-learn-lib LEARN_HOMEWORK_DETAIL */
+export const LEARN_HOMEWORK_DETAIL = () => `${LEARN_PREFIX}/b/wlxt/kczy/zy/student/detail`;
+
+/* ───── 讨论区（bbs_tltb）—— 2026-09 HAR 逆向（讨论区示例/learn.tsinghua.edu.cn.har） ───── */
+
+/** 板块列表（POST wlkcid；响应 JSON 字符串，站点自己 eval） */
+export const LEARN_BBS_BOARD_LIST = (courseId: string) =>
+  `${LEARN_PREFIX}/b/wlxt/bbs/bbs_bqb/student/bqListByWlkcid`;
+
+/** 话题分页（DataTables 1.9 服务端协议；yb=全部 jh=精华 cy=参与） */
+export const LEARN_BBS_THREAD_PAGE = (kind: "yb" | "jh" | "cy") =>
+  `${LEARN_PREFIX}/b/wlxt/bbs/bbs_tltb/student/${kind}tlPageList`;
+
+/** 话题阅读页（HTML：楼主块 + 首屏回复；分页走 LEARN_BBS_POSTS_PAGE）。
+ *  tabbh+bqid 是站点原生链接的必带参数（缺省被甩登录壳页，2026-09-02 实测）；
+ *  注意 /f/ 页面是纯链接跳转，不带 _csrf。 */
+export const LEARN_BBS_THREAD_VIEW = (courseId: string, threadId: string, bqid?: string, tabbh = "2") =>
+  `${LEARN_PREFIX}/f/wlxt/bbs/bbs_tltb/student/viewTlById?wlkcid=${courseId}&id=${threadId}&tabbh=${tabbh}${bqid ? `&bqid=${bqid}` : ""}`;
+
+/** 讨论区列表页地址（作 Referer 用） */
+export const LEARN_BBS_LIST_REFERER = (courseId: string) =>
+  `${LEARN_PREFIX}/f/wlxt/bbs/bbs_tltb/student/beforePageTlList?wlkcid=${courseId}`;
+
+/** 回复分页 JSON。注意路径里 bbs_tltb 出现两次——站点原样。hhid 留空 = 主楼层流 */
+export const LEARN_BBS_POSTS_PAGE = (courseId: string, threadId: string, pageNum: number) =>
+  `${LEARN_PREFIX}/b/wlxt/bbs/bbs_tltb/bbs_tltb/student/pageViewTlById?wlkcid=${courseId}&id=${threadId}&hhid=&pageNum=${pageNum}`;
+
+/** 发表回复（表单 POST：wlkcid/tltid/nr [+fhhid/_fhhid 楼中楼]）—— addHf→saveEdit */
+export const LEARN_BBS_SAVE_REPLY = (courseId: string) =>
+  `${LEARN_PREFIX}/b/wlxt/bbs/bbs_tltb/student/saveEdit?wlkcid=${courseId}`;
+
+/** 发新话题表单页（发表在浏览器完成，表单 schema 未采样） */
+export const LEARN_BBS_NEW_THREAD_PAGE = (courseId: string) =>
+  `${LEARN_PREFIX}/f/wlxt/bbs/bbs_tltb/student/beforeEditTl?wlkcid=${courseId}`;
+
+/** 话题附件下载（学生） */
+export const LEARN_BBS_ATTACHMENT = (courseId: string, wjid: string) =>
+  `${LEARN_PREFIX}/b/wlxt/bbs/bbs_tltb/student/downloadFileByTlForStu?wlkcid=${courseId}&wjid=${wjid}`;
+
+/** 发表新话题（POST multipart：wlkcid/bqid/tabbh/bt/wtnr/fileupload）——schema 待 beforeEditTl 采样校准 */
+export const LEARN_BBS_SAVE_THREAD = (courseId: string) =>
+  `${LEARN_PREFIX}/b/wlxt/bbs/bbs_tltb/student/saveTl?wlkcid=${courseId}`;

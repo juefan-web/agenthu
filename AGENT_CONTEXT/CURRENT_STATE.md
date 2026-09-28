@@ -1,86 +1,77 @@
 # CURRENT_STATE
 
-Updated: 2026-09-28 · Milestone: **M0 (engineering baseline + frozen contracts)** +
-astra6 review fixes + A/B contract integration + merge-gate hardening +
-integration-review Developer-A fixes (fourth review)
+Updated: 2026-09-28 · Milestone: **M0 (engineering baseline + frozen contracts)**
+· 集成分支 `integration/study-time-m0` 已合并 Backend（`61fcf82`，含第四轮审阅修复）
+与客户端（`a2693e9`，含安全加固），`.gitignore` 与本文件的 add/add 冲突已解决。
 
-## Done
+## 开发者 A：Backend（`m0/backend-foundation` @ `61fcf82`）
 
-- Full Backend skeleton: FastAPI, PostgreSQL/SQLAlchemy/Alembic, Redis/Arq, S3-compatible storage,
-  Docker Compose, CI, Ruff, Pyright, pytest.
-- Frozen contracts and APIs for Auth, Event, Task, Goal, CurrentState, Memory, Plan, Focus, File,
-  Permission, Audit, Jobs, Health.
-- Two migrations (13 → 14 tables) verified from zero + no drift.
-- Desktop client contract aligned to `packages/contracts` under `/v1`: `events/batch`,
-  client-shaped tasks/current-state/plans, `plans/today`, persisted `focus-sessions`.
-- Deterministic planner and the full Study + Time loop integration test.
-- Ingestion safety: sensitive-field rejection, JSON limits, non-local secret guard,
-  cross-user reference validation.
-- OpenAPI exported to `openapi.json` (40 paths, prefix `/v1`); OAuth2 `tokenUrl` is `/v1/auth/token`.
-- Auth contract fixtures (`/register`, `/login`, `/token`, `/me`, expired JWT) and 401 envelope
-  tests (missing / invalid / expired, `WWW-Authenticate: Bearer`).
-- Repeatable Event -> Task -> CurrentState -> Plan -> Focus main-chain API test
-  (`tests/integration/test_client_main_chain.py`).
-- OpenAPI/Zod drift check (`backend/scripts/check_contract_drift.py`) wired into CI (**with
-  `--require-zod`**) before the OpenAPI export; frozen client Zod snapshot in
-  `tests/fixtures/client_contract.ts` (D-021).
-- Event dedupe key escaping matches the client's `eventDedupeKey` (`\`/`:`, D-010).
-- `GET /v1/plans/today` concurrency-idempotent via advisory lock (D-019); Focus start race
-  serialized by an advisory lock keyed by (user, task) (`cbe30f7`).
-- **Integration-review fixes (2026-09-28, fourth review, Developer A):**
-  - **K1 contract hole**: client-invalid plans can no longer be created (task-less items
-    rejected, times backfilled from `planned_minutes`) nor confirmed; `current_plan_for`
-    filters them in SQL via the shared `backend/services/plan_validity.py` (D-023).
-    Regression: manual/legacy invalid plan -> confirm -> current-state stays parseable.
-  - **C1 handler failure path**: every event handler runs inside a SAVEPOINT; a DB-level
-    handler failure (verified with a real PostgreSQL error) no longer rolls back the raw
-    Event. `safe_record_audit` uses a savepoint instead of a destructive rollback.
-  - **S1 fail-closed secrets + auth hardening**: `ENVIRONMENT` defaults to `production`
-    (weak `SECRET_KEY`/`S3_SECRET_KEY` rejected at load); auth endpoints rate-limited
-    (429 `rate_limited` + `Retry-After`, `AUTH_RATE_LIMIT_MAX=0` disables); login timing
-    equalized with a dummy-hash comparison; job ids user-scoped, foreign jobs 404 (D-025).
-  - **C2 multi-session accounting**: every focus completion emits `focus.completed`
-    (`completed` flag marks the session that finished the task); task and plan-item actual
-    minutes accumulate across sessions; COMPLETED status is sticky, `completed_at` never
-    rewritten. Regression test covers 30 + 25 minutes across two sessions.
-  - **C4 naive datetimes**: all datetime inputs (`TaskCreate/Update`, `GoalCreate/Update`,
-    `PlanItemCreate`, `PlanGenerateRequest`, events `since`/`until` query params) share
-    `EventCreate`'s naive->UTC rule via `UTCDatetime` (`schemas/common.py`).
-  - Audit middleware DB write moved off the event loop (`asyncio.to_thread`);
-    dead `recompute_user_current_state` worker task removed (D-024);
-    README Quick start no longer references the removed `createbuckets` service.
-- Docs: `README.md`, `DEVELOPMENT.md`, `M0_HANDOFF.md`, `AGENT_CONTEXT/` (D-009).
+- 完整 Backend 骨架：FastAPI、PostgreSQL/SQLAlchemy/Alembic、Redis/Arq、S3 兼容存储、
+  Docker Compose、CI、Ruff、Pyright、pytest。
+- 冻结 Auth / Event / Task / Goal / CurrentState / Memory / Plan / Focus / File /
+  Permission / Audit / Jobs / Health 契约；两个迁移（13 → 14 表）从零验证无漂移。
+- 确定性 planner 与完整 Study + Time 闭环集成测试；`GET /v1/plans/today` 与 Focus start
+  由 advisory lock 保证并发幂等（D-019）。
+- OpenAPI 导出到 `openapi.json`（40 paths）；OpenAPI/Zod 漂移检查挂入 CI（含
+  `--require-zod`），冻结客户端 Zod 快照在 `tests/fixtures/client_contract.ts`（D-021）。
+- Event 去重键转义与客户端 `eventDedupeKey` 一致（`\`/`:`，D-010）。
+- **第四轮审阅修复（2026-09-28）**：
+  - **K1**：client-invalid 计划不可创建（无 `task_id` 拒绝、时间从 `planned_minutes`
+    回填）不可确认；`current_plan_for` 在 SQL 层过滤（`backend/services/plan_validity.py`，
+    D-023）。
+  - **C1**：每个 event handler 运行在 SAVEPOINT 内；DB 级 handler 失败不再回滚原始
+    Event（用真实 PostgreSQL 错误验证）。
+  - **S1**：`ENVIRONMENT` 默认 `production`（弱 `SECRET_KEY`/`S3_SECRET_KEY` 加载即拒）；
+    认证端点限流（429 + `Retry-After`）；登录 dummy-hash 抹平 timing；job id 用户域化（D-025）。
+  - **C2**：每个 Focus 完成都发 `focus.completed`（`completed` 标志收尾 session）；
+    跨 session 实际时长累计；COMPLETED 粘滞、`completed_at` 不重写。
+  - **C4**：全部 datetime 输入共享 `EventCreate` 的 naive→UTC 规则（`UTCDatetime`）。
+  - 卫生项：审计中间件 DB 写移出事件循环；死代码 `recompute_user_current_state` 删除
+    （D-024）；README 移除 `createbuckets` 引用。
+- 验证快照：ruff/format/pyright 干净；全量 pytest（db/redis/s3mock）**182 passed**，
+  1 skipped；漂移检查（`--require-zod`）通过；迁移 up→down→up + `alembic check` 通过；
+  远端 CI run `36408669500` 绿。
 
-## Verification snapshot (after fourth-review fixes)
+## 开发者 B：客户端（`feature/client-tauri-campus-adapter` @ `a2693e9`）
 
-- `ruff check` / `ruff format --check`: pass; `pyright`: 0 errors
-- `pytest` full suite with db/redis (+ s3mock for the storage test): **182 passed**, 1 skipped
-  (S3 test without `S3_ENDPOINT_URL`), including 15 new regression tests for the fixes above
-- OpenAPI/Zod drift check with `--require-zod`: pass
-- Migration up -> down -> up + `alembic check` (no drift): pass
-- Local docker stack: db / redis / s3mock running; `ENVIRONMENT` handling documented in
-  README / `.env.example` / `docker-compose.yml`
+目标：Windows 上的 Study + Time 客户端路径；OneTHU 固定版本 → `CampusAdapter` →
+统一 Event → Backend。不修改 Backend 数据库或 Agent 决策。
 
-## In progress / pending
+- React/Vite/Tauri 2 工程、共享 Zod 契约、vendored `@onethu/core`、Tauri transport、
+  SQLite 待同步 Event/游标、Focus 草稿、Backend JWT 会话（操作串行化、晚到 401 守卫、
+  持久化失败回滚）、Today/任务/Focus 工作台。
+- 性能修复：HTTP Client 按会话复用；Stronghold 快照只在登录/变化时写；采集链并行。
+- 风险修复：Cookie 按快照变化持久化；LocalEventQueue 损坏隔离备份；去重键转义。
+- **安全加固（2026-09-28 审阅分配，见 `TASKS/client-security-hardening.md`）**：
+  生产 CSP 收紧为 `self` + 本地 Backend 源（移除 `https:` 通配与 `unsafe-eval`，开发源
+  移入 `devCsp`）；`scripts/check-csp.mjs` 挂入 build 拒绝回归；Backend 登录发起前清
+  密码 state；Rust `queue_list` 逐行容错（坏行跳过+日志+不删数据，附单测）；
+  `createCampusRuntime` 只暴露 `adapter`。
+  2FA 等待期密码驻留不修：vendored info-lib 的 id roam 需重放明文密码，属上游约束。
+- 验证：桌面端 lint/typecheck/39 测试/build（含 CSP guard）与 `cargo test`（6 测试）
+  通过；CI（Client checks）绿。
 
-- Joint acceptance with Developer B (integration review): plan loading, duplicate
-  confirmation, Focus start/complete, `actual_minutes=0`, offline retry, Windows build
-  package. Merge to `main` waits on it.
-- `packages/contracts` on `feature/client-tauri-campus-adapter` must mirror the frozen
-  `PlanItem.title` (see the header note in `tests/fixtures/client_contract.ts`).
+## 尚未满足的验收项（合并 main 的前置门槛）
+
+- **Windows 构建包人工端到端演练**（两位开发者共同）：校园登录/2FA → 采集 →
+  Event 同步 → Task/Plan（显示 `title`）→ 确认计划 → Focus 完成 → 断网重试与冲突处理；
+  DevTools 无 CSP violation，拒绝 Event 可见原因且不重复上传。
+- 客户端开放项：`flush` single-flight 与重试上限、SQLite 连接 `busy_timeout`/复用、
+  `campus_restore` 版本不兼容自清理、`assertSafeEvent` 无条件执行、Testing Library/
+  Playwright 用户流程测试、`backendUrl` 运行时配置、Android 凭据存储/通知。
+- 发布前完成 OneTHU BSL 1.1、LearnX 及依赖许可的逐文件分发审查。
 
 ## Blockers / decisions needed
 
-- OneTHU source/API not accessible → adapter is a deliberate stub.
-- `minio/minio` Docker Hub image returns 404 upstream; `s3mock` profile used for local
-  verification.
-- Joint A+B CI should run the authoritative `packages/contracts` Vitest/typecheck; the
-  Backend branch only has the frozen Zod snapshot stand-in (D-021).
+- OneTHU 源/API 不可达 → 服务端 adapter 保持显式 stub。
+- `minio/minio` 镜像上游 404 → 本地用 `s3mock` profile 验证。
+- 联合 CI 应跑真实的 `packages/contracts` Vitest/typecheck；Backend 分支只有冻结
+  快照替身（D-021）。
 
 ## Next
 
-- Integration branch with Developer B's client branch; end-to-end main-chain rehearsal on
-  a Windows build package (Study + Time loop acceptance).
-- M1: real (manual-first) adapters and idempotent ingestion, richer CurrentState, LLM
-  planner behind the permission layer, off-request CurrentState recompute with a real
-  caller.
+1. 集成分支（本分支）跑双侧完整检查 + `check_contract_drift --require-zod --zod
+   packages/contracts/src/index.ts` 联检，推送并开 draft PR 进 main。
+2. Windows 构建包完成上面的人工验收项后，PR 转正合并。
+3. M1：真实（手动优先）导入适配层与幂等摄取、更丰富的 CurrentState、权限层后的
+   LLM planner、带真实调用方的 CurrentState 重算。
