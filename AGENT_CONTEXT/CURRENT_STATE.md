@@ -29,6 +29,22 @@ D8 阻塞；转正门槛 = D8 修复 + 第三轮构建包人工验收。
 healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修复 +
 第四轮构建包人工验收（重点：采集 → 入队 → 断网重试与队列恢复 → 真实数据
 全链）。
+· **Merge-4 验收（2026-09-29，`6a72dfd`）：D1-D9 全部真实环境通过，主线全链
+  首次闭环**（见 `HANDOFF/2026-09-29-merge1-acceptance-round4-report.md`）：
+  采集四域 100 条 / 同步 0.6s / 断网入队 100 条 / 恢复重试 939ms 全部按去重键
+  正确结算；D3 残留原地重试实测闭环；全程 0 CSP violation。
+  **D10 裁定（协调人，2026-09-29）：属 M1 范围决策，非 PR #1 缺陷**。依据：
+  ① 事实成立——campus 事件类型与 Backend handler 注册表零交集；② 但 M0/M1
+  冻结契约与 TECH_STACK M1 的 A 侧范围（Event 接收去重、Task/Deadline API、
+  CurrentState 投影）从未包含 campus 事件派生 handler，Backend M1 规划原文即
+  「真实（手动优先）导入适配层」；③ Task/Plan/Focus 链已在 API 造数路径完整
+  验证（round-2/3）。round-3 任务文件中「真实数据驱动全链」的验收措辞系
+  协调人在未知派生功能缺失时的预设，按「验收项只验证已承诺工作」原则修正。
+  D10 立项为 **M1-1**（`TASKS/m1-1-assignment-event-derivation.md`，B 负责，
+  A 回归后补 review），含已预核实的 deadline 时区坑（vendor naive 串 ×
+  UTCDatetime = 8 小时偏移）。**据此 PR #1 转正合并进 main（2026-09-29）**。
+  勘误：round-4 报告遗留项「compose healthy 终验移交」实际已于 merge-3 后由
+  CI `compose-smoke` job 闭环（连续绿），无需人工环境。
 
 ## 开发者 A：Backend（`m0/backend-foundation` @ `61fcf82`）
 
