@@ -26,6 +26,10 @@ class CurrentStateRead(BaseModel):
     current_plan: PlanRead | None = None
     recent_state: dict[str, Any] = Field(default_factory=dict)
     available_minutes: int | None = None
+    # Effective context label: user override first, otherwise derived from the
+    # schedule/focus/task chain (D-027). Internal field — the client contract
+    # consumes it via client_view, it is not exposed in OpenAPI directly.
+    context_label: str | None = None
     updated_at: datetime | None = None
 
 

@@ -258,3 +258,48 @@ Decision:
   checks the prefix before any Redis round-trip and answers other users with 404.
 - The rate limiter is per-process (single uvicorn worker in M0); swapping in a
   Redis-backed limiter is the documented seam for multi-worker deployments.
+
+## D-026 — zhjw.cic.tsinghua.edu.cn 单 host http:80 窄口（D9，明文 cookie 边界）
+
+Status: accepted（2026-09-29 补录；实现 `6a72dfd`，A 联合 review 通过）。Context：
+merge-3 发现 vendor 教务课表直连 `http://zhjw.cic.tsinghua.edu.cn:80`（`info/urls.ts`
+`ZHJW_PREFIX` + `http.ts` `PUBLIC_DIRECT_HOSTS` 直连注释），而 Rust 白名单
+`allowed_campus_url` 仅放行 https:443，入口与重定向策略双处拒绝，采集确定性失败
+（D9）。
+
+Decision：为该**单个精确 host** 开 `http:80` 窄口，不做子域通配、不放开其他
+http host、不允许 username/password 形式的凭据注入；重定向策略复用同一谓词，
+窄口语义自然继承到每一跳。备选 b 案（改走 webvpn `/http/` 包装）被 vendor 自己
+的加白注释证伪——教务 host 的 wengine 票从未建立（包装路径撞引导壳），上游
+2026-09-19 起教务访问统一直连 JSONP，b 案等于重走已被上游实测失败的路径。
+
+**接受的残余风险**：该 host 的教务会话 cookie 以明文 http 传输（JSONP 的固有
+属性，上游如此），风险面为同网段嗅探与 DNS 欺骗冒充该 host——无 TLS 即无证书
+验证，客户端侧不可缓解，只能把范围压到最小（单 host、单端口）。与 D8 cookie
+镜像的交互已核对：zhjw 的明文 cookie 进入 Rust 权威仓与 TS 镜像的粒度与其他
+campus cookie 相同（host/name/value/hostOnly），host-only 域隔离保证它只回发
+该 host，无跨域放大。
+
+**Revisit 条件**（非阻塞）：上游 ZHJW_PREFIX 改为 https 的当天，同步删除此
+例外并恢复全 https 白名单。
+
+A 的联合 review（范围最小性 / 重定向继承 / 伪造测试覆盖逐项核对）全文见
+`TASKS/client-merge3-d9-and-residuals.md` 末节。
+
+## D-027 — CurrentState 投影语义：available_minutes 口径与 context 派生
+
+Status: accepted（2026-09-29，M1-2）。Context：round-4 观察到投影
+`available_minutes`/`context` 恒为 null/空而 version 空转；M1-1 落地后真实任务
+与课表事件进入 Event 流，投影需要给出语义。
+
+Decision：`available_minutes` = **用户 override 优先，否则**
+`max(0, 本地日剩余分钟 − 今日课表重叠分钟 − 当前任务剩余估时)`（休息扣除
+显式为 0，魔法扣除不做）。课表取自 `time.schedule.entry` 事件，条目按
+`DEFAULT_TIMEZONE` 组合 naive date/时刻串，同 `provenance.upstream_id` 只取
+最新版本（semantic_version 变更产生的新行天然取代旧行，变更/移课不双计）。
+derived 不落列：override 的持久化位置不变，derived 是纯函数输出、Event 流是
+事实源，可观测性经 `recent_state.available_minutes_breakdown` 补齐——同时避免
+与 M1-1 并行的 alembic multi-head 合并。`context` 派生优先级：override >
+在课 > 专注中 > 进行中任务 > 即将上课（≤30min）> 空闲（有待办）> None，
+经内部 `context_label` 传递，客户端契约不变。完整口径与 B 对齐清单见
+`TASKS/m1-2-currentstate-projection.md`；口径调整必须走 DECISIONS 变更。
