@@ -18,6 +18,47 @@ from backend.schemas.client_contract import EventEnvelope
 from backend.schemas.event import EventCreate
 from backend.services.event_handlers import process_event
 
+_ASSIGNMENT_PREFIX = "study.assignment."
+# Deadline-bearing fields of assignment payloads that must be timezone-aware
+# ISO strings (D-028): naive values are rejected at the ingestion boundary so
+# they stay in the client queue instead of becoming permanently
+# un-derivable rows.
+_ASSIGNMENT_DEADLINE_FIELDS = ("deadline", "late_deadline")
+
+
+def _parse_iso(value: object) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def assignment_payload_rejection(event_type: str, data: dict[str, Any]) -> str | None:
+    """Reject assignment events whose deadline fields carry no UTC offset.
+
+    A naive deadline has no correct interpretation on the server (the vendor
+    string is Beijing local time; assuming UTC is an 8-hour skew), so the
+    envelope is refused at the boundary — the client keeps it queued until it
+    sends tz-aware values (D-028 §3a).
+    """
+
+    if not event_type.startswith(_ASSIGNMENT_PREFIX):
+        return None
+    for name in _ASSIGNMENT_DEADLINE_FIELDS:
+        if name not in data or data[name] is None:
+            continue
+        parsed = _parse_iso(data[name])
+        if parsed is None:
+            return f"{name} is not a valid ISO-8601 datetime"
+        if parsed.tzinfo is None:
+            return (
+                f"{name} must be timezone-aware ISO-8601 (include the UTC "
+                "offset, e.g. +08:00); naive values are rejected (D-028)"
+            )
+    return None
+
 
 def _escape_dedupe_part(part: str) -> str:
     """Escape the separators exactly as the client's ``eventDedupeKey`` does.
@@ -166,6 +207,7 @@ def ingest_event_batch(
             validate_json_payload("data", envelope.data)
             or validate_json_payload("context", envelope.context)
             or validate_json_payload("provenance", envelope.provenance.model_dump())
+            or assignment_payload_rejection(envelope.type, envelope.data)
         )
         if reason is not None:
             outcome.rejected.append((envelope.client_event_id, reason))

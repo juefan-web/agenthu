@@ -5,6 +5,10 @@
 
 ## 阶段 0：契约冻结（A 先行，B 评审，半天内完成）
 
+> **状态：已完成（2026-09-29）**——冻结裁定见 DECISIONS **D-028**（含 deadline
+> 拒收的两个边界作用点、Task upsert 键与 Event dedupe 键的关系、不派生清单
+> 与回滚语义）。以下为立项时的方向描述，以 D-028 为准。
+
 A 产出决策记录（DECISIONS 新条目）并同步 B，冻结以下语义后双方开工：
 
 1. **派生规则**：`study.assignment.discovered` → 创建 Task；

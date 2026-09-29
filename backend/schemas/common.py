@@ -22,6 +22,21 @@ def normalize_naive_utc(value: datetime) -> datetime:
 UTCDatetime = Annotated[datetime, AfterValidator(normalize_naive_utc)]
 
 
+def _require_timezone(value: datetime) -> datetime:
+    # Deadline is the ordering-critical field of the whole product; a silent
+    # 8-hour skew is worse than a rejected request (D-028 narrows C4 for
+    # deadlines specifically — other datetimes keep the lenient rule).
+    if value.tzinfo is None:
+        raise ValueError(
+            "deadline must be timezone-aware ISO-8601 (include the UTC offset, "
+            "e.g. +08:00); naive deadline values are rejected (D-028)"
+        )
+    return value
+
+
+TzRequiredDatetime = Annotated[datetime, AfterValidator(_require_timezone)]
+
+
 class ORMModel(BaseModel):
     """Base for schemas read directly from SQLAlchemy objects."""
 

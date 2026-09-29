@@ -16,6 +16,7 @@ import fnmatch
 import logging
 import uuid
 from collections.abc import Callable
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -141,6 +142,91 @@ def _mark_confirmed_plan_items(
 @register("task.*")
 def handle_task_event(session: Session, event: Event) -> None:
     # Any task lifecycle event can change the projection.
+    _recompute(session, event.user_id)
+
+
+# --------------------------------------------------------------------------- #
+# Assignment derivation (D-028)
+# --------------------------------------------------------------------------- #
+
+_ASSIGNMENT_PREFIX = "study.assignment."
+
+
+def _parse_tzaware(value: object) -> object:
+    """Pass through tz-aware ISO strings; anything else becomes None.
+
+    The ingestion boundary already rejects naive assignment deadlines
+    (D-028 §3a), so unparseable values here mean the field was absent or
+    null — leaving the task's deadline unset rather than guessing.
+    """
+
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else None
+
+
+@register("study.assignment.discovered")
+@register("study.assignment.updated")
+def handle_assignment_event(session: Session, event: Event) -> None:
+    """Derive/refresh a Task from an assignment event (D-028).
+
+    Upsert key is ``(user_id, source, source_upstream_id)``; the event's
+    dedupe key embeds semantic_version, so a re-collected assignment with
+    changed content lands as a *new* event that updates the existing task
+    instead of creating a duplicate. COMPLETED is sticky (C2 semantics).
+    """
+
+    upstream = event.provenance.get("upstream_id") if isinstance(event.provenance, dict) else None
+    if not isinstance(upstream, str) or not upstream:
+        return
+
+    data = event.data if isinstance(event.data, dict) else {}
+    task = session.scalar(
+        select(Task).where(
+            Task.user_id == event.user_id,
+            Task.source == event.source,
+            Task.source_upstream_id == upstream,
+        )
+    )
+    created = task is None
+    if task is None:
+        task = Task(
+            user_id=event.user_id,
+            source=event.source,
+            source_upstream_id=upstream,
+            status=TaskStatus.TODO,
+        )
+        session.add(task)
+
+    if isinstance(data.get("title"), str) and data["title"]:
+        task.title = data["title"][:300]
+    elif created:
+        task.title = (upstream)[:300]
+    if isinstance(data.get("content"), str) and data["content"]:
+        task.description = data["content"]
+    deadline = _parse_tzaware(data.get("deadline"))
+    if deadline is not None:
+        task.deadline = deadline  # type: ignore[assignment]
+    task.extra = {
+        "assignment_id": data.get("assignment_id"),
+        "course_id": data.get("course_id"),
+        "url": data.get("url"),
+        "deadline_raw": data.get("deadline_raw"),
+        "late_deadline": data.get("late_deadline"),
+        "late_deadline_raw": data.get("late_deadline_raw"),
+        "publish_time": data.get("publish_time"),
+        "last_derived_event_id": str(event.id),
+    }
+
+    submitted = bool(data.get("submitted")) or bool(data.get("graded"))
+    if submitted and task.status != TaskStatus.COMPLETED:
+        task.status = TaskStatus.COMPLETED
+        task.completed_at = event.timestamp
+    session.flush()
     _recompute(session, event.user_id)
 
 
