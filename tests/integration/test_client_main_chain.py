@@ -55,6 +55,7 @@ def test_event_batch_to_focus_main_chain(client, auth_headers, db_session) -> No
     ).json()
     assert task["status"] == "todo"
     assert task["estimate_minutes"] == 60
+    assert task["source"] == "manual"
 
     # 3. Current state surfaces the pending task with the client shape.
     # The ingested assignment event now also derives its own task (M1-1,
@@ -64,6 +65,7 @@ def test_event_batch_to_focus_main_chain(client, auth_headers, db_session) -> No
     assert [t for t in state["tasks"] if t["id"] == task["id"]] == [task]
     derived = [t for t in state["tasks"] if t["id"] != task["id"]]
     assert len(derived) == 1 and derived[0]["title"] == "Linear Algebra HW2"
+    assert derived[0]["source"] == "onethu"
     # The derived task carries its upstream identity in the persistence layer
     # (stripped from the client contract shape above).
     from backend.models.task import Task as TaskModel

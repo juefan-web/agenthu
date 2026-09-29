@@ -343,8 +343,14 @@ campus 作业事件（`study.assignment.discovered|updated`）需要服务端派
   a) `POST /v1/events` 与 `/v1/events/batch` 中 `study.assignment.*` 事件的
      `data.deadline` / `data.late_deadline` 若为无偏移 ISO → 该 envelope 进
      `rejected`（reason 注明 naive deadline），**不入库**——naive 串入库后没有
-     正确解释途径，只会成为永远无法正确派生的死数据；留在客户端队列等 B
-     修复后重发，行为立即可测。
+     正确解释途径，只会成为永远无法正确派生的死数据。
+     **[勘误 2026-09-29，B 的 PR #4 审查备注 #1]** 原文「留在客户端队列等 B
+     修复后重发」与客户端实际行为不符：协调器对 `rejected` 的既有（且有回归
+     测试的）语义是**移出队列并把 reason 透出 UI**——naive 事件留在队列只会
+     反复被拒。正确的恢复路径是**重新采集**：被拒事件从未入库，服务端
+     dedupe 无记录；修复后的采集以同一 upstream 身份重新生成（新的
+     semantic_version → 新 client_event_id），正常派生，无锁死。不得按原文
+     字面实现「保留重发」的特殊分支。
   b) `TaskCreate` / `TaskUpdate` 的 `deadline` naive → 422。这是对 C4「全部
      datetime naive→UTC」的**定向收紧**：deadline 是排序核心字段，静默 +8h
      偏移比拒收更危险。C4 的 naive→UTC 对 `GoalCreate.target_date`、

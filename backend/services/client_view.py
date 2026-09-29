@@ -63,6 +63,7 @@ def task_to_client(task: TaskRead) -> ClientTask:
         source_event_ids=task.related_event_ids,
         description=task.description,
         goal_id=task.goal_id,
+        source=task.source,
         actual_duration_minutes=task.actual_duration_minutes,
         priority=task.priority,
         completed_at=task.completed_at,

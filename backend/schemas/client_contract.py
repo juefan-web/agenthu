@@ -78,6 +78,11 @@ class ClientTask(BaseModel):
     # Backend-only additions (stripped by the client's Zod schema).
     description: str | None = None
     goal_id: uuid.UUID | None = None
+    # Task origin ("manual" | "onethu" | ...): lets the client badge derived
+    # campus tasks (B's PR #4 review note #2). The client Zod adds
+    # `source: z.string().optional()`; backend-only additions may also be
+    # sent before that lands (extra keys are stripped).
+    source: str = "manual"
     actual_duration_minutes: int | None = None
     priority: int = 0
     completed_at: datetime | None = None
