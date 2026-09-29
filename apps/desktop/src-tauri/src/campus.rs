@@ -244,17 +244,32 @@ pub async fn campus_request(app: tauri::AppHandle, state: tauri::State<'_, Campu
     Ok(CampusResponse { status, headers, body: String::from_utf8_lossy(&body).into_owned(), final_url, cookies })
 }
 
+/// 解析快照载荷：版本不兼容或载荷损坏返回 None（调用方据此自清理）。
+fn parse_snapshot(payload: &[u8]) -> Option<Snapshot> {
+    let snapshot: Snapshot = serde_json::from_slice(payload).ok()?;
+    (snapshot.version == 1).then_some(snapshot)
+}
+
 #[tauri::command]
 pub async fn campus_restore(app: tauri::AppHandle, state: tauri::State<'_, CampusState>) -> Result<Option<SessionMetadata>, String> {
     let mut session = state.0.lock().await;
     if let Some(payload) = vault::read(&snapshot_path(&app)?)? {
-        let snapshot: Snapshot = serde_json::from_slice(&payload).map_err(|_| STORAGE_ERROR)?;
-        if snapshot.version != 1 { return Err("Unsupported campus snapshot version".into()); }
-        let store = CookieStore::from_cookies(snapshot.cookies.into_iter().map(Ok::<_, String>), false)?;
-        session.jar = Arc::new(CookieStoreMutex::new(store));
-        session.metadata = Some(snapshot.metadata);
-        session.clients = None;
-        session.persisted_snapshot = Some(Zeroizing::new(payload));
+        match parse_snapshot(&payload) {
+            Some(snapshot) => {
+                let store = CookieStore::from_cookies(snapshot.cookies.into_iter().map(Ok::<_, String>), false)?;
+                session.jar = Arc::new(CookieStoreMutex::new(store));
+                session.metadata = Some(snapshot.metadata);
+                session.clients = None;
+                session.persisted_snapshot = Some(Zeroizing::new(payload));
+            }
+            None => {
+                // 版本不兼容/损坏的快照自清理（B-3.1）：留着只会让每次启动都在
+                // 同一处失败，用户无从得知需要重新登录。清理后返回 None——网关
+                // 视为无会话（idle），UI 落回登录表单即为明确引导。
+                eprintln!("agenthu: clearing unreadable or unsupported campus snapshot");
+                vault::clear(&snapshot_path(&app)?)?;
+            }
+        }
     }
     Ok(session.metadata.clone())
 }
@@ -333,6 +348,25 @@ mod tests {
         session.jar.lock().unwrap().parse("JSESSIONID=changed; Secure; Path=/", &url).unwrap();
         let changed = snapshot_payload(&session).unwrap().unwrap();
         assert!(snapshot_changed(&session, &changed));
+    }
+
+    #[test]
+    fn parses_only_supported_snapshot_versions() {
+        let url = url::Url::parse("https://id.tsinghua.edu.cn/").unwrap();
+        let mut store = CookieStore::default();
+        store.parse("JSESSIONID=fixture; Path=/", &url).unwrap();
+        let payload = serde_json::to_vec(&Snapshot {
+            version: 1,
+            metadata: SessionMetadata { username: "fixture".into(), fingerprint: "fp".into(), finger3: String::new() },
+            cookies: store.iter_unexpired().cloned().collect(),
+        }).unwrap();
+        assert!(parse_snapshot(&payload).is_some());
+        // 未来版本：不兼容但可识别 → 调用方自清理
+        let future = serde_json::to_vec(&serde_json::json!({ "version": 2, "metadata": {}, "cookies": [] })).unwrap();
+        assert!(parse_snapshot(&future).is_none());
+        // 损坏载荷 → 同样自清理
+        assert!(parse_snapshot(b"{ not json").is_none());
+        assert!(parse_snapshot(b"").is_none());
     }
 
     #[test]

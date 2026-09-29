@@ -1,4 +1,4 @@
-import { EventEnvelopeSchema, SyncCursorSchema, type EventEnvelope } from "@agenthu/contracts";
+import { assertSafeEvent, EventEnvelopeSchema, SyncCursorSchema, type EventEnvelope } from "@agenthu/contracts";
 import { invoke } from "@tauri-apps/api/core";
 
 const QUEUE_STORAGE_KEY = "agenthu.event-queue";
@@ -140,8 +140,24 @@ export class SqliteEventQueue implements EventQueue {
   }
 }
 
+/** 敏感字段防线在队列边界无条件执行（B-3.2）：未配置 Backend 的直接入队路径
+ *  与同步协调器共享同一条检查，不存在绕过 assertSafeEvent 的入口。 */
+class SafeEventQueue implements EventQueue {
+  constructor(private readonly inner: EventQueue) {}
+
+  async add(events: EventEnvelope[]): Promise<void> {
+    events.forEach(assertSafeEvent);
+    await this.inner.add(events);
+  }
+  list(): Promise<EventEnvelope[]> { return this.inner.list(); }
+  remove(clientEventIds: string[]): Promise<void> { return this.inner.remove(clientEventIds); }
+  getCursor(): Promise<string | null> { return this.inner.getCursor(); }
+  setCursor(cursor: string | null): Promise<void> { return this.inner.setCursor(cursor); }
+}
+
 export function createEventQueue(): EventQueue {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window
+  const inner = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window
     ? new SqliteEventQueue()
     : new LocalEventQueue();
+  return new SafeEventQueue(inner);
 }

@@ -226,15 +226,48 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
     无 Docker）。
 - 验证：桌面端 lint/typecheck/39 测试/build（含 CSP guard）与 `cargo test`（6 测试）
   通过；CI（Client checks）绿。
+- **M1 客户端加固（2026-09-29，`feature/client-m1-hardening` 自 main 拉出，见
+  `TASKS/client-m1-hardening.md`）**：
+  - **B-1**：`EventSyncCoordinator.flush` single-flight（采集完成/online 监听/手动
+    重试三入口共享同一在途 Promise）；单批失败指数退避重试（默认 3 次、1s 起步），
+    认证失败不重试（重发同 Token 无意义），超限停发并透出「已重试 N 次」文案，
+    事件保留待同步队列等下次触发按批续传。回归测试覆盖并发共享、退避序列、
+    超限停发、认证直抛、批间断点续传。
+  - **B-2**：Rust 队列库重构为 `QueueStore`（单一长连接 + WAL + 5s busy_timeout，
+    懒初始化于 `QueueDb`，全部 queue_*/focus_* 命令共享）。测试：WAL 模式断言、
+    坏行隔离（store 级）、4 线程 × 25 次并发 add/list 全量落库（100/100，无
+    locked/丢失）、事件/游标/草稿往返与幂等。
+  - **B-3**：`campus_restore` 对版本不兼容/损坏快照自清理（返回 None → idle →
+    登录表单即引导，测试覆盖未来版本/坏载荷/空载荷）；`assertSafeEvent` 移入
+    `createEventQueue` 边界（SafeEventQueue 包装），未配置 Backend 的直接入队
+    路径不再绕过敏感字段检查（附测试）。
+  - **B-5.1**：`CampusConnection` 抽出为独立组件（`src/components/`，campus 单例
+    移至 `src/campus/instance.ts`），Testing Library 覆盖登录/2FA 状态机 9 个
+    用例：凭据提交即清密码、方式选择、双轮提示、验证码提交（含信任设备）、
+    错误透出、原地重试两分支、取消重置、就绪态。
+  - **B-4（backendUrl 运行时配置，暂缓待 A 对齐）**：倾向方案是 Backend 请求经
+    Tauri 原生受控转发（与 `campus_request` 同构：原生侧持用户确认过的源
+    allowlist，WebView CSP 无需放宽 `connect-src`；代价是 BackendClient 换
+    transport，且原生转发无浏览器 CORS——Backend CORS 白名单可顺势收紧）。
+    WebView-fetch 方案不可行：Tauri v2 CSP 仅构建期静态，运行时放行任意源等于
+    回退到已废除的 `https:` 通配。方案定稿需 A 参与（安全模型 + CORS）。
+  - **B-5.2（Playwright 冒烟，暂缓）**：round-4 已证 CDP 驱动构建包可行；沉淀为
+    `tests/e2e/`（构建包 + `--remote-debugging-port` + data-testid 选择器驱动
+    登录→采集→同步→计划→Focus），作为发布前回归套件，不在单元 CI 内跑。
+  - 验证：desktop 10 文件/69 测试（+16）、lint/typecheck/build、contracts、
+    `cargo test` 10 测试（+3）全绿。
 
 ## 尚未满足的验收项（合并 main 的前置门槛）
 
 - **Windows 构建包人工端到端演练**（两位开发者共同）：校园登录/2FA → 采集 →
   Event 同步 → Task/Plan（显示 `title`）→ 确认计划 → Focus 完成 → 断网重试与冲突处理；
   DevTools 无 CSP violation，拒绝 Event 可见原因且不重复上传。
-- 客户端开放项：`flush` single-flight 与重试上限、SQLite 连接 `busy_timeout`/复用、
-  `campus_restore` 版本不兼容自清理、`assertSafeEvent` 无条件执行、Testing Library/
-  Playwright 用户流程测试、`backendUrl` 运行时配置、Android 凭据存储/通知。
+- 客户端开放项（2026-09-29 `feature/client-m1-hardening` 更新）：`flush`
+  single-flight 与重试上限、SQLite `busy_timeout`/连接复用、`campus_restore`
+  自清理、`assertSafeEvent` 无条件执行、Testing Library 状态机测试**均已完成**
+  （见客户端小节 M1 加固条目）；剩 `backendUrl` 运行时配置（B-4，待与 A 对齐
+  安全模型后动手）、Playwright 构建包冒烟（B-5.2，发布前回归套件）、Android
+  凭据存储/通知。
 - 发布前完成 OneTHU BSL 1.1、LearnX 及依赖许可的逐文件分发审查。
 
 ## Blockers / decisions needed
