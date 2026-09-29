@@ -327,6 +327,13 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   `feature/current-state-presentation`：今日计划标题新增 `available_minutes`
   徽标（`formatAvailableMinutes`，`XhYm` 格式，null 不渲染），「空闲」派生
   默认与 None 占位文案确认维持。desktop 56 测试/build 全绿。
+- **B-5.2 构建包冒烟已脚手架化**（`feature/e2e-smoke`，`tests/e2e/`）：Playwright
+  经 CDP 附着已运行的构建包 WebView（`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=
+  --remote-debugging-port=9222` 启动，README 记录全流程）；两用例——外壳渲染
+  （无凭据可跑）与真实账号主链（登录/2FA→采集→同步归零→专注入口；2FA 验证码
+  人工输入半自动，≤5 分钟等待）。vitest 已排除 `tests/**` 防误收集；不在单元
+  CI 内运行，定位为发布前/验收前手动回归。本机无构建包故未实跑，`--list`
+  收集与编译已验证。
 
 ## Next（2026-09-29 更新：PR #1 已转正合并进 main `c2b58c8`，A/B 均已回归）
 

@@ -29,6 +29,10 @@ apps/desktop/src-tauri/target/
 apps/desktop/src-tauri/gen/
 vendor/onethu/core/test/.venue-build/
 
+# Playwright run artifacts（构建包冒烟）
+apps/desktop/test-results/
+apps/desktop/playwright-report/
+
 # Environment / secrets
 .env
 .env.*
