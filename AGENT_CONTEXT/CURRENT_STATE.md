@@ -223,10 +223,17 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
 - 联合 CI 应跑真实的 `packages/contracts` Vitest/typecheck；Backend 分支只有冻结
   快照替身（D-021）。
 
-## Next
+## Next（2026-09-29 更新：PR #1 已转正合并进 main `c2b58c8`，A/B 均已回归）
 
-1. 集成分支（本分支）跑双侧完整检查 + `check_contract_drift --require-zod --zod
-   packages/contracts/src/index.ts` 联检，推送并开 draft PR 进 main。
-2. Windows 构建包完成上面的人工验收项后，PR 转正合并。
-3. M1：真实（手动优先）导入适配层与幂等摄取、更丰富的 CurrentState、权限层后的
-   LLM planner、带真实调用方的 CurrentState 重算。
+1. **M1-1（最高优先，A/B 并行）**：campus 作业事件派生 Task——先由 A 冻结
+   契约（派生规则、Task 上游身份唯一约束、deadline 时区规则、不派生清单），
+   再 A 做 Backend handler/迁移、B 做事件载荷时区修复与派生任务展示；见
+   `TASKS/m1-1-assignment-event-derivation.md`。round-5 共同验收真实数据
+   全链（采集→任务→计划→Focus→完成）。
+2. **A**：`TASKS/backend-m1-tasks.md`——D9 明文 cookie 边界 review 补录与
+   DECISIONS 编号（快速还债）、CurrentState 投影语义（M1-2）、backlog
+   （events keyset 分页、多 worker 限流、M3 Memory/Grounding 预研）。
+3. **B**：`TASKS/client-m1-hardening.md`——flush single-flight + 重试上限、
+   SQLite busy_timeout/WAL、restore 自清理与 assertSafeEvent 无条件化、
+   backendUrl 运行时配置、Testing Library/Playwright 测试纵深。
+4. 后续分支一律从 main 拉出（`feature/*`）；集成分支仅作存档。

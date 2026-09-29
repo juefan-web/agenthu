@@ -1,61 +1,59 @@
-# D10 / M1-1：campus 作业事件派生 Task（真实数据驱动 Study + Time 主线）
+# M1-1：campus 作业事件派生 Task（真实数据驱动 Study + Time 主线）
 
-负责人：开发者 B（A 临时不在；本任务涉及 Backend handler 与可能的 schema 变更，
-按本轮授权由 B 实施，**A 回归后必须补充 review**，涉及迁移的按仓库规则同步
-fixtures/OpenAPI/契约）。定性：**M1 范围决策，非 PR #1 缺陷**（裁定依据见
-`CURRENT_STATE.md` 2026-09-29 条目）。
+2026-09-29 细化：A、B 均已回归，任务从「B 全包」改为**先冻结契约、A/B 并行**的
+标准跨边界流程。定性背景（D10 裁定为 M1 范围决策）见 `CURRENT_STATE.md`。
 
-## 背景（round-4 验收确认）
+## 阶段 0：契约冻结（A 先行，B 评审，半天内完成）
 
-100 条真实 campus 事件全部被接受，但 Backend handler 注册表只有
-`focus.started`/`focus.completed`/`task.*` 三个 pattern
-（`backend/services/event_handlers.py:92,100,141`），与客户端发出的
-`study.course.discovered`、`study.assignment.discovered|updated`、
-`time.schedule.entry`、`time.academic_calendar.updated`
-（`apps/desktop/src/adapters/campus/events.ts`）**零交集**——真实数据无法
-驱动 Task/Plan/Focus。
+A 产出决策记录（DECISIONS 新条目）并同步 B，冻结以下语义后双方开工：
 
-## 范围
+1. **派生规则**：`study.assignment.discovered` → 创建 Task；
+   `study.assignment.updated` → 幂等更新（deadline/标题变更刷新，
+   submitted/graded → 任务完成）。
+2. **Task 上游身份**：新列（建议 `source_upstream_id`）+ `(user_id, source,
+   source_upstream_id)` 唯一约束；幂等键与 Event dedupe 键
+   （`source + upstream_id + semantic_version`）的关系要写清——semantic_version
+   变化应更新而非新建。
+3. **deadline 时区规则**（关键坑，已预核实）：event `data.deadline` 等字段当前
+   是 vendor naive 北京本地串，后端 `UTCDatetime` 对 naive 按 UTC 解释 = 8 小时
+   偏移。冻结方向（推荐 a）：a) **客户端必须发 `+08:00` tz-aware ISO，原始串留
+   `*_raw` 溯源；Backend 对 naive deadline 拒收（422）**——把规则立在边界上；
+   b) handler 按 Asia/Shanghai 解释 naive——向后兼容但把时区假设藏进服务端。
+4. **不派生清单**（本轮冻结，后续 M1 项再议）：`study.course.discovered`、
+   `time.schedule.entry`、`time.academic_calendar.updated` 不派生 Task。
 
-**必做（M1-1 核心）**：
+## 开发者 A（Backend，`feature/assignment-event-derivation`）
 
-1. `study.assignment.discovered` → 创建 Task（title、deadline、来源 Event 关联、
-   estimate 缺省）；`study.assignment.updated` → 幂等更新（deadline/标题变更、
-   submitted/graded 后任务完成或标记）。**幂等键必须基于 assignment 上游身份**
-   （如 `assignment_id`/dedupe 语义），重复采集产生 updated 事件不得重复建 Task。
-2. **时区坑（必须处理，已预核实）**：event `data.deadline`/`late_deadline`/
-   `publish_time` 目前是 vendor 原始 naive 字符串（"YYYY-MM-DD HH:mm" 北京本地
-   时间），而后端 `UTCDatetime` 规则是 naive→按 UTC 解释——直接解析会产生
-   8 小时偏移。修复方向：客户端在 `events.ts` 里把这些字段转为带 `+08:00` 的
-   tz-aware ISO（原始串可另存 `*_raw` 供溯源），或 handler 侧显式按
-   Asia/Shanghai 解释；二选一并加回归测试。顺带核查 `asIso()` 对 naive 串经
-   `new Date()` 的本地时区依赖（用户 OS 时区非北京时的行为）。
-3. 回归测试：discovered→Task、updated 不重复建、deadline 变更生效、
-   submitted→任务完成、时区正确性。
+- 目标：assignment 事件 → Task 的服务端派生闭环。
+- 输出：
+  1. Alembic 迁移（up/down 完整）+ fixtures + OpenAPI 快照 + drift 基线同步。
+  2. handler 实现：注册 `study.assignment.discovered|updated`；运行在
+     `process_event` savepoint 内（C1 语义，handler 失败不丢原始 Event）；
+     幂等 upsert；submitted → `COMPLETED` + `completed_at`。
+  3. 回归测试：discovered→Task；updated 不重复建；deadline 变更生效；
+     submitted→done；tz-aware deadline 正确落库 + naive 拒收（若冻结 a 案）；
+     并发同键两事件恰好一个 Task。
+- 不负责：客户端 event 载荷构造与 UI。
+- 验收：ruff/pyright/pytest 全绿；drift check（双 Zod 源）无漂移；
+  迁移 up→down→up 无 drift；真实事件回放 fixture 通过。
 
-**暂缓（后续 M1 项，本任务不做）**：`study.course.discovered`（课程→资料域，
-不派生 Task）、`time.schedule.entry`/`time.academic_calendar.updated` →
-CurrentState 的 `context`/`available_minutes`（当前为 null，待真实任务/目标
-接入后再定投影语义）。
+## 开发者 B（Client，契约冻结后并行）
 
-## 实施注意
+- 目标：event 载荷时区正确 + 派生任务在客户端正确呈现。
+- 输出：
+  1. `events.ts`：`deadline`/`late_deadline`/`publish_time` 转为 `+08:00`
+     tz-aware ISO（原串保留 `*_raw`）；顺带审计 `asIso()` 经 `new Date()` 的
+     本地时区依赖（用户 OS 非北京时区时 `occurred_at` 回退值的行为），修复并
+     加测试。
+  2. 任务列表核对派生任务展示：标题/截止时间本地化格式、来源作业可辨识；
+     重复采集后任务数不翻倍的可见性。
+- 不负责：Backend handler 与迁移。
+- 验收：desktop 测试（新增映射用例）+ build 全绿；round-5 真实构建包里
+  截止时间无 8 小时偏移。
 
-- Task 模型当前无上游身份列的话需要加（如 `source_upstream_id` + 唯一约束），
-  属 schema 变更：迁移 + fixtures + OpenAPI/契约同步 + drift 基线，A 回归后
-  review。
-- handler 在 `process_event` 的 savepoint 内运行（C1 语义）：handler 失败不得
-  丢原始 Event。
-- 派生 Task 的权限等级与 Plan 生成沿用现有链路（D-019/D-023 不变）。
+## 共同验收（round-5，转正后的首个主链验收）
 
-## 验收标准（round-5 构建包）
-
-- 真实账号采集 → `/v1/tasks` 出现作业任务（标题、截止时间正确，无 8 小时
-  偏移），客户端任务列表可见；重复采集不产生重复任务，deadline 变更后刷新。
-- 从真实任务出发走通：计划生成/确认 → Focus → 实际时长 → 任务 done——
-  **真实数据驱动的完整 Study + Time 闭环**（AGENTS.md §8 首阶段验收主链）。
-- 双侧 CI 全绿；联合 drift check 无漂移；A 回归 review 完成记录。
-
-## 后续 M1 排队（不阻塞本任务）
-
-导入适配层其余部分（手动录入 UI）、CurrentState 投影丰富化、Memory/Grounding
-（M3）之前的主链稳定性。
+真实账号采集 → `/v1/tasks` 与客户端任务列表出现作业任务（截止时间正确）→
+重复采集不重复、deadline 变更刷新 → 从真实任务生成/确认计划 → Focus →
+实际时长 → 任务 done。即 AGENTS.md §8 首阶段完整闭环，全程 DevTools 无
+CSP violation。两侧完成后 A/B 共同在构建包执行并出具报告。
