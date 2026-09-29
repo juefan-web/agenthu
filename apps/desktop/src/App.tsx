@@ -6,6 +6,7 @@ import { CampusAuthError } from "./adapters/campus/types";
 import { isTauriRuntime } from "./adapters/campus/tauriTransport";
 import { campus } from "./campus/instance";
 import { CampusConnection, applySession } from "./components/CampusConnection";
+import { TaskList } from "./components/TaskList";
 import { BackendClient } from "./backend/client";
 import { createBackendSession } from "./backend/session";
 import { backendFetch } from "./backend/transport";
@@ -272,20 +273,12 @@ export default function App() {
           <div className="section-heading"><h2>今日计划</h2><div className="section-heading-meta"><span className="section-meta">{currentState.data?.context ?? "当前上下文未设置"}</span>{currentState.data?.available_minutes != null && <span className="section-meta minutes-badge">剩余可用 {formatAvailableMinutes(currentState.data.available_minutes)}</span>}</div></div>
           <PlanView plan={plan.data} loading={plan.isPending && !!backend} error={plan.error} onChanged={() => void queryClient.invalidateQueries({ queryKey: ["plan"] })} />
         </section>
-        <section className="workspace-section wide"><div className="section-heading"><h2>待办任务</h2><span className="section-meta">{taskList.length} 项</span></div><TaskList tasks={taskList} loading={tasks.isPending && !!backend} error={tasks.error ?? currentState.error} /></section>
+        <section className="workspace-section wide"><div className="section-heading"><h2>待办任务</h2><span className="section-meta">{taskList.length} 项</span></div><TaskList tasks={taskList} loading={tasks.isPending && !!backend} error={tasks.error ?? currentState.error} configured={!!backend} /></section>
       </div>}
-      {view === "tasks" && <section className="workspace-section"><div className="section-heading"><h2>全部任务</h2><span className="section-meta">{taskList.length} 项</span></div><TaskList tasks={taskList} loading={tasks.isPending && !!backend} error={tasks.error} /></section>}
+      {view === "tasks" && <section className="workspace-section"><div className="section-heading"><h2>全部任务</h2><span className="section-meta">{taskList.length} 项</span></div><TaskList tasks={taskList} loading={tasks.isPending && !!backend} error={tasks.error} configured={!!backend} /></section>}
       {view === "focus" && <FocusView tasks={taskList} />}
     </section>
   </main>;
-}
-
-function TaskList({ tasks, loading, error }: { tasks: Task[]; loading: boolean; error: unknown }) {
-  if (!backend) return <p className="empty-state">配置 Backend 地址后显示任务。</p>;
-  if (loading) return <p className="empty-state">正在读取任务…</p>;
-  if (error) return <p className="error-text">任务读取失败：{errorText(error)}</p>;
-  if (tasks.length === 0) return <p className="empty-state">暂无任务。</p>;
-  return <div className="task-list">{tasks.map((task) => <div className="task-row" key={task.id}><div><strong>{task.title}</strong><span>{task.due_at ? `截止 ${new Date(task.due_at).toLocaleString()}` : "无截止时间"}</span></div><span className="status-label">{task.status}</span></div>)}</div>;
 }
 
 function PlanView({ plan, loading, error, onChanged }: { plan: Awaited<ReturnType<BackendClient["getTodayPlan"]>> | undefined; loading: boolean; error: unknown; onChanged: () => void }) {

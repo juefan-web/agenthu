@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertSafeEvent, EventEnvelopeSchema, eventDedupeKey } from "./index";
+import { assertSafeEvent, EventEnvelopeSchema, eventDedupeKey, TaskSchema } from "./index";
 
 const event = {
   client_event_id: "onethu:homework:hw-1:v1",
@@ -44,5 +44,29 @@ describe("event contract", () => {
       data: { password: "secret" },
     });
     expect(() => assertSafeEvent(parsed)).toThrow("敏感字段");
+  });
+});
+
+describe("task contract", () => {
+  const task = {
+    id: "019a2b3c-1111-7000-8000-000000000001",
+    title: "Linear Algebra HW2",
+    due_at: "2026-10-01T23:59:00+08:00",
+    estimate_minutes: 60,
+    status: "todo",
+    source_event_ids: ["019a2b3c-2222-7000-8000-000000000002"],
+    source: "onethu",
+  };
+
+  it("keeps the derived-task source and strips backend-only additions", () => {
+    const parsed = TaskSchema.parse({ ...task, description: "backend-only", goal_id: null });
+    expect(parsed.source).toBe("onethu");
+    expect(parsed).not.toHaveProperty("description");
+    expect(parsed).not.toHaveProperty("goal_id");
+  });
+
+  it("parses payloads from a backend predating the source field", () => {
+    const { source: _omitted, ...withoutSource } = task;
+    expect(TaskSchema.parse(withoutSource).source).toBeUndefined();
   });
 });

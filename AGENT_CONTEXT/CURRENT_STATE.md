@@ -293,6 +293,21 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
 - `minio/minio` 镜像上游 404 → 本地用 `s3mock` profile 验证。
 - 联合 CI 应跑真实的 `packages/contracts` Vitest/typecheck；Backend 分支只有冻结
   快照替身（D-021）。
+- **B 已正式 review 并 approve PR #9（GitHub 首次正式 approve；合并 `efc4c8c`）**，
+  审查记录在 `HANDOFF/2026-09-29-b-review-pr9-task-source.md`。核验：diff 5 文件
+  与声明一致；派生链路 `event.source → Task.source` 代码路径独立核实；本地重跑
+  ruff/83 unit/drift 双 Zod 源全绿；分支 CI 6 checks 全 success。§3a 勘误准确
+  反映 PR #4 审查备注 #1 的事实（rejected=移出+透出、恢复路径=重新采集、禁止
+  保留重发特殊分支）。
+- **PR #9 的客户端闭环已落地**（`feature/task-source-badge`，M1-1 B 侧验收项 2
+  收尾）：`TaskSchema` 双侧（contracts + 冻结快照）加 `source: z.string().optional()`
+  （旧 Backend 载荷缺失该字段仍可解析）；TaskList 从 App.tsx 抽为
+  `components/TaskList.tsx` 并加来源徽标——`onethu` 标「校园采集」、未知来源
+  显示原始字符串、manual/缺省不标；新增 6 个 RTL 用例 + 2 个 contracts 契约
+  用例（source 保留、backend-only 字段剥离）；drift 双源无漂移，desktop 85
+  测试 + contracts 5 测试 + lint/typecheck/build 全绿。注意：drift 检查器按
+  逗号分割 Zod 对象体，对象内注释会被误解析为字段名——注释须写在 schema
+  定义上方。
 - **B 对 PR #4（D-028 实现 + B-4 拍板）的审查已完成：Approve**，记录在
   `HANDOFF/2026-09-29-b-review-pr4-derivation.md`（备注：D-028 §3a「留在客户端
   队列」措辞与客户端既有 rejected-移除行为不一致，建议文本勘误；`ClientTask`
@@ -337,11 +352,12 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
 
 ## Next（2026-09-29 更新：PR #1 已转正合并进 main `c2b58c8`，A/B 均已回归）
 
-1. **M1-1（最高优先，A/B 并行）**：campus 作业事件派生 Task——先由 A 冻结
-   契约（派生规则、Task 上游身份唯一约束、deadline 时区规则、不派生清单），
-   再 A 做 Backend handler/迁移、B 做事件载荷时区修复与派生任务展示；见
-   `TASKS/m1-1-assignment-event-derivation.md`。round-5 共同验收真实数据
-   全链（采集→任务→计划→Focus→完成）。
+1. **M1-1 代码两侧均已合并**（#4/#5 服务端派生 + #9 source 透出 +
+   `feature/task-source-badge` 客户端徽标），仅剩 round-5 真实数据全链共同
+   验收：采集 → 派生任务两端呈现（截止无偏移、重复采集不翻倍、来源徽标）
+   → 计划/Focus → 完成；见 `TASKS/m1-1-assignment-event-derivation.md`。
+   验收通过后关闭 M1-1 并更新 DECISIONS；A 的 backlog（keyset 分页、Redis
+   限流、M3 预研）随后排期。
 2. **A**：`TASKS/backend-m1-tasks.md`——D9 明文 cookie 边界 review 补录与
    DECISIONS 编号（快速还债）、CurrentState 投影语义（M1-2）、backlog
    （events keyset 分页、多 worker 限流、M3 Memory/Grounding 预研）。

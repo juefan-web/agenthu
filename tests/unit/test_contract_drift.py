@@ -45,7 +45,9 @@ def test_zod_parser_extracts_client_fields() -> None:
         "estimate_minutes",
         "status",
         "source_event_ids",
+        "source",
     }
+    assert schemas["TaskSchema"]["source"].types == frozenset({"string"})
     assert schemas["TaskSchema"]["due_at"].types == frozenset({"string", "null"})
     assert schemas["TaskSchema"]["estimate_minutes"].types == frozenset({"integer", "null"})
     assert schemas["TaskSchema"]["status"].types == frozenset({"string"})
