@@ -350,18 +350,22 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   CI 内运行，定位为发布前/验收前手动回归。本机无构建包故未实跑，`--list`
   收集与编译已验证。
 
-## Next（2026-09-29 更新：PR #1 已转正合并进 main `c2b58c8`，A/B 均已回归）
+## Next（2026-09-29 更新：**M1-1 验收通过，正式收口**）
 
-1. **M1-1 代码两侧均已合并**（#4/#5 服务端派生 + #9 source 透出 +
-   `feature/task-source-badge` 客户端徽标），仅剩 round-5 真实数据全链共同
-   验收：采集 → 派生任务两端呈现（截止无偏移、重复采集不翻倍、来源徽标）
-   → 计划/Focus → 完成；见 `TASKS/m1-1-assignment-event-derivation.md`。
-   验收通过后关闭 M1-1 并更新 DECISIONS；A 的 backlog（keyset 分页、Redis
-   限流、M3 预研）随后排期。
-2. **A**：`TASKS/backend-m1-tasks.md`——D9 明文 cookie 边界 review 补录与
-   DECISIONS 编号（快速还债）、CurrentState 投影语义（M1-2）、backlog
-   （events keyset 分页、多 worker 限流、M3 Memory/Grounding 预研）。
-3. **B**：`TASKS/client-m1-hardening.md`——flush single-flight + 重试上限、
-   SQLite busy_timeout/WAL、restore 自清理与 assertSafeEvent 无条件化、
-   backendUrl 运行时配置、Testing Library/Playwright 测试纵深。
-4. 后续分支一律从 main 拉出（`feature/*`）；集成分支仅作存档。
+- **Round-5 验收（2026-09-29，main `aa9773e`）：A/B/C/D 四组全部通过，无
+  P0/P1 缺陷**（报告：`HANDOFF/2026-09-29-round5-acceptance-report.md`，三处
+  计划修订已按修订口径执行）。真实采集 103 条 → rejected 0（+08:00 判据）→
+  50 个派生任务（徽标/标题/分钟级截止一致）→ 幂等不翻倍 → D-027 投影首次
+  实测（「在课」context + 2h15m 徽标）→ 换源免重构建（8001 独立库证伪式
+  验证）→ 断网队列重放不翻倍 → 全程 0 CSP violation。**Study + Time 真实
+  数据闭环（AGENTS.md §8 首阶段验收主链）达成。**
+- **E 组（e2e 工具化）后置为跟进项**：spec 硬编码 totp 与账号实际方式不符
+  等三处需先修（计划审核已定位）；**M2 起的验收以 e2e 为常规工具，E 组
+  首跑是解锁条件**。B 负责 spec 修订与首跑。
+- 后续任务已分派：`TASKS/round5-followups.md`（B：E 组 + D1 快速失败；
+  A：L2 任务截断优先、L1/L3/L4/L5 决策项）。
+- M2 规划输入：D1 断网快速失败、L1 breakdown 出口、L4 草稿吸收语义、
+  events/tasks keyset 分页、多 worker Redis 限流；M3 Memory/Grounding
+  预研启动。
+- 流程规则不变：分支从 main 拉出；跨边界先冻结；PR 互审（A=rotcar07，
+  B=juefan-web）。
