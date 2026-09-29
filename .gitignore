@@ -49,3 +49,5 @@ Thumbs.db
 
 # Personal local note (not shared)
 /LESSONS_LEARNED.md
+apps/desktop/test-results/
+apps/desktop/playwright-report/

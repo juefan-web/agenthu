@@ -18,10 +18,22 @@ function semanticVersion(data: Record<string, unknown>): string {
   return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
-function asIso(value: string | undefined, fallback: string): string {
-  if (!value) return fallback;
-  const parsed = new Date(value.replace(" ", "T"));
-  return Number.isNaN(parsed.getTime()) ? fallback : parsed.toISOString();
+/** 校园门户时间串固定为北京本地（vendor naive，如 "2026-09-28 23:59"）；
+ *  D-028 §3：deadline 类字段 naive 会被 Backend 拒收，统一按 +08:00 解释。 */
+const CAMPUS_OFFSET = "+08:00";
+const NAIVE_DATETIME = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?$/;
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** vendor naive 串 → `+08:00` tz-aware ISO；date-only → 北京本地零点；
+ *  已带偏移/Z 的原样透传。不可识别形态返回 null（不猜测，交给边界拒收/留空）。
+ *  取代旧 asIso 的 `new Date()` 解释——那是宿主 OS 本地时区，北京之外的
+ *  机器上 occurred_at 会整体偏移。 */
+export function asCampusIso(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (NAIVE_DATETIME.test(trimmed)) return `${trimmed.replace(" ", "T")}${CAMPUS_OFFSET}`;
+  if (DATE_ONLY.test(trimmed)) return `${trimmed}T00:00:00${CAMPUS_OFFSET}`;
+  return Number.isNaN(Date.parse(trimmed)) ? null : trimmed;
 }
 
 function eventBase(
@@ -76,16 +88,20 @@ export function mapAssignmentEvent(assignment: CampusAssignment, fetchedAt: stri
   return eventBase(
     type,
     `assignment:${assignment.id}`,
-    asIso(assignment.publishTime || assignment.deadline, fetchedAt),
+    // occurred_at 同口径按北京本地解释（原串留 publish_time_raw/deadline_raw）
+    asCampusIso(assignment.publishTime || assignment.deadline) ?? fetchedAt,
     fetchedAt,
     {
       assignment_id: assignment.id,
       course_id: assignment.courseId,
       title: assignment.title,
       content: assignment.content,
-      publish_time: assignment.publishTime,
-      deadline: assignment.deadline,
-      late_deadline: assignment.lateDeadline ?? null,
+      publish_time: asCampusIso(assignment.publishTime),
+      publish_time_raw: assignment.publishTime ?? null,
+      deadline: asCampusIso(assignment.deadline),
+      deadline_raw: assignment.deadline ?? null,
+      late_deadline: asCampusIso(assignment.lateDeadline),
+      late_deadline_raw: assignment.lateDeadline ?? null,
       submitted: assignment.submitted,
       graded: assignment.graded,
       url: assignment.url,
@@ -104,7 +120,8 @@ export function mapScheduleEvent(entry: CampusScheduleEntry, fetchedAt: string):
   return eventBase(
     "time.schedule.entry",
     `schedule:${upstreamId}`,
-    asIso(entry.date, fetchedAt),
+    // date-only 按北京本地零点（旧实现的 UTC 零点 = 北京 08:00，偏 8 小时）
+    asCampusIso(entry.date) ?? fetchedAt,
     fetchedAt,
     {
       course_name: entry.courseName,
