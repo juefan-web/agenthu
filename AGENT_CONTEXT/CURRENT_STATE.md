@@ -293,6 +293,19 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
 - `minio/minio` 镜像上游 404 → 本地用 `s3mock` profile 验证。
 - 联合 CI 应跑真实的 `packages/contracts` Vitest/typecheck；Backend 分支只有冻结
   快照替身（D-021）。
+- **B 对 PR #4（D-028 实现 + B-4 拍板）的审查已完成：Approve**，记录在
+  `HANDOFF/2026-09-29-b-review-pr4-derivation.md`（备注：D-028 §3a「留在客户端
+  队列」措辞与客户端既有 rejected-移除行为不一致，建议文本勘误；`ClientTask`
+  补 `source` 一行即可解锁「来源可辨识」UI）。
+- **M1-1 客户端侧已落地**（`feature/m1-1-client-tz-events`）：`events.ts` 的
+  `deadline`/`late_deadline`/`publish_time` 三字段统一经 `asCampusIso` 输出
+  `+08:00` tz-aware ISO（naive 北京本地解释），原串保留 `*_raw` 溯源；旧
+  `asIso` 的 `new Date()` 宿主时区依赖一并修复——assignment 的
+  `occurred_at` 与课表 date-only 的 `occurred_at` 都按北京本地解释（旧实现
+  date-only 走 UTC 零点 = 北京 08:00，偏 8 小时）。派生任务展示核对：截止
+  时间经 aware ISO 回传后 `toLocaleString` 在任意 OS 时区正确；重复采集不翻倍
+  由服务端唯一约束保证（A 已测）；「来源可辨识」等 `ClientTask.source` 补充。
+  desktop 76 测试（+7 映射用例）/lint/build 全绿。
 
 ## Next（2026-09-29 更新：PR #1 已转正合并进 main `c2b58c8`，A/B 均已回归）
 
