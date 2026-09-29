@@ -56,6 +56,9 @@ ignore = [
     "B008", # FastAPI uses function calls (Depends) in defaults by design
     "RUF012", # mutable class attributes in pydantic/sqlalchemy models are intentional
 ]
+# Fullwidth punctuation is intentional in Chinese user-facing strings
+# (CurrentState context labels); allow exactly these, not all confusables.
+allowed-confusables = ["：", "（", "）"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101"]

@@ -65,3 +65,41 @@
   Task/Plan/Focus 全链 → DevTools 无 CSP violation。
 - 完成报告附可 fetch 的 commit hash；A 回归后对 D9 的安全边界变化补联合
   review。
+
+---
+
+## 开发者 A 补录联合 review：D9 窄口实现（2026-09-29，AGENTS.md §3）
+
+Review 依据：`6a72dfd` 中 `campus.rs` 的 `allowed_campus_url` 实现、重定向
+Policy 与入口双处调用、Rust 单测断言；DECISIONS 裁定见 **D-026**。**结论：
+通过，无收窄要求**，附三项核对与一条非阻塞提醒。
+
+### 1. 范围最小性 ✅
+
+- 精确 host 等值（`host == "zhjw.cic.tsinghua.edu.cn"`，非后缀匹配）：
+  `x.zhjw.cic.tsinghua.edu.cn`（子域伪造）与
+  `zhjw.cic.tsinghua.edu.cn.evil.test`（后缀伪造）均不落入窄口；
+- 仅 `http` + `port_or_known_default() == Some(80)`：缺省端口与显式 `:80`
+  均合法（同一端口语义），`:8080` 等其他端口拒绝；
+- `username().is_empty() && password().is_none()` 在两个分支之外层——窄口
+  同样不允许 `http://user:pass@zhjw…` 凭据注入；
+- 未引入子域通配、未放开任何其他 http host。
+
+### 2. 重定向继承 ✅
+
+重定向链每跳经 `Policy::custom` 调用同一 `allowed_campus_url`
+（`campus.rs:37-39`），入口（`:197`）与 manual redirect 路径复用同一谓词——
+窄口语义（包括对伪造 host 的拒绝）自然继承到所有跳；重定向上限 10 跳不变。
+
+### 3. 伪造测试覆盖 ✅
+
+Rust 单测断言：接受 `http://zhjw.cic.tsinghua.edu.cn/jxmh_out.do?m=bks_jxrl`
+（真实业务路径）；拒绝其他 http host（`id.`）、zhjw 其他端口（`:8080`）、
+http 子域伪造（`x.zhjw.…`）、后缀伪造（`zhjw….evil.test`）；原有 https 系列
+回归（`evil.test` 后缀、`evil-tsinghua` 前缀、凭据注入、`:8443` 端口）全部
+保留。`request_headers` 的 Cookie/Authorization 剥离断言仍在。
+
+### 4. 非阻塞提醒
+
+上游 `ZHJW_PREFIX` 若改为 https，需同步删除窄口例外（已写入 D-026 的
+revisit 条件）；建议 B 在 vendor 升级流程里带上这条检查。

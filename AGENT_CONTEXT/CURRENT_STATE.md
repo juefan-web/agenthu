@@ -108,6 +108,27 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
     属性，TS `serialize()` 保持空）+ 3 条验证项（debug 通道不含 value 的回归
     测试、Event 面服务端纵深已确认、Stronghold 快照路径不含 TS 镜像）；未发现
     需要收窄的放大面。
+- **M1 期独立任务（2026-09-29，`feature/m1-currentstate-projection`，见
+  `TASKS/backend-m1-tasks.md`）**：
+  - **A-1（还债）**：D9 明文 cookie 边界的悬空联合 review 已补齐——**D-026**
+    落地（裁定 + 残余风险 + revisit 条件：上游 ZHJW_PREFIX 转 https 当天收回
+    窄口）；对 `6a72dfd` 的实现核对（范围最小性 / 重定向继承 / 伪造测试覆盖）
+    附于 `TASKS/client-merge3-d9-and-residuals.md` 末节，**结论通过、无收窄
+    要求**，一条非阻塞提醒（vendor 升级流程带窄口收回检查）。
+  - **A-2（M1-2 预研→落地）**：CurrentState 投影语义冻结为 **D-027** 并完成
+    实现——`available_minutes` = override 优先，否则
+    `max(0, 本地日剩余 − 今日课表重叠 − 当前任务剩余估时)`（课表取
+    `time.schedule.entry` 事件、同 upstream_id 只取最新版本次、naive 串按
+    DEFAULT_TIMEZONE 组合；rest_reserve 显式 0；derived 不落列避免与 M1-1
+    迁移分叉）；`context` 派生链 override > 在课 > 专注中 > 进行中任务 >
+    即将上课（≤30min）> 空闲 > None，经内部 `context_label` 传递，**客户端
+    契约零变化**（drift 双源验证无漂移）。可观测性：`recent_state.
+    available_minutes_breakdown` 记录输入摘要。8 个回归测试（固定时钟去
+    flaky）覆盖全部分支。完整口径与 B 的 round-5 对齐清单见
+    `TASKS/m1-2-currentstate-projection.md`。
+  - 验证快照：ruff/pyright 干净；全量 pytest **195 passed**，1 skipped；
+    drift check（`--require-zod` 双 Zod 源）无漂移。
+  - A-3 backlog（keyset 分页、Redis 限流、Memory 预研）按窗口排期，未动。
 
 ## 开发者 B：客户端（`feature/client-tauri-campus-adapter` @ `a2693e9`）
 

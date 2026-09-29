@@ -8,17 +8,21 @@ persisted with a monotonically increasing ``version`` so clients can sync.
 from __future__ import annotations
 
 import uuid
-from datetime import timedelta
+from datetime import UTC, date, datetime, time, timedelta
+from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from backend.config import get_settings
 from backend.db.base import utcnow
 from backend.models.current_state import CurrentState
-from backend.models.enums import PlanStatus, TaskStatus
+from backend.models.enums import FocusSessionStatus, PlanStatus, TaskStatus
 from backend.models.event import Event
+from backend.models.focus_session import FocusSession
 from backend.models.plan import Plan
 from backend.models.task import Task
 from backend.schemas.current_state import CurrentStateRead, CurrentStateUpdate
@@ -30,6 +34,13 @@ from backend.services.plan_validity import client_invalid_item_exists
 _PENDING_STATUSES = (TaskStatus.TODO, TaskStatus.IN_PROGRESS)
 _RECENT_WINDOW = timedelta(hours=24)
 _RECENT_EVENT_SCAN = 20
+# How far back schedule-entry events are still considered for "today": the
+# same course row re-collected with a new semantic_version lands as a new
+# Event, so the window only bounds how many revisions we rescan.
+_SCHEDULE_LOOKBACK = timedelta(days=90)
+# A class starting within this window switches the derived context label.
+_CONTEXT_UPCOMING_WINDOW = timedelta(minutes=30)
+_ACTIVE_FOCUS = (FocusSessionStatus.RUNNING, FocusSessionStatus.PAUSED)
 
 
 def get_or_create_state(session: Session, user_id: uuid.UUID) -> CurrentState:
@@ -117,6 +128,12 @@ def recompute_current_state(session: Session, user_id: uuid.UUID) -> CurrentStat
 
     plan = current_plan_for(session, user_id)
     recent = _recent_events_summary(session, user_id)
+    schedule = _today_schedule_entries(session, user_id, now)
+    available_minutes, breakdown = _available_minutes(now, schedule, current_task, state)
+    context_label = _derive_context_label(
+        state, schedule, session, user_id, now, current_task, has_pending_tasks=bool(tasks)
+    )
+    recent["available_minutes_breakdown"] = breakdown
 
     state.version = (state.version or 0) + 1
     state.current_time = now
@@ -126,7 +143,7 @@ def recompute_current_state(session: Session, user_id: uuid.UUID) -> CurrentStat
     state.recent_state = recent
     session.flush()
 
-    return _to_read(state, current_task, tasks, plan)
+    return _to_read(state, current_task, tasks, plan, available_minutes, context_label)
 
 
 def update_overrides(
@@ -175,6 +192,8 @@ def _to_read(
     current_task: Task | None,
     tasks: list[Task],
     plan: Plan | None,
+    available_minutes: int | None,
+    context_label: str | None,
 ) -> CurrentStateRead:
     return CurrentStateRead(
         user_id=state.user_id,
@@ -185,6 +204,188 @@ def _to_read(
         pending_tasks=[TaskRead.model_validate(task) for task in tasks],
         current_plan=PlanRead.model_validate(plan) if plan else None,
         recent_state=state.recent_state,
-        available_minutes=state.available_minutes,
+        # Override (persisted in the column) wins over the derived value; the
+        # projection output semantics are frozen in DECISIONS.md D-027.
+        available_minutes=state.available_minutes
+        if state.available_minutes is not None
+        else available_minutes,
+        context_label=context_label,
         updated_at=state.updated_at,
     )
+
+
+# --------------------------------------------------------------------------- #
+# Schedule-derived inputs (D-027)
+# --------------------------------------------------------------------------- #
+
+
+def _parse_hhmm(value: object) -> time | None:
+    if not isinstance(value, str):
+        return None
+    parts = value.strip().split(":")
+    if len(parts) not in (2, 3):
+        return None
+    try:
+        hour, minute = int(parts[0]), int(parts[1])
+        second = int(parts[2]) if len(parts) == 3 else 0
+    except ValueError:
+        return None
+    if not (0 <= hour < 24 and 0 <= minute < 60 and 0 <= second < 60):
+        return None
+    return time(hour, minute, second)
+
+
+def _entry_bounds(
+    data: dict[str, Any], timezone: ZoneInfo, today: date
+) -> tuple[datetime, datetime] | None:
+    """Combine a schedule entry's naive local date/time strings into UTC bounds."""
+
+    raw_date = data.get("date")
+    try:
+        entry_date = date.fromisoformat(str(raw_date)) if raw_date else today
+    except ValueError:
+        return None
+    start_clock = _parse_hhmm(data.get("start_time"))
+    end_clock = _parse_hhmm(data.get("end_time"))
+    if start_clock is None or end_clock is None or end_clock <= start_clock:
+        return None
+    start = datetime.combine(entry_date, start_clock, tzinfo=timezone).astimezone(UTC)
+    end = datetime.combine(entry_date, end_clock, tzinfo=timezone).astimezone(UTC)
+    return start, end
+
+
+def _today_schedule_entries(
+    session: Session, user_id: uuid.UUID, now: datetime
+) -> list[tuple[datetime, datetime, str, str | None]]:
+    """Today's schedule intervals from `time.schedule.entry` events.
+
+    The dedupe key embeds semantic_version, so a re-collected course row lands
+    as a *new* Event; grouping by ``provenance.upstream_id`` and keeping the
+    latest revision means changed or moved classes replace their old rows
+    instead of double-counting. Entries that fail to parse are skipped: the
+    projection must stay usable with imperfect vendor payloads.
+    """
+
+    timezone = ZoneInfo(get_settings().default_timezone)
+    today = now.astimezone(timezone).date()
+    window_start = now - _SCHEDULE_LOOKBACK
+    rows = session.execute(
+        select(Event.provenance, Event.data, Event.timestamp)
+        .where(
+            Event.user_id == user_id,
+            Event.type == "time.schedule.entry",
+            Event.timestamp >= window_start,
+        )
+        .order_by(Event.timestamp.desc())
+    ).all()
+
+    latest_by_upstream: dict[str, tuple[datetime, datetime, str, str | None]] = {}
+    for provenance, data, _ts in rows:
+        upstream = provenance.get("upstream_id") if isinstance(provenance, dict) else None
+        if not isinstance(upstream, str) or upstream in latest_by_upstream:
+            continue
+        if not isinstance(data, dict):
+            continue
+        bounds = _entry_bounds(data, timezone, today)
+        if bounds is None:
+            continue
+        course = str(data.get("course_name") or "课程")
+        location = data.get("location")
+        latest_by_upstream[upstream] = (*bounds, course, str(location) if location else None)
+
+    return [
+        entry
+        for entry in latest_by_upstream.values()
+        if entry[0].astimezone(timezone).date() == today
+    ]
+
+
+def _overlap_minutes(
+    schedule: list[tuple[datetime, datetime, str, str | None]], now: datetime, day_end: datetime
+) -> int:
+    total = 0
+    for start, end, _course, _location in schedule:
+        overlap_start, overlap_end = max(start, now), min(end, day_end)
+        if overlap_end > overlap_start:
+            total += int((overlap_end - overlap_start).total_seconds() // 60)
+    return total
+
+
+def _task_remaining_minutes(task: Task | None) -> int:
+    if task is None:
+        return 0
+    estimated = task.estimated_duration_minutes or 0
+    actual = task.actual_duration_minutes or 0
+    return max(0, estimated - actual)
+
+
+def _available_minutes(
+    now: datetime,
+    schedule: list[tuple[datetime, datetime, str, str | None]],
+    current_task: Task | None,
+    state: CurrentState,
+) -> tuple[int | None, dict[str, object]]:
+    """Derived available minutes plus the breakdown recorded for auditability."""
+
+    timezone = ZoneInfo(get_settings().default_timezone)
+    today = now.astimezone(timezone).date()
+    day_end = datetime.combine(today + timedelta(days=1), time(0, 0), tzinfo=timezone).astimezone(
+        UTC
+    )
+    day_remaining = max(0, int((day_end - now).total_seconds() // 60))
+    class_minutes = _overlap_minutes(schedule, now, day_end)
+    task_remaining = _task_remaining_minutes(current_task)
+    if state.available_minutes is not None:
+        return None, {"source": "override", "override_minutes": state.available_minutes}
+    derived = max(0, day_remaining - class_minutes - task_remaining)
+    return derived, {
+        "source": "derived",
+        "day_remaining_minutes": day_remaining,
+        "class_minutes": class_minutes,
+        "current_task_remaining_minutes": task_remaining,
+        "rest_reserve_minutes": 0,
+    }
+
+
+def _derive_context_label(
+    state: CurrentState,
+    schedule: list[tuple[datetime, datetime, str, str | None]],
+    session: Session,
+    user_id: uuid.UUID,
+    now: datetime,
+    current_task: Task | None,
+    has_pending_tasks: bool,
+) -> str | None:
+    """Priority chain frozen in D-027: override > class > focus > task > upcoming > idle."""
+
+    override = state.current_context.get("label") if state.current_context else None
+    if isinstance(override, str) and override:
+        return override
+
+    for start, end, course, location in schedule:
+        if start <= now < end:
+            where = f"@{location}" if location else ""
+            return f"在课：{course}{where}"
+
+    focus_row = session.execute(
+        select(FocusSession.id, FocusSession.task_id)
+        .where(FocusSession.user_id == user_id, FocusSession.status.in_(_ACTIVE_FOCUS))
+        .order_by(FocusSession.created_at.desc())
+        .limit(1)
+    ).first()
+    if focus_row is not None:
+        title = session.scalar(select(Task.title).where(Task.id == focus_row.task_id))
+        return f"专注中：{title or '任务'}"
+
+    if current_task is not None and current_task.status == TaskStatus.IN_PROGRESS:
+        return f"进行中：{current_task.title}"
+
+    upcoming = sorted((start, course) for start, _end, course, _location in schedule if start > now)
+    if upcoming:
+        next_start, course = upcoming[0]
+        if next_start - now <= _CONTEXT_UPCOMING_WINDOW:
+            return f"即将上课：{course}（{int((next_start - now).total_seconds() // 60)} 分钟后）"
+
+    if has_pending_tasks:
+        return "空闲"
+    return None

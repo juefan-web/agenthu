@@ -116,8 +116,9 @@ def plan_to_client(plan: PlanRead) -> ClientPlan:
 
 
 def current_state_to_client(state: CurrentStateRead) -> ClientCurrentState:
-    context_label = state.current_context.get("label") if state.current_context else None
-    context = context_label if isinstance(context_label, str) else None
+    # Effective label (override first, then the D-027 derived chain) is
+    # computed server-side; the client contract only sees the final string.
+    context = state.context_label if isinstance(state.context_label, str) else None
     tasks = [task_to_client(task) for task in state.pending_tasks]
     return ClientCurrentState(
         version=state.version,
