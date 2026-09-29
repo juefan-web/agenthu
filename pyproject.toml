@@ -1,0 +1,89 @@
+[project]
+name = "agenthu-backend"
+version = "0.1.0"
+description = "Backend, data platform and Agent foundations for the AgentHU Personal AI (M0)"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Proprietary" }
+
+dependencies = [
+    "fastapi>=0.115,<1.0",
+    "uvicorn[standard]>=0.30,<1.0",
+    "pydantic>=2.9,<3.0",
+    "pydantic-settings>=2.5,<3.0",
+    "sqlalchemy>=2.0.35,<3.0",
+    "alembic>=1.13,<2.0",
+    "psycopg[binary]>=3.2,<4.0",
+    "redis>=5.0,<7.0",
+    "arq>=0.26,<1.0",
+    "boto3>=1.35,<2.0",
+    "pyjwt>=2.9,<3.0",
+    "bcrypt>=4.2,<5.0",
+    "python-multipart>=0.0.12,<1.0",
+    # Explicit IANA database: `python:*-slim` images have no system zoneinfo and
+    # psycopg only pulls tzdata on Windows, but Settings validates DEFAULT_TIMEZONE.
+    "tzdata>=2024.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.0.3,<10.0",
+    "pytest-asyncio>=1.4,<2.0",
+    "httpx>=0.27,<1.0",
+    "ruff>=0.6,<1.0",
+    "pyright>=1.1.380",
+]
+
+[project.scripts]
+agenthu-openapi = "backend.scripts.export_openapi:main"
+agenthu-contract-drift = "backend.scripts.check_contract_drift:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["backend*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["migrations/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF", "C4"]
+ignore = [
+    "B008", # FastAPI uses function calls (Depends) in defaults by design
+    "RUF012", # mutable class attributes in pydantic/sqlalchemy models are intentional
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["backend"]
+
+[tool.pyright]
+include = ["backend", "tests"]
+exclude = ["migrations", ".venv"]
+typeCheckingMode = "basic"
+pythonVersion = "3.12"
+venvPath = "."
+venv = ".venv"
+reportMissingTypeStubs = false
+reportUnnecessaryComparison = false
+reportImplicitOverride = false
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-ra"
+markers = [
+    "integration: requires PostgreSQL/Redis/MinIO (skipped when unavailable)",
+    "storage: requires an S3-compatible object store",
+    "worker: requires Redis for the Arq worker",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning:passlib.*",
+]

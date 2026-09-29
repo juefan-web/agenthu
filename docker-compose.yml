@@ -1,0 +1,161 @@
+name: agenthu
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: agenthu
+      POSTGRES_PASSWORD: agenthu
+      POSTGRES_DB: agenthu
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agenthu -d agenthu"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # S3-compatible object storage. The bucket is created automatically by the
+  # Backend at startup (S3Storage.ensure_bucket), so no separate setup service
+  # is required. Override MINIO_IMAGE if your registry mirrors it elsewhere.
+  minio:
+    image: ${MINIO_IMAGE:-minio/minio:latest}
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: agenthu
+      MINIO_ROOT_PASSWORD: agenthu123
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9000/minio/health/live >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # Alternate S3-compatible storage for environments where the MinIO image is
+  # unavailable. Enable with: docker compose --profile s3mock up -d db redis s3mock
+  # and set S3_ENDPOINT_URL=http://localhost:9090.
+  # Image is pinned (not `latest`) so CI does not drift with upstream releases.
+  # The image ships `wget` but not `curl`, and `/favicon.ico` is the documented
+  # readiness endpoint (the root path is an unauthenticated ListBuckets).
+  s3mock:
+    image: ${S3MOCK_IMAGE:-adobe/s3mock:5.2.3}
+    profiles: ["s3mock"]
+    environment:
+      COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS: agenthu
+      COM_ADOBE_TESTING_S3MOCK_STORE_REGION: us-east-1
+      COM_ADOBE_TESTING_S3MOCK_STORE_ROOT: /tmp/s3mock
+    ports:
+      - "9090:9090"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:9090/favicon.ico || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # Shared api service shape (build/env/volumes/dependencies). Split into
+  # `api` (production-like, no code mounting, healthchecked) and `api-dev`
+  # (explicit `dev` profile, bind mounts + --reload for local iteration).
+  x-api-common: &api-common
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Dev stack default; a production-like run overrides ENVIRONMENT (and
+      # must then also provide strong SECRET_KEY/S3_SECRET_KEY, see config.py).
+      ENVIRONMENT: ${ENVIRONMENT:-local}
+      DATABASE_URL: postgresql+psycopg://agenthu:agenthu@db:5432/agenthu
+      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT_URL: http://minio:9000
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  api:
+    <<: *api-common
+    command: >
+      /bin/sh -c "alembic upgrade head &&
+      uvicorn backend.main:app --host 0.0.0.0 --port 8000"
+    ports:
+      - "8000:8000"
+    healthcheck:
+      # Readiness endpoint: db reachability + object storage, not just the
+      # process being up.
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/health/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  api-dev:
+    <<: *api-common
+    # Explicit dev profile only: `docker compose --profile dev up api-dev`.
+    # Autoreload is a development convenience, not a deployment default.
+    profiles: ["dev"]
+    command: >
+      /bin/sh -c "alembic upgrade head &&
+      uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app/backend
+      - ./migrations:/app/migrations
+      - ./tests:/app/tests
+      - ./alembic.ini:/app/alembic.ini
+
+  worker:
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-local}
+      DATABASE_URL: postgresql+psycopg://agenthu:agenthu@db:5432/agenthu
+      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT_URL: http://minio:9000
+    command: ["arq", "backend.worker.settings.WorkerSettings"]
+    volumes:
+      - ./backend:/app/backend
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # arq's worker writes `arq:queue:health-check` via PSETEX every
+      # health_check_interval (30s here) with a TTL of interval+1 — so the
+      # key expiring means the worker loop is dead, not just idle.
+      test:
+        - CMD-SHELL
+        - python -c 'import os,redis; r=redis.Redis.from_url(os.environ["REDIS_URL"]); exit(0 if r.exists("arq:queue:health-check") else 1)'
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:

@@ -1,0 +1,1967 @@
+/**
+ * zhjwxk（清华选课系统）客户端 —— demo webvpn-poc/server.js 选课 API 的逐行移植。
+ *
+ * 会话模型（与 OneTHU 登录一致，必须遵守）：
+ *  - 会话 = CampusSession 暴露的 demo Cookie 字符串（只读 getter demoCookies）
+ *  - 所有请求走 demoLogin.ts 的 webvpnRequest（手动跟 302 ≤20 跳、Cookie 合并、后值覆盖）
+ *    + webvpnWrap() 包装 URL；zhjwxk 域是 http（demo 的 ZHJWXK 常量同款）
+ *
+ * demo → 这里 的对照：
+ *  - establishZhjwxkSession (server.js L242-266) → #ensure（GET xklogin.do，maxHops 25，
+ *    从响应提 p_xnxq 学期；成功判定 html 含 'xkBks' 或 '选课'）
+ *  - proxyZhjwxkApi (server.js L271-281)         → #proxy（encodeUrl/webvpnWrap + webvpnRequest）
+ *  - GET /api/courses (server.js L284-307)       → getSelectedCourses（m=yxSearchTab）
+ *  - GET /api/queue   (server.js L310-332)       → getQueueStatus（m=dlSearch）
+ *  - html.includes('accessDenied')               → 抛 AuthRequiredError（会话过期，需重新登录）
+ *
+ * 与 demo 的唯一结构差异：demo 在 express session 上累积 zhjwxk Cookie；CampusSession
+ * 只暴露只读 getter（不能回写、不动登录状态机），所以每次调用先用 demoCookies 重新过
+ * xklogin.do 入口（302 链的 CAS 由 webvpn 服务端透明完成）建立 zhjwxk 会话，结果做
+ * 60 秒热缓存（基准串变化 = 重新登录过 → 自动失效）。
+ *
+ * 响应编码：桌面端 Tauri 传输层（reqwest charset）已把 GBK 自动转码为 UTF-8；
+ * 字节路径的解码语义见 crypto/decryptResponse.ts（demo 的 decryptResponse 移植）。
+ */
+import { AuthRequiredError, HttpClient } from "../http.js";
+import { gbkPercentEncode } from "./gbk-table.js";
+import { searchXkCoursesByTab } from "./xk-tab.js";
+import { deptCodeOf, normSeq, parsePagerInfo, parseVolRows, parseVolSportsRows, parseVolStr, type XkVolRow } from "./xk-vol.js";
+import { parseCasFormHtml } from "../auth/cas.js";
+import { decodeUrl, webvpnWrap } from "../crypto/webvpn.js";
+import { ID_PREFIX } from "../auth/cas.js";
+import { encryptPassword } from "../crypto/sm2.js";
+
+const ZHJWXK = "http://zhjwxk.cic.tsinghua.edu.cn";
+
+/** 调试钩子（桌面端接 /tmp/onethu-debug.log）：zhjwxk 页面抓取现场 */
+let zhjwxkDebug: ((line: string) => void) | null = null;
+/** 原生 cookie 仓清空钩子（desktop 注入 http_native_clear_cookies；rust 仓与
+ *  TS jar 双轨，只清 TS jar 时 rust 仍按旧 cookie 认出上下文——死结清不动的根因） */
+let nativeCookieClearHook: (() => Promise<void>) | null = null;
+export function setZhjwxkNativeClear(fn: () => Promise<void>): void {
+  nativeCookieClearHook = fn;
+}
+/** 死结重登钩子（desktop 注入）：id 是单点登录，选课自清仓直登会踢掉 lib 的
+ *  id 会话、lib 自愈重登又踢回——无限互踢（17:51 双死结、01:43 隔夜 info
+ *  全死实录）。死结时改借 lib 的权威重登，id 会话单一来源。 */
+let xkReloginHook: (() => Promise<boolean>) | null = null;
+export function setZhjwxkReloginHook(fn: () => Promise<boolean>): void {
+  xkReloginHook = fn;
+}
+export function setZhjwxkDebug(fn: (line: string) => void): void {
+  zhjwxkDebug = fn;
+}
+
+/** 会话：HttpClient（共享 jar）+ 原始凭据（id-bounce 表单重登用） */
+export interface ZhjwxkSession {
+  readonly http: HttpClient;
+  readonly username: string;
+  readonly password: string;
+  readonly fingerprint: string;
+  /** 选课隔离通道（2026-09-13）：提供时 ensure 走专用 HttpClient+自管 jar
+   *  +独立 demoLogin 建链——webvpn 桶污染不进全局会话（seedJar 拆条事故定案：
+   *  选课的多域 cookie 需求只能在自己罐子里满足，爆炸半径锁死本模块）。 */
+  readonly isoFetch?: (url: string, init?: RequestInit) => Promise<Response>;
+  /** 受信设备三段指纹（demoLogin 免 2FA 用；缺省时隔离通道可能被要求 2FA */
+  /** 可更新：desktop 侧 verify 签发后动态刷新（单例值拷贝会定死旧空值） */
+  finger3?: string;
+}
+
+/** 已选课程（demo /api/courses 的 courses 项，字段一一对应） */
+export interface SelectedCourse {
+  typeLabel: string;
+  code: string;
+  name: string;
+  teacher: string;
+  time: string;
+  credits: number;
+}
+
+/** 候补队列项（demo /api/queue 的 candidates 项，字段一一对应） */
+export interface QueueCandidate {
+  typeLabel: string;
+  zyStr: string;
+  code: string;
+  name: string;
+  seq: string;
+  queueTotal: number;
+  myPos: number;
+  time: string;
+  teacher: string;
+}
+
+/**
+ * 当前学期字符串（p_xnxq 形如 2026-2027-1）。
+ * 选课发生在学期开始前：8 月起即视为新学年秋季学期（demo 源码写死 '2026-2027-1'
+ * 的日期语境），1 月仍属上一年秋季，2-7 月为春季。仅在 xklogin 页提不到 p_xnxq
+ * 时作兜底，正常路径以页面提取值为准。
+ */
+export function semesterFromDate(now = new Date()): string {
+  const y = now.getFullYear();
+  const m = now.getMonth() + 1;
+  if (m >= 8) return `${y}-${y + 1}-1`;
+  if (m === 1) return `${y - 1}-${y}-1`;
+  return `${y - 1}-${y}-2`;
+}
+
+/* ── 隔离通道：专用 HttpClient + 自管 jar（探针 scripts/xk-webvpn-probe.mts
+ *  验证：demoLogin 独立建链 → 逐条灌 jar → xklogin（webvpn 重登劫持时重放一次）
+ *  → 真票据兑付 → p_xnxq 落地。全程不触碰全局 jar/era 快照。 ───────────── */
+interface IsoClient {
+  http: HttpClient;
+  at: number;
+}
+const isoClientCache = new WeakMap<ZhjwxkSession, IsoClient>();
+const ISO_TTL_MS = 10 * 60_000;
+
+async function isoHttp(s: ZhjwxkSession): Promise<HttpClient | null> {
+  if (!s.isoFetch) return null;
+  const hit = isoClientCache.get(s);
+  if (hit && Date.now() - hit.at < ISO_TTL_MS) return hit.http;
+
+  // 2026-09-13 v2 定案：隔离通道【绝不自己登录】——webvpn 单会话物理学会把主
+  // 会话踢掉、主会话自愈重登又踢回来（app 自我互踢战争真机实录）。改为拷贝
+  // 全局桶（webvpn/id/oauth 同票共用=零互踢）；票死时靠 AuthRequiredError 走
+  // 全局自愈，恢复后下次尝试自动拷到新票。zhjwxk 专属 cookie 只沉淀在本罐。
+  const { MemoryCookieJar } = await import("../http.js");
+  const jar = new MemoryCookieJar();
+  let copied = 0;
+  for (const d of [
+    "https://webvpn.tsinghua.edu.cn/",
+    "https://id.tsinghua.edu.cn/",
+    "https://oauth.tsinghua.edu.cn/",
+  ]) {
+    for (const c of s.http.jar.getCookies(new URL(d))) {
+      jar.setRaw(new URL(d), `${c.name}=${c.value}; Path=/`);
+      copied += 1;
+    }
+  }
+  zhjwxkDebug?.(`[XK-ISO] 拷贝全局桶 ${copied} cookies（零登录零互踢）`);
+  const http = new HttpClient({ fetch: s.isoFetch, jar });
+  http.withWebVPN(s.http.viaWebVPN);
+  http.webVPNEncoder = s.http.webVPNEncoder;
+  isoClientCache.set(s, { http, at: Date.now() });
+  return http;
+}
+
+/** 选课流程统一取客户端：隔离通道已建→专用实例；否则全局（兼容老路径） */
+function xkHttp(s: ZhjwxkSession): HttpClient {
+  return isoClientCache.get(s)?.http ?? s.http;
+}
+
+/* ── 建立会话 + 学期解析（demo establishZhjwxkSession）────────────── */
+
+interface ZhjwxkEntry {
+  semester: string | null;
+  at: number;
+}
+
+/** entry 信任窗（2026-09 选课性能专项）：entry 对象不参与实际请求（数据直打 ZHJWXK+path），
+ *  真会话在 HttpClient cookie jar——此 TTL 只是「jar 会话可信」的备忘时长。
+ *  60s 时代：离开页面 1 分钟回来即白付整条 xklogin SSO 链（4-5 慢往返），是选课模块
+ *  「每次回来都慢」的主凶。10min 窗 + proxyZhjwxkApi 死页自愈重试：jar 真死时在当次
+ *  请求内静默重登+重试，用户无感。UI 全部显式传学期，entry.semester 过期无碍。 */
+const ENTRY_TTL_MS = 10 * 60_000;
+const entryCache = new WeakMap<ZhjwxkSession, ZhjwxkEntry>();
+/** 最近一次成功重登时刻（合流护栏：8 秒窗口内的并发弹回共用新会话，不起重复链） */
+let lastXkReloginAt = 0;
+/** 兑付失败冷却：失败后短期内不再打 id（并发数据路各自全跑 = 自踢风暴，
+ *  用户实录「放一会突然会好」= 风暴平息；主动放缓让 id 喘息） */
+let xkFailCooldownUntil = 0;
+const xkSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+const entryInflight = new WeakMap<ZhjwxkSession, Promise<ZhjwxkEntry>>();
+
+async function ensure(
+  s: ZhjwxkSession,
+  semesterOverride?: string,
+): Promise<{ entry: ZhjwxkEntry; semester: string }> {
+  if (Date.now() < xkFailCooldownUntil) {
+    throw new AuthRequiredError("选课会话恢复冷却中，请稍候重试");
+  }
+  const hit = entryCache.get(s);
+  if (hit && Date.now() - hit.at < ENTRY_TTL_MS) {
+    return { entry: hit, semester: semesterOverride ?? hit.semester ?? semesterFromDate() };
+  }
+
+  const inflight = entryInflight.get(s);
+  if (inflight) {
+    const entry = await inflight;
+    return { entry, semester: semesterOverride ?? entry.semester ?? semesterFromDate() };
+  }
+
+  const run = (async (): Promise<ZhjwxkEntry> => {
+  // 隔离通道优先（isoFetch 提供时）：所有请求走专用实例
+  const http = (await isoHttp(s).catch((e) => {
+    throw e;
+  })) ?? s.http;
+  // demo establishZhjwxkSession：经 HttpClient 进入选课系统（自动 webvpn 包装 + 逐跳 id 桶）
+  // 外层 ≤2 次尝试：webvpn 模式下首跳 xklogin 的 webvpn 票据已死时，整条 CAS 流程
+  // 实际是「webvpn 重登录」——登录成功后兑付锚点落在 webvpn 门户页而非选课页
+  //（probe 实证：落地「清华大学WebVPN - 资源站点」）。此时新 webvpn 会话已在 jar，
+  // 重放一次 xklogin 即真正进入选课 SSO。直连模式落地即真页面，第二跳自然跳过。
+  let html = "";
+  let semester: string | null = null;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+  html = await http.text(ZHJWXK + "/xklogin.do");
+
+  // xklogin 的 SSO 不是普通 302：链会 302 到 id 电子身份的动态 auth-request 表单页
+  //（JS 锚点跟跳），HTTP 客户端到不了 —— 参照 thu-info-lib roam("id")：解析该表单
+  //（公钥+隐藏字段），SM2 加密账密 POST /check，成功后跟锚点回 xk 落地会话。
+  if (html.includes("电子身份服务系统") || html.includes("do/off/ui/auth/login")) {
+    // id 半会话的 checkSingle 中间页（info 客户端 #idCheckSingle 同款第三形态，
+    // 2026-09-13 凌晨实锤：xklogin 弹回间歇拿到 id="logined" 自检页，无 SM2 公钥
+    // → 解析炸「无法从登录页获取 SM2 公钥」→ 选课整模块红条。浏览器靠 JS 自动
+    // POST 它；手动兑付：POST checkSingle → 跟 302/锚点票据 → 重走 xklogin 落地。
+    let csRounds = 0;
+    while (/checkSingle/.test(html) && csRounds < 2) {
+      csRounds += 1;
+      // 2026-09-13 桶一致修复：去掉 direct:true——webvpn 模式下表单链在 webvpn 桶
+      // 建立会话，POST 却送直连桶 cookie（空/脏）→ id 不认识 → gb2312 错误页。
+      // 跟随传输模式：webvpn=包装桶，直连=直连桶（PUBLIC_HOSTS 含 id 自动直连）。
+      zhjwxkDebug?.(`[XK-CHECKSINGLE] 指纹现场 fp=${s.fingerprint?.length ?? 0} f3=${s.finger3?.length ?? 0}`);
+      const res = await http.request(`${ID_PREFIX}/do/off/ui/auth/login/checkSingle`, {
+        method: "POST",
+        // 受信 finger3：传空 = 确认永不被接受（pending 票恒不消费 → 死结）
+        body: new URLSearchParams({ i_rememberme: "on", fingerPrint: s.fingerprint, fingerGenPrint: s.finger3 ?? "", fingerGenPrint3: s.finger3 ?? "" }),
+        headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+        redirect: "manual",
+      });
+      const loc = res.headers.get("location") ?? "";
+      const pageHtml = await res.text().catch(() => "");
+      const target = res.status >= 300 && res.status < 400 && loc ? loc : (/href="([^"]*ticket=[^"]*)"/i.exec(pageHtml)?.[1] ?? "");
+      zhjwxkDebug?.(`[XK-CHECKSINGLE] st=${res.status} loc=${loc.slice(0, 80)} target=${target.slice(0, 90)}`);
+      if (!target) break;   // 无票据可兑付：走表单链
+      let tgt = target.startsWith("http") ? target : new URL(target, ID_PREFIX).toString();
+      // 协议改写（check 块同款教训）：zhjwxk 是 http 应用，https 锚点原样兑付
+      // 会让 /https/ 包装代理到 443 →「访问内容不存在」票据白烧 → 误判死结 →
+      // 清仓殃及日程（17:38 快速往返双输实录）——必须改写为直连 http。
+      if (tgt.startsWith("https://zhjwxk.cic.tsinghua.edu.cn")) {
+        tgt = ZHJWXK + tgt.slice("https://zhjwxk.cic.tsinghua.edu.cn".length);
+      } else {
+        const dec = decodeUrl(tgt);
+        if (dec?.startsWith("https://zhjwxk.cic.tsinghua.edu.cn")) {
+          tgt = webvpnWrap(dec.replace("https://zhjwxk.cic.tsinghua.edu.cn", ZHJWXK));
+        }
+      }
+      zhjwxkDebug?.(`[XK-CHECKSINGLE] 兑付=${tgt.slice(0, 110)}`);
+      await http.text(tgt).catch(() => {});   // 兑付票据（失败不阻断：回落表单链）
+      html = await http.text(ZHJWXK + "/xklogin.do");
+      if (/checkSingle/.test(html)) {
+        // 确认+兑付一轮后仍 checkSingle = id 会话卡死在"待确认"态（pending 票
+        // 永不消费，桌面 2026-09-17 实录）。唯一出路：清两 jar 的 id/oauth 会话
+        // 强制回到全新登录表单，走账密直登重置会话（直登带受信 finger3，不触发
+        // 2FA——传空指纹才是 2FA 根因）。
+        // 死结重登：优先借 lib 权威（单点登录互踢根治）；无钩子退回自清仓
+        if (xkReloginHook) {
+          zhjwxkDebug?.("[XK-CHECKSINGLE] 确认死结 → 借 lib 权威重登（防互踢）");
+          let ok = false;
+          try { ok = await xkReloginHook(); } catch { ok = false; }
+          if (ok) {
+            html = await s.http.text(ZHJWXK + "/xklogin.do");
+            zhjwxkDebug?.(`[XK-CHECKSINGLE] lib 重登后重入 len=${html.length} checkSingle=${/checkSingle/.test(html) ? 1 : 0}`);
+            continue;   // 带 csRounds 计数继续 while 循环
+          }
+          zhjwxkDebug?.("[XK-CHECKSINGLE] lib 重登失败 → 回退自清仓");
+        }
+        zhjwxkDebug?.("[XK-CHECKSINGLE] 确认死结 → 清 id/oauth 会话走账密直登");
+        // 清仓前抢救健康域票据（webvpn/learn）：rust clear 是全清，全清会让
+        // webvpn 票陪葬 → 日程/各页集体无票爆掉，逐页自愈转圈才恢复（2026-09-18
+        // 实录）。死结只在 id/oauth 域——健康票救回、只重建死域。
+        // 全量快照抢救：id/oauth 外全部保命。原按 webvpn/learn 根 URL 捞会漏掉
+        // path 限定的 wengine app-host 票（Path=/http/<hash>/ 不是根路径前缀，
+        // getCookies(根) 捞不到）→ 清后包装请求无票 → 引导壳（「教务返回异常页」，
+        // 强制刷新实录）
+        const rescue: Array<[string, string]> = [];
+        try {
+          const snap = JSON.parse(s.http.jar.serialize() || "[]") as Array<{ domain?: string; path?: string; name?: string; value?: string }>;
+          for (const c of snap) {
+            if (!c.domain || !c.name || !c.value) continue;
+            if (/id\.tsinghua|oauth\.tsinghua/.test(c.domain)) continue; // 死域不救
+            const physical = `https://${c.domain.replace(/^\./, "")}${c.path || "/"}`;
+            rescue.push([physical, `${c.name}=${c.value}`]);
+          }
+        } catch { /* 快照失败退回旧粒度 */ }
+        if (rescue.length === 0) {
+          for (const dom of ["https://webvpn.tsinghua.edu.cn/", "https://learn.tsinghua.edu.cn/"]) {
+            try {
+              for (const c of s.http.jar.getCookies(new URL(dom))) {
+                rescue.push([dom, `${c.name}=${c.value}`]);
+              }
+            } catch { /* 忽略 */ }
+          }
+        }
+        try { await nativeCookieClearHook?.(); } catch { /* 钩子未注入/失败不阻断 */ }
+        for (const u of ["https://id.tsinghua.edu.cn/", "https://oauth.tsinghua.edu.cn/"]) {
+          try { s.http.jar.clear(new URL(u).hostname); http.jar.clear(new URL(u).hostname); } catch { /* 域无 cookie */ }
+        }
+        // 健康票种回（rust 仓走 nativeSeedHook，TS jar 走 setRaw）
+        for (const [dom, pair] of rescue) {
+          try { s.http.nativeSeedHook?.(dom, pair); } catch { /* rust 种子失败不阻断 */ }
+          try { s.http.jar.setRaw(new URL(dom), `${pair}; Path=/`); } catch { /* 忽略 */ }
+        }
+        zhjwxkDebug?.(`[XK-CHECKSINGLE] 健康票抢救 ${rescue.length} 条完成`);
+        // 正确的登录表单 URL（cas.ts CAS_LOGIN_FORM，带 form hash；/index 是
+        // 不存在的路径 → Tomcat 500 Error report → parseCasFormHtml 假报结构变更）
+        html = await s.http.text(ID_PREFIX + "/do/off/ui/auth/login/form/bb5df85216504820be7bba2b0ae1535b/0");
+        zhjwxkDebug?.(`[XK-REFRESH] ${/sm2publicKey/.test(html) ? "全新表单✓" : "仍异常"} len=${html.length}`);
+      }
+    }
+    const form = parseCasFormHtml(html, true);
+    const enc = encryptPassword(s.password, form.publicKey);
+    // bounce 表单页是 id 直连落地 → 直连字段集（id 校验读 i_pass，cas.ts 直连同款）
+    // 不带 singleLogin（参照选课插件登录字段：i_user/i_pass/fingerPrint/
+    // fingerGenPrint/i_captcha，无此项且常年稳定）——带上会踢掉上一条会话，
+    // 并发数据路各自重登时自踢风暴：后登录踢死先登录的，plan/队列在风暴里
+    // 永远抢不到活会话（2026-09-03 实录）
+    const body = new URLSearchParams({
+      ...form.hiddenFields,
+      i_user: s.username,
+      i_pass: enc,
+      sm2pass: enc,
+      fingerPrint: s.fingerprint,
+      // 受信 finger3（登录时持久化）：传空 = id 判新设备 → 2FA/会话怪态
+      fingerGenPrint: s.finger3 ?? "",
+      fingerGenPrint3: s.finger3 ?? "",
+      i_captcha: "",
+    });
+    // 同上桶一致修复：check 跟随传输模式（原 direct:true 在 webvpn 模式送空桶
+    // cookie → gb2312 错误页五连败实锤）
+    const checkHtml = await http.text("https://id.tsinghua.edu.cn/do/off/ui/auth/login/check", {
+      method: "POST",
+      body,
+      headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+    });
+    if (!checkHtml.includes("登录成功")) {
+      zhjwxkDebug?.(`[XK-BOUNCE] 未成功 全页=${checkHtml.slice(0, 1500).replace(/\s+/g, " ")}`);
+      throw new AuthRequiredError("选课系统身份确认失败，请重新登录后重试");
+    }
+    // 锚点必须选 zhjwxk 的：id 成功页会罗列全部 pending 票锚点（learn/oauth 的
+    // 过期票排前面），抓第一个 = 烧在别的服务的死票上 → 两次重试全废 → 报错
+    // （15:58 实录：第1次 learn 票落 id 页、第2次 oauth 票落门户页，隔离通道
+    // 才救回——UI 已红条）。过滤后一步兑付正主票。
+    const anchors = [...checkHtml.matchAll(/<a[^>]+href="([^"]+)"/gi)]
+      .map((m) => m[1])
+      .filter((x): x is string => !!x);
+    const anchor = anchors.find((a) => /zhjwxk|j_acegi/.test(a));
+    if (anchor) {
+      let target = (anchor.startsWith("http") ? anchor : new URL(anchor, ID_PREFIX).toString()) as string;
+      // id 锚点是 https://zhjwxk...（直连或 /https/ 包装），但 zhjwxk 是 http 应用
+      //（引导页 __vpn_app_protocol_data="http"）：/https/ 包装会让 wengine 代理到
+      // 443 → "访问内容不存在"（票据白烧、会话建不成）。按真实协议改写后兑付。
+      if (target.startsWith("https://zhjwxk.cic.tsinghua.edu.cn")) {
+        target = ZHJWXK + target.slice("https://zhjwxk.cic.tsinghua.edu.cn".length);
+      } else {
+        const dec = decodeUrl(target);
+        if (dec?.startsWith("https://zhjwxk.cic.tsinghua.edu.cn")) {
+          target = webvpnWrap(dec.replace("https://zhjwxk.cic.tsinghua.edu.cn", ZHJWXK));
+        }
+      }
+      zhjwxkDebug?.(`[XK-ANCHOR] 兑付=${target.slice(0, 130)}`);
+      const landed = await http.text(target).catch(() => "");
+      zhjwxkDebug?.(`[XK-ANCHOR] 落地 len=${landed.length} 页首=${landed.slice(0, 200).replace(/\s+/g, " ")}`);
+      // 关键：兑付后不得重打 xklogin.do——那是登录入口，重打会重开 auth 流程弹回
+      // id 表单（10:22 实证：兑付已落地真页面，重打又弹回去）。会话已在 jar，直接用。
+      html = landed || html;
+    }
+  }
+
+  semester = /p_xnxq=([\d-]+)/.exec(html)?.[1] ?? null;
+  zhjwxkDebug?.(
+    `[XK-ENTRY] 第${attempt}次 len=${html.length} 有p_xnxq=${semester ? 1 : 0} 页首=${html.slice(0, 400).replace(/\s+/g, " ")}`,
+  );
+  // 落地页必须带 p_xnxq（真选课页特征）。「假成功」实证（15:03）：/check 登录成功
+  // 但兑付落在电子身份页/webvpn门户页——缓存这种毒 entry 会让合流窗口内所有请求
+  // 吃死页。不缓存；webvpn 劫持场景重放一次，二次仍未落地才抛失登。
+  if (semester) break;
+  // id 中转页跟随：pending 清空后 check 成功页无锚点可抓，xklogin 302 落在
+  // id 的「用户电子身份服务系统」中转页——页内 <a> 是 pending 票链，兑付任意
+  // 一张即清空 pending，重放的 xklogin 就能拿到直达 302（16:03 实录：两轮
+  // 重放全烧在中转页上，兑付链断）
+  if (attempt < 2 && /用户电子身份服务系统/.test(html)) {
+    const aLinks = [...html.matchAll(/<a[^>]+href="([^"]+)"[^>]*>/gi)]
+      .map((m) => m[1])
+      .filter((x): x is string => !!x);
+    // id 中转页的跳转除 <a> 外还有 JS location / meta refresh（16:48 实录：
+    // 页内无 <a> ticket 锚点，兑付链断在 JS 跳转上）
+    const jsLoc =
+      /(?:location\.href|location\.replace|window\.location)\s*=\s*["']([^"']+)["']/.exec(html)?.[1] ??
+      /<meta[^>]+http-equiv=["']refresh["'][^>]+url=([^"'>]+)/i.exec(html)?.[1];
+    const hop = aLinks.find((a) => /ticket=/.test(a)) ?? (jsLoc && /ticket=/.test(jsLoc) ? jsLoc : undefined);
+    if (hop) {
+      let t = hop.startsWith("http") ? hop : new URL(hop, ID_PREFIX).toString();
+      if (t.startsWith("https://zhjwxk.cic.tsinghua.edu.cn")) {
+        t = ZHJWXK + t.slice("https://zhjwxk.cic.tsinghua.edu.cn".length);
+      } else {
+        const dec = decodeUrl(t);
+        if (dec?.startsWith("https://zhjwxk.cic.tsinghua.edu.cn")) {
+          t = webvpnWrap(dec.replace("https://zhjwxk.cic.tsinghua.edu.cn", ZHJWXK));
+        }
+      }
+      zhjwxkDebug?.(`[XK-HOP] 中转兑付=${t.slice(0, 130)}`);
+      const landed = await http.text(t).catch(() => "");
+      zhjwxkDebug?.(`[XK-HOP] 落地 len=${landed.length} 页首=${landed.slice(0, 150).replace(/\s+/g, " ")}`);
+      if (landed) html = landed;
+    }
+  }
+  if (attempt < 2) {
+    zhjwxkDebug?.(`[XK-RETRY] 未落地（可能 webvpn 重登劫持），1.5s 后重放 xklogin`);
+    await xkSleep(1500);
+    continue;
+  }
+  xkFailCooldownUntil = Date.now() + 3000;
+  throw new AuthRequiredError("选课系统登录未落地，请重新登录后重试");
+  }
+  const entry: ZhjwxkEntry = { semester, at: Date.now() };
+  lastXkReloginAt = Date.now();
+  // wengine 票预热 v2：壳的根源是包装请求无 wengine 票（隔离通道拷的全局桶
+  // 里没有 zhjwxk 票——全局会话从没访问过 zhjwxk；双 GET 仍壳实证壳靠 JS
+  // 无头拿不到票）。改走 wengine 的票获取接口（libEnsureSession 同款探针），
+  // nativeFetch 底座自动把签发的票种进 rust 权威仓，后续包装请求带上票。
+  try {
+    const probe = await s.isoFetch?.(
+      "https://webvpn.tsinghua.edu.cn/wengine-vpn/cookie?method=get&host=zhjwxk.cic.tsinghua.edu.cn&scheme=http&path=/",
+    );
+    const body = await probe?.text().catch(() => "");
+    zhjwxkDebug?.(`[XK-WARMUP] 票接口 len=${body?.length ?? 0} 票=${/ticket|wrdvpn/i.test(body ?? "") ? "✓" : "?"}`);
+  } catch { /* 预热失败不阻断（后续 isXkDeadHtml 兜底） */ }
+  entryCache.set(s, entry);
+  return entry;
+  })().catch((e) => {
+    // 失登类失败：作废 iso 桶拷贝（票已死，下次尝试重拷全局新票）
+    if (String(e).includes("登录未落地") || String(e).includes("身份确认失败") || String(e).includes("SM2")) {
+      isoClientCache.delete(s);
+    }
+    throw e;
+  });
+  entryInflight.set(s, run);
+  try {
+    const entry = await run;
+    return { entry, semester: semesterOverride ?? entry.semester ?? semesterFromDate() };
+  } finally {
+    entryInflight.delete(s);
+  }
+}
+
+/* ── 通用代理（demo proxyZhjwxkApi）────────────────────────────── */
+
+/** 会话死页判据（可静默重试的子集；needCaptcha 需人工处理，不在此列）。
+ *  2026-09-03 实录补充：entry TTL 内 jar 会话中途死亡会弹回 id 电子身份
+ *  中转页（特征 电子身份服务系统/do/off/ui/auth/login）——原判据漏掉它，
+ *  SSO 中转页被当数据解析 → 「教务返回异常页」卡。补上即走既有静默重登。 */
+function isXkDeadHtml(html: string): boolean {
+  return html.includes("accessDenied")
+    || html.includes("用户登陆超时或访问内容不存在。请重试")
+    || html.includes("电子身份服务系统")
+    || html.includes("do/off/ui/auth/login")
+    // WebVPN app-host 引导壳（webvpn 会话死亡，请求没到教务）——2026-09-03
+    // 实录：标题综合教务系统 + __vpn_hostname_data/__vpn_app_hostname_data
+    || html.includes("__vpn_app_hostname_data")
+    || html.includes("__vpn_hostname_data");
+}
+
+async function proxyZhjwxkApi(s: ZhjwxkSession, entry: ZhjwxkEntry, zhjwxkPath: string): Promise<string> {
+  const html = await xkHttp(s).text(ZHJWXK + zhjwxkPath);
+  if (!isXkDeadHtml(html)) {
+    entry.at = Date.now();
+    return html;
+  }
+  // 乐观自愈（dormPage 同构）：jar 会话真死 → 静默重走登录链并重试一次，用户无感；
+  // 重试仍死则原样返回，由 assertNotDenied 抛 AuthRequiredError 走 softRecover/看门狗链。
+  // 合流护栏：60s 内重登成功过（缓存存在且新鲜）→ 不删缓存防风暴；【失败场景
+  // 无缓存，必须放行重试】——16:33 实录 5s 后第三路救回靠的就是重试，60s
+  // 无条件护栏曾把这条救回路挡死（16:48 失败后无人再试）。3s 失败冷却挡风暴。
+  if (entryCache.get(s) && Date.now() - lastXkReloginAt > 60_000) entryCache.delete(s);
+  await ensure(s);
+  const retried = await xkHttp(s).text(ZHJWXK + zhjwxkPath);
+  entry.at = Date.now();
+  return retried;
+}
+
+/** demo：html.includes('accessDenied') → session 过期 / 需要重新登录 */
+function assertNotDenied(s: ZhjwxkSession, html: string): void {
+  if (html.includes("accessDenied")) {
+    entryCache.delete(s); // 作废过期会话，重试时从新 demoCookies 重建
+    throw new AuthRequiredError("选课系统会话已过期，请退出后重新登录");
+  }
+}
+
+/**
+ * 低层页面抓取：确保 zhjwxk 会话后 GET 相对路径（lib crFetch 同位）。
+ * 供 info 侧 CR 一级课表兜底（thu-info-community 0317434e：夏季学期课表
+ * m=kbSearch）复用本模块的 xklogin SSO 链。lib crFetch 的三个判据照搬：
+ * needCaptcha / 「用户登陆超时或访问内容不存在」/ accessDenied（会话过期）。
+ * 超时错误页是教务通用错误页而非登录页——抛普通 Error，由调用方决定兜底语义。
+ */
+export async function fetchZhjwxkPage(s: ZhjwxkSession, path: string): Promise<string> {
+  const { entry } = await ensure(s);
+  const html = await proxyZhjwxkApi(s, entry, path);
+  if (html.includes("needCaptcha")) {
+    throw new Error("选课系统需要验证码（needCaptcha）");
+  }
+  if (html.includes("用户登陆超时或访问内容不存在。请重试")) {
+    throw new Error("选课系统会话超时（用户登陆超时或访问内容不存在）");
+  }
+  assertNotDenied(s, html);
+  return html;
+}
+
+/* ── 解析（demo 正则逐行照抄）────────────────────────────────── */
+
+// 格子 id 解析拆到独立模块：纯函数无依赖，测试可在无构建产物下直跑
+export { parseCellAnchor } from "./anchor.js";
+
+// 行捕获前瞻到下一 trr1/trr2 行头或表尾（2026-09-14 嵌套表格实锤：多教师格
+// 内嵌 <table> 的内层 </tr> 会把非贪婪截断，教师格之后的列全丢——30240593
+// 第1班教师读成内层计数码"3"、容量/余量串格）。内层 <tr> 无 trr 类名不触发
+// 前瞻，嵌套行完整包含；tdsOf 深度计数取顶层格。
+const ROW_RE = () => /<tr[^>]*class="trr2"[^>]*>([\s\S]*?)(?=<tr[^>]*class="trr[12][^>]*>|<\/table>)/g;
+
+/** demo /api/courses 的 <tr class="trr2"> 行解析（server.js L290-302） */
+export function parseSelectedCourses(html: string): SelectedCourse[] {
+  const courses: SelectedCourse[] = [];
+  const rowRe = ROW_RE();
+  let m: RegExpExecArray | null;
+  while ((m = rowRe.exec(html)) !== null) {
+    const tds = [...m[1]!.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((t) =>
+      t[1]!.replace(/<[^>]*>/g, "").trim(),
+    );
+    if (tds.length >= 4) {
+      // 2026-2027-1 已选表改版实证：写死列号整体错位（code=「必修」、name=课号）。
+      // 改为行内内容特征分类——每行独立定位，列序再变也不怕：
+      //   类型=必修/限选…；课号=字母数字含数字；学分=≤10 的纯数；
+      //   时间=星期/节次；教师=短中文名；课名=其余最长中文格。
+      const td = (i: number): string => tds[i] ?? "";
+      const isZh = (t: string): boolean => /^[\u4e00-\u9fa5·，,、\s]+$/.test(t);
+      let typeLabel = "", code = "", name = "", teacher = "", time = "", credits = 0;
+      const zhCells: string[] = [];
+      for (const t of tds) {
+        const cell = t.trim();
+        if (!cell) continue;
+        if (!typeLabel && /必修|限选|任选|辅修|体育|通识/.test(cell) && cell.length <= 6) {
+          typeLabel = cell;
+        } else if (!code && /^[A-Za-z0-9]{5,15}$/.test(cell) && /\d/.test(cell)) {
+          code = cell;
+        } else if (/\d+(\.\d+)?$/.test(cell) && parseFloat(cell) <= 10 && cell.length <= 4 && !/周|节|-/.test(cell)) {
+          credits = credits || parseFloat(cell) || 0;
+        } else if (!time && /星期[一二三四五六日]|第\d+.*节|\(全周\)|（全周）/.test(cell)) {
+          time = cell;
+        } else if (isZh(cell) && !/必修|限选|任选/.test(cell)) {
+          zhCells.push(cell);
+        }
+      }
+      if (code && zhCells.length) {
+        // 教师格：纯 2-4 字中文（可多名的逗号分隔）；课名：剩余最长格
+        const tIdx = zhCells.findIndex((t) => /^([\u4e00-\u9fa5·]{2,4}[,，、]?)+$/.test(t) && t.replace(/[,，、]/g, "").length <= 12);
+        teacher = tIdx >= 0 ? zhCells[tIdx] ?? "" : "";
+        name = zhCells.filter((_, i) => i !== tIdx).sort((a, b) => b.length - a.length)[0] ?? "";
+      } else {
+        // 特征不足（版式再变）→ 老列号兜底
+        typeLabel = td(0);
+        code = td(1) || td(2);
+        name = td(3);
+        teacher = td(7) || td(2);
+        time = td(6) || td(3);
+        credits = parseFloat(td(8) || td(4)) || 0;
+      }
+      if (code && name) {
+        courses.push({ typeLabel, code, name, teacher, time, credits });
+      }
+    }
+  }
+  return courses;
+}
+
+/** demo /api/queue 的 <tr class="trr2"> 行解析（server.js L315-327） */
+export function parseQueueCandidates(html: string): QueueCandidate[] {
+  const candidates: QueueCandidate[] = [];
+  // 行 class 放宽 trr2→trr[12]：新学期版式若换行类（已选表 2026-2027-1 已改版的前车之鉴），
+  // 只认 trr2 会静默得空列表（「我的队列被吃了」实测事故）。trr1 是表头——NextTHUxk
+  // 用户实锤真实教务表头行带 <td>（「课程名·老师」标题栏被当候选课），靠码型守卫拦：
+  const rowRe = /<tr[^>]*class="trr[12]"[^>]*>([\s\S]*?)<\/tr>/g;
+  let m: RegExpExecArray | null;
+  while ((m = rowRe.exec(html)) !== null) {
+    const tds = [...m[1]!.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((t) =>
+      t[1]!.replace(/<[^>]*>/g, "").trim(),
+    );
+    if (tds.length >= 7) {
+      const td = (i: number): string => tds[i] ?? "";
+      // 表头行拦截：表头「课号」格是中文且非码型（含数字的纯字母数字才是真课号）
+      const code = td(2);
+      if (!/^[A-Za-z0-9]+$/.test(code) || !/\d/.test(code)) continue;
+      candidates.push({
+        typeLabel: td(0),
+        zyStr: td(1),
+        code,
+        name: td(3),
+        seq: td(4),
+        queueTotal: parseInt(td(5)) || 0,
+        myPos: parseInt(td(6)) || 0,
+        time: td(7) || "",
+        teacher: td(8) || "",
+      });
+    }
+  }
+  return candidates;
+}
+
+/** 课表页候选课（m=kbSearch 一级选课课表）：队列功能未开放时的兜底数据源。
+ *  逐块扫脚本：p_id=..;课号 …候选：名 …getElementById('a{天}_{节}')——格子 id
+ *  即真实时间正源（不依赖目录加载顺序；样本实证「全周」描述串解析不出格子）。
+ *  教师在块内 strHTML1 "；X" 行（教师/类型/周次）。同课多格（跨节次）按课号
+ *  合并时间为逗号串，parseTimeSlots 全局匹配多段。 */
+
+export function parseTimetableCandidates(html: string): QueueCandidate[] {
+  const byCode = new Map<string, QueueCandidate>();
+  const re =
+    /p_id=\d+;(\d{6,})[\s\S]{0,600}?候选：([^<&"'\n]{1,60})[\s\S]{0,600}?getElementById\('a([1-6])_([1-7])'\)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) {
+    const code = m[1] ?? "";
+    const name = m[2]?.trim() ?? "";
+    // 格子 id 是 a{节}_{天}（a6_4=周四第6节，与 dlSearch「4-6」同位不同序——实测对齐）
+    const slot = m[3] ?? "";
+    const day = m[4] ?? "";
+    if (!code || !name || !day || !slot) continue;
+    const block = html.slice(m.index, m.index + m[0].length);
+    const parts = [...block.matchAll(/strHTML1 \+= "；([^"]*)"/g)].map((x) => x[1] ?? "");
+    const slotStr = `${day}-${slot}(${parts[2] || "全周"})`;
+    const prev = byCode.get(code);
+    if (prev) {
+      if (!prev.time.includes(slotStr)) prev.time = `${prev.time},${slotStr}`;
+      continue;
+    }
+    byCode.set(code, {
+      typeLabel: parts[1] ?? "",
+      zyStr: "",
+      code,
+      name,
+      seq: "0",
+      queueTotal: 0,
+      myPos: 0,
+      time: slotStr,
+      teacher: parts[0] ?? "",
+    });
+  }
+  return [...byCode.values()];
+}
+
+/* ── 公开 API ─────────────────────────────────────────────────── */
+
+/** 已选课程（demo GET /api/courses：m=yxSearchTab&p_xnxq=<学期>） */
+export async function getSelectedCourses(
+  s: ZhjwxkSession,
+  opts: { semester?: string } = {},
+): Promise<SelectedCourse[]> {
+  const { entry, semester } = await ensure(s, opts.semester);
+  const html = await proxyZhjwxkApi(s, entry, `/xkBks.vxkBksXkbBs.do?m=yxSearchTab&p_xnxq=${semester}`);
+  assertNotDenied(s, html);
+  return parseSelectedCourses(html);
+}
+
+/** 选课候补队列 / 余量状态（demo GET /api/queue：m=dlSearch&p_xnxq=<学期>） */
+export async function getQueueStatus(
+  s: ZhjwxkSession,
+  opts: { semester?: string } = {},
+): Promise<QueueCandidate[]> {
+  const { entry, semester } = await ensure(s, opts.semester);
+  const html = await proxyZhjwxkApi(s, entry, `/xkBks.vxkBksXkbBs.do?m=dlSearch&p_xnxq=${semester}`);
+  assertNotDenied(s, html);
+  const rows = parseQueueCandidates(html);
+  if (rows.length === 0 && html.includes("提示信息")) {
+    // 「队列功能未开放」等拦截（2026-09 实录）：一级选课课表（m=kbSearch）里的
+    // 候选课兜底——用户语义：官网课表能看到排队课就从课表爬；课表也没有就
+    // 安静空着不报错
+    const kb = await proxyZhjwxkApi(s, entry, `/xkBks.vxkBksXkbBs.do?m=kbSearch&p_xnxq=${semester}`);
+    assertNotDenied(s, kb);
+    const cand = parseTimetableCandidates(kb);
+    zhjwxkDebug?.(`[XK-QUEUE] 功能未开放兜底 kbSearch 候选=${cand.length}`);
+    if (cand.length) return cand;
+  }
+  if (rows.length === 0) {
+    // 官网有队列但应用为空时的定位线索：页面到底长什么样（行类分布/页首形态）
+    zhjwxkDebug?.(
+      `[XK-QUEUE] 零行诊断 sem=${semester} len=${html.length} trr1=${(html.match(/trr1/g) ?? []).length} trr2=${(html.match(/trr2/g) ?? []).length} tr总数=${(html.match(/<tr[^>]*>/g) ?? []).length} 页首=${html.slice(0, 300).replace(/\s+/g, " ")}`,
+    );
+    // 「提示信息」类拦截页很小（实测 1492B），正文全文打印——拦截原因直接写在正文里
+    const text = html
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    zhjwxkDebug?.(`[XK-QUEUE] 拦截页全文(${text.length})=${text.slice(0, 700)}`);
+  }
+  return rows;
+}
+
+/** 解析当前学期（demo 的 p_xnxq 逻辑：GET xklogin.do 后从页面提取） */
+export async function resolveZhjwxkSemester(s: ZhjwxkSession): Promise<string> {
+  const { semester } = await ensure(s);
+  return semester;
+}
+
+/* ══ v1.4.9 管线移植（docs/nextthuxk-v149-课程加载管线规格.md）══ */
+
+/** 课型：bx 必修 / xx 限选 / rx 任选 / ty 体育（flag 语义与 tokenPriFlag 一致） */
+export type XkFlag = "bx" | "xx" | "rx" | "ty";
+
+/** 全校课程目录行（kkxxSearch trr2，列位为隐性契约，照 v1.4.9 data.js:47-91） */
+export interface XkCourse {
+  department: string;
+  code: string;
+  seq: string;
+  name: string;
+  credits: number;
+  teacher: string;
+  teacherId: string;
+  capacity: number;
+  remaining: number;
+  gradCapacity: number;
+  gradRemaining: number;
+  time: string;
+  /** 上课教室：从时间地点列尾段拆出（如「星期二第4节(全周)二教403」→ 二教403）；无则缺省 */
+  room?: string;
+  note: string;
+  feature: string;
+  grade: string;
+  tongshiGroup: string;
+  /** 课程属性（必修/限选/任选/体育），目录列本身为空，由培养方案按课号回填 */
+  attr: string;
+  /** 一级课表最小行标记：余量/时间等元数据尚未由全量目录补全（消费方按"未知≠已满"宽容处理） */
+  partial?: boolean;
+}
+
+/** 志愿统计（tbzySearchBR/Ty 内嵌数组；vol 串形如 "(2)12,8,0"） */
+export interface XkVolInfo {
+  capacity: number;
+  applied: number;
+  volRequired: string;
+  volElective: string;
+  volOptional: string;
+  volSports: string;
+  /** 志愿行身份（xk-vol 三段匹配/错页校验用；纯统计视图可不填） */
+  code?: string;
+  seq?: string;
+  department?: string;
+}
+
+/** 课余量/排队（xkqkSearch+kylSearch gridData ∪ selectBksDlCount） */
+export interface XkQueueInfo {
+  qCapacity: number;
+  qRemaining: number;
+  qQueue: number;
+}
+
+/** 写操作结果（HTML 关键字判定 + 轮询确认） */
+export interface XkWriteResult {
+  ok: boolean;
+  msg: string;
+  /** 最终落点：selected=已选 / queue=候补 / none */
+  where: "selected" | "queue" | "none";
+}
+
+/** 志愿名额上限（config.js:15-20）：bx/xx/rx 均 1→1,2→2,3→∞；体育 1→1,2→1,3→∞ */
+export const ZY_LIMITS: Record<XkFlag | "all", Array<[number, number]>> = {
+  bx: [[1, 1], [2, 2], [3, Number.POSITIVE_INFINITY]],
+  xx: [[1, 1], [2, 2], [3, Number.POSITIVE_INFINITY]],
+  rx: [[1, 1], [2, 2], [3, Number.POSITIVE_INFINITY]],
+  ty: [[1, 1], [2, 1], [3, Number.POSITIVE_INFINITY]],
+  all: [[1, 1], [2, 2], [3, Number.POSITIVE_INFINITY]],
+};
+
+export const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+const TOKEN_RE = () => /name="token"\s+value="([^"]+)"/;
+
+/** 解析取证（2026-09-14 教师格"3"悬案）：目录行教师格解析为纯数字时回调
+ *  原始行 HTML——前端写日志，一次定位教务多教师格的真实结构。 */
+export const xkParseDebug: { onOddTeacher?: (code: string, seq: string, teacher: string, rawRow: string) => void } = {};
+
+function tdsOf(rowHtml: string): string[] {
+  // 顶层 td 提取（嵌套表格免疫）：多教师格内嵌 <table> 时，朴素全局正则把
+  // 内层 td 也当独立格 → 列序后移全错位（2026-09-14 实锤：30240593 第1班
+  // 教师读成"3"、容量/余量串格，时间列靠内容扫描才幸免；插件 DOM 解析天然
+  // 免疫）。深度计数只取 depth==1 的外层格，内层标签在取文本时统一剥除。
+  const cells: string[] = [];
+  const re = /<td[^>]*>|<\/td>/gi;
+  let depth = 0;
+  let start = -1;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(rowHtml)) !== null) {
+    if (m[0].startsWith("<td")) {
+      if (depth === 0) start = m.index + m[0].length;
+      depth += 1;
+    } else {
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        cells.push(rowHtml.slice(start, m.index).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim());
+        start = -1;
+      }
+    }
+  }
+  return cells;
+}
+
+/** 目录行解析（v1.4.9 parseCatalog：列位 0 院系 / 1 课号 / 2 课序 / 3 课名 / 4 学分 /
+ *  5 教师+p_jsh / 6 容量 / 7 余量 / 8-9 研 / 10 时间 / 11 说明 / 12 特色 / 13 年级 / 18 通识组） */
+export function parseXkCatalogPage(html: string): XkCourse[] {
+  // DOM 主路（2026-09-14 定案）：正则行分割在教务表格（嵌套结构/行类名复用）
+  // 上反复翻车——教师列系统性错位读成计数、行重复（React key 冲突实录）。
+  // webview 有 DOMParser，直接对齐插件 parseCatalog 的 DOM 语义；node 测试
+  // 环境无 DOM 时回退正则路径（平表两路等价，嵌套差异只有真机页面才有）。
+  if (typeof DOMParser !== "undefined") return parseXkCatalogDom(html);
+  return parseXkCatalogRegex(html);
+}
+
+/** 目录表列键（固定键集合：noUncheckedIndexedAccess 下 Record<string,number>
+ *  的读访问带 undefined，收窄成字面量联合让索引返回确定的 number） */
+type CatalogKeys = "department" | "code" | "seq" | "name" | "credits" | "teacher" | "capacity" | "remaining" | "gradCapacity" | "gradRemaining" | "note" | "feature" | "grade" | "tongshi";
+type CatalogHead = Record<CatalogKeys, number>;
+
+/** 表头列位自适应映射（DOM/正则两路共享）：列名→索引；code/name 双中才用表头 */
+function catalogHeadMap(headCells: string[]): { H: CatalogHead; useHead: boolean } {
+  const hIdx = (keys: string[]): number => {
+    for (const k of keys) {
+      const i = headCells.findIndex((c) => c.includes(k));
+      if (i >= 0) return i;
+    }
+    return -1;
+  };
+  const H: CatalogHead = {
+    department: hIdx(["院系"]),
+    code: hIdx(["课号"]),
+    seq: hIdx(["课序号"]),
+    name: hIdx(["课程名称", "课程名"]),
+    credits: hIdx(["学分"]),
+    teacher: hIdx(["教师"]),
+    capacity: hIdx(["本科生容量", "本科容量"]),
+    remaining: hIdx(["本科生余量", "本科余量"]),
+    gradCapacity: hIdx(["研究生容量"]),
+    gradRemaining: hIdx(["研究生余量"]),
+    note: hIdx(["说明", "备注"]),
+    feature: hIdx(["课程特色", "特色"]),
+    grade: hIdx(["年级"]),
+    tongshi: hIdx(["通识"]),
+  };
+  return { H, useHead: H.code >= 0 && H.name >= 0 };
+}
+
+const CATALOG_F: CatalogHead = { department: 0, code: 1, seq: 2, name: 3, credits: 4, teacher: 5, capacity: 6, remaining: 7, gradCapacity: 8, gradRemaining: 9, note: 11, feature: 12, grade: 13, tongshi: 18 };
+
+/** 行文本 → XkCourse（两路共享的字段构建：列位映射、时间列内容扫描、码型校验） */
+function catalogRowOf(cells: string[], href: string, H: CatalogHead, useHead: boolean, anchorTeacher = ""): XkCourse | null {
+  const ix = (k: CatalogKeys): number => (useHead && H[k] >= 0 ? H[k] : CATALOG_F[k]);
+  if (cells.length < 11) return null;
+  const td = (i: number): string => (cells[i] ?? "").replace(/\s+/g, " ").trim();
+  // 时间地点列自适应：优先按内容特征「星期X…第N节」找列，找不到回落 10 列。
+  let timeIdx = cells.findIndex((t) => /星期[一二三四五六日]/.test(t) && /第\d+/.test(t));
+  if (timeIdx < 0) timeIdx = 10;
+  const code = td(ix("code"));
+  const name = td(ix("name"));
+  // 外校课程课号带前缀：PK=北大、BW=北外（含小写 w）。纯字母数字且至少含一个数字。
+  if (!/^[A-Za-z0-9]+$/.test(code) || !/\d/.test(code) || !name) return null;
+  const timeCell = td(timeIdx);
+  return {
+    department: td(ix("department")),
+    code,
+    seq: td(ix("seq")) || "0",
+    name,
+    credits: parseFloat(td(ix("credits"))) || 0,
+    // 教师=行内 showJsDetail 锚点文本优先于列值：行结构漂移时列号会读到学分格
+    // （实锤 10420252 读"2"而姚国武在锚点里）——锚点是语义标记，列号不是
+    teacher: (/^\d{1,3}$/.test(td(ix("teacher"))) ? "" : td(ix("teacher"))) || anchorTeacher || td(ix("teacher")),
+    teacherId: /p_jsh=([^&"]+)/.exec(href)?.[1] ?? "",
+    capacity: parseInt(td(ix("capacity"))) || 0,
+    remaining: parseInt(td(ix("remaining"))) || 0,
+    gradCapacity: parseInt(td(ix("gradCapacity"))) || 0,
+    gradRemaining: parseInt(td(ix("gradRemaining"))) || 0,
+    time: timeCell,
+    room: (() => {
+      const i = timeCell.lastIndexOf(")");
+      return i >= 0 ? timeCell.slice(i + 1).trim() : "";
+    })(),
+    note: td(ix("note")),
+    feature: td(ix("feature")),
+    grade: td(ix("grade")),
+    tongshiGroup: cells.length > ix("tongshi") ? td(ix("tongshi")) : "",
+    attr: "",
+  };
+}
+
+function parseXkCatalogDom(html: string): XkCourse[] {
+  const out: XkCourse[] = [];
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const headCells = [...(doc.querySelector("tr.trr1")?.querySelectorAll("td,th") ?? [])].map((x) =>
+    (x.textContent || "").replace(/\s+/g, "").trim(),
+  );
+  const { H, useHead: headOk } = catalogHeadMap(headCells);
+  const rows = [...doc.querySelectorAll("tr.trr2")];
+  let useHead = headOk;
+  if (useHead) {
+    // 首条数据行课号格码型校验不过 → 整表回退固定列位（表头列名猜错）
+    const r0Cells = rows[0] ? [...rows[0].querySelectorAll(":scope > td")] : [];
+    const c0 = (r0Cells[H.code]?.textContent ?? "").replace(/\s+/g, "").trim();
+    if (!/^[A-Za-z0-9]+$/.test(c0) || !/\d/.test(c0)) useHead = false;
+  }
+  for (const row of rows) {
+    // 直接子格（:scope > td）：嵌套表的内层格不算本行列——结构性免疫错位
+    const cells = [...row.querySelectorAll(":scope > td")].map((td) =>
+      (td.textContent || "").replace(/\s+/g, " ").trim(),
+    );
+    const tAnchor = row.querySelector('a[href*="showJsDetail"]');
+    const href = tAnchor?.getAttribute("href") ?? "";
+    const c = catalogRowOf(cells, href, H, useHead, (tAnchor?.textContent ?? "").replace(/\s+/g, " ").trim());
+    if (!c) continue;
+    out.push(c);
+    if (/^\d{1,3}$/.test(c.teacher)) xkParseDebug.onOddTeacher?.(c.code, c.seq, c.teacher, (row.innerHTML || "").replace(/\s+/g, " ").slice(0, 600));
+  }
+  return out;
+}
+
+function parseXkCatalogRegex(html: string): XkCourse[] {
+  const out: XkCourse[] = [];
+  const headRow = /<tr[^>]*class="trr1"[^>]*>([\s\S]*?)<\/tr>/.exec(html)?.[1] ?? "";
+  const headCells = [...headRow.matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/g)].map((t) =>
+    (t[1] ?? "").replace(/<[^>]*>/g, "").replace(/\s+/g, "").trim(),
+  );
+  const { H, useHead: headOk } = catalogHeadMap(headCells);
+  let useHead = headOk;
+  if (useHead) {
+    const r0 = ROW_RE().exec(html);
+    const t0 = r0 ? tdsOf(r0[1] ?? "") : [];
+    const c0 = (t0[H.code] ?? "").replace(/\s+/g, "").trim();
+    if (!/^[A-Za-z0-9]+$/.test(c0) || !/\d/.test(c0)) useHead = false;
+  }
+  const rowRe = ROW_RE();
+  let m: RegExpExecArray | null;
+  while ((m = rowRe.exec(html)) !== null) {
+    const c = catalogRowOf(tdsOf(m[1] ?? "").map((t) => t.replace(/\s+/g, " ").trim()), /href="([^"]*showJsDetail[^"]*)"/.exec(m[1] ?? "")?.[1] ?? "", H, useHead);
+    if (!c) continue;
+    out.push(c);
+    if (/^\d{1,3}$/.test(c.teacher)) xkParseDebug.onOddTeacher?.(c.code, c.seq, c.teacher, (m[1] ?? "").replace(/\s+/g, " ").slice(0, 600));
+  }
+  return out;
+}
+
+
+/** 课余量 gridData 行（xkqkSearch / kylSearch 共用） */
+export function parseXkQueueGrid(html: string): Record<string, XkQueueInfo> {
+  const map: Record<string, XkQueueInfo> = {};
+  const re = /\[\s*"(\d+)"\s*,\s*"([^"]*?)"\s*,\s*"[^"]*?"\s*,\s*"(\d*)"\s*,\s*"(\d*)"\s*,\s*"[^"]*?"\s*,\s*"[^"]*?"\s*\]/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) {
+    map[`${m[1]}_${m[2]}`] = {
+      qCapacity: parseInt(m[3] ?? "") || 0,
+      qRemaining: parseInt(m[4] ?? "") || 0,
+      qQueue: 0,
+    };
+  }
+  return map;
+}
+
+/** 已选页内嵌 zyMap：["code,seq","zy","typeCode","是否"] → 志愿/课型 */
+export function parseXkZyMap(html: string): Record<string, { zy: number; typeCode: string }> {
+  const map: Record<string, { zy: number; typeCode: string }> = {};
+  const re = /\[\s*"(\d+),(\d+)"\s*,\s*"([^"]*?)"\s*,\s*"([^"]*?)"\s*,\s*"[^"]*?"\s*\]/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) {
+    map[`${m[1]}_${m[2]}`] = { zy: parseInt(m[3] ?? "") || 0, typeCode: m[4] ?? "" };
+  }
+  return map;
+}
+
+/** 一级课表 → code_seq → typeCode（v1.4.9 兜底 / 课型推断） */
+export function parseXkLevelTypes(html: string): Record<string, string> {
+  const map: Record<string, string> = {};
+  const rowRe = ROW_RE();
+  let m: RegExpExecArray | null;
+  while ((m = rowRe.exec(html)) !== null) {
+    const cells = tdsOf(m[1] ?? "");
+    for (let i = 0; i < cells.length - 1; i++) {
+      if (/^\d{8}$/.test(cells[i] ?? "")) {
+        const seq = cells[i + 1] || "0";
+        let attr = cells[i + 2] || "";
+        if (!/^(必修|限选|任选)$/.test(attr)) attr = "";
+        map[`${cells[i]}_${seq}`] = attr === "必修" ? "006" : attr === "限选" ? "008" : attr === "任选" ? "007" : "ty";
+        break;
+      }
+    }
+  }
+  return map;
+}
+
+/* ── POST 代理 + 分页管线 ─────────────────────────────────────── */
+
+/** POST 表单（写操作 / kylSearch 翻页；cookie 语义与 GET 代理一致） */
+async function postZhjwxkApi(
+  s: ZhjwxkSession,
+  entry: ZhjwxkEntry,
+  path: string,
+  form: Record<string, string>,
+): Promise<string> {
+  const html = await xkHttp(s).text(ZHJWXK + path, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams(form).toString(),
+  });
+  entry.at = Date.now();
+  return html;
+}
+
+const PAGE_THROTTLE_MS = 30;
+const PAGE_POOL = 5;
+
+/**
+ * v1.4.9 pagedFetch 的忠实简化：波次并发 5、任意两请求发起间隔 ≥30ms、
+ * 空波即停（主扫描任一页空/错即停的同语义收敛）、去重键由调用方给。
+ * pageFrom=0 起；`withBase` 先发一次无 page 参数的入口页（server.ts 同款，dedupe 兜底）。
+ */
+async function pagedFetch<T>(
+  s: ZhjwxkSession,
+  entry: ZhjwxkEntry,
+  opts: {
+    buildPath: (page: number) => string;
+    parse: (html: string) => Record<string, T>;
+    maxPages: number;
+    withBase?: boolean;
+    method?: "GET" | "POST";
+    form?: (page: number) => Record<string, string>;
+  },
+): Promise<Map<string, T>> {
+  const out = new Map<string, T>();
+  const put = (batch: Record<string, T>): number => {
+    for (const [k, v] of Object.entries(batch)) if (!out.has(k)) out.set(k, v);
+    return Object.keys(batch).length;
+  };
+  const one = async (page: number): Promise<number> => {
+    const html =
+      opts.method === "POST"
+        ? await postZhjwxkApi(s, entry, "/xkBks.vxkBksJxjhBs.do", opts.form!(page))
+        : await proxyZhjwxkApi(s, entry, opts.buildPath(page));
+    assertNotDenied(s, html);
+    const n = put(opts.parse(html));
+    if (n === 0) {
+      zhjwxkDebug?.(
+        `[XK-PAGE] page=${page} 解析 0 行 body(${html.length})=${html.slice(0, 1600).replace(/\s+/g, " ")}`,
+      );
+    }
+    return n;
+  };
+  if (opts.withBase !== false) await one(-1);
+  let emptyWaves = 0;
+  for (let p = 0; p <= opts.maxPages; p += PAGE_POOL) {
+    const wave: Array<Promise<number>> = [];
+    for (let i = p; i < p + PAGE_POOL && i <= opts.maxPages; i++) {
+      wave.push(
+        (async () => {
+          await sleep((i - p) * PAGE_THROTTLE_MS);
+          return one(i);
+        })(),
+      );
+    }
+    const got = await Promise.all(wave.map((w) => w.catch(() => 0)));
+    if (got.reduce((a, b) => a + b, 0) === 0) {
+      // 0/1 基分页边界可能出现单空波（如 page=0 空而 page=1 起有效）：连续两空波才收
+      if (++emptyWaves >= 2) break;
+    } else {
+      emptyWaves = 0;
+    }
+  }
+  return out;
+}
+
+/** 全校课程目录（kkxxSearch 纯 GET，maxPages 320 ≈ v1.4.9 同款上限） */
+export async function getXkCatalog(
+  s: ZhjwxkSession,
+  opts: { semester?: string } = {},
+): Promise<XkCourse[]> {
+  const { entry, semester } = await ensure(s, opts.semester);
+  const map = await pagedFetch(s, entry, {
+    buildPath: (p) =>
+      p < 0
+        ? `/xkBks.vxkBksJxjhBs.do?m=kkxxSearch&p_xnxq=${semester}&_t=${Date.now()}`
+        : `/xkBks.vxkBksJxjhBs.do?m=kkxxSearch&p_xnxq=${semester}&page=${p}&_t=${Date.now()}`,
+    parse: (html: string): Record<string, XkCourse> =>
+      Object.fromEntries(parseXkCatalogPage(html).map((c) => [`${c.code}_${c.seq}`, c])),
+    maxPages: 320,
+  });
+  return [...map.values()];
+}
+
+/**
+ * 服务端课程搜索（kkxxSearch 分页）：与批量抓取同一端点、同一 trr2 行结构
+ * （parseXkCatalogPage 原样复用），只是把筛选交给服务端、按页取数（每页 20 行）。
+ * 筛选参数来自存档表单（选课开课信息查询.html）：p_kch 课号 / p_kcm 课名 /
+ * p_zjjsxm 教师 / p_kkdwnm 院系 / p_skxq 星期 / p_skjc 节次 / p_ssnj 年级 /
+ * p_rxklxm 任选课组 / p_kctsm 特色 / p_bkskyl_ig=0 本科余量>0 / p_yjskyl_ig=0 研究生余量>0。
+ * 诊断：resp.htmlHead 带回响应首段（无 trr2 行时 UI 可据此判别空结果 vs 异常页）。
+ */
+export interface XkSearchResult {
+  rows: XkCourse[];
+  page: number;
+  hasMore: boolean;
+  /** 服务端分页器标注的真实总页数（页面含「共 N 页」；解析失败为 undefined） */
+  totalPages?: number;
+  /** 结果页底部「共 N 条记录」精确总数（解析失败缺省） */
+  totalRows?: number;
+  /** empty=结果页但 0 行；unknown=非结果页（会话/异常，附首段诊断） */
+  pageKind: "empty" | "unknown";
+  /** 响应首段（仅 pageKind=unknown 时带出，用于现场诊断） */
+  htmlHead?: string;
+}
+export async function searchXkCourses(
+  s: ZhjwxkSession,
+  opts: {
+    semester?: string;
+    page?: number;
+    kch?: string;
+    kcm?: string;
+    teacher?: string;
+    department?: string;
+    weekday?: string;
+    section?: string;
+    grade?: string;
+    kcflm?: string;
+    rxklxm?: string;
+    kctsm?: string;
+    onlyAvailable?: boolean;
+    gradAvail?: boolean;
+  } = {},
+): Promise<XkSearchResult> {
+  const { entry, semester } = await ensure(s, opts.semester);
+  const page = Math.max(1, opts.page ?? 1);
+  // 手工拼查询串（URLSearchParams 会把 %XX 再编码成 %25XX）：中文一律 GBK 百分号编码——
+  // 教务页面 GBK，UTF-8 直发服务端解出乱码、LIKE 匹配不到 → 正常页面 0 行（实测实锤）。
+  const parts: string[] = ["m=kkxxSearch", `p_xnxq=${encodeURIComponent(semester)}`];
+  if (page > 1) parts.push(`page=${page}`);
+  if (opts.kch?.trim()) parts.push(`p_kch=${encodeURIComponent(opts.kch.trim())}`);
+  const kw = opts.kcm?.trim();
+  if (kw) parts.push(`p_kcm=${gbkPercentEncode(kw)}`);
+  const teacher = opts.teacher?.trim();
+  if (teacher) parts.push(`p_zjjsxm=${gbkPercentEncode(teacher)}`);
+  if (opts.department) parts.push(`p_kkdwnm=${encodeURIComponent(opts.department)}`);
+  if (opts.weekday) parts.push(`p_skxq=${encodeURIComponent(opts.weekday)}`);
+  if (opts.section) parts.push(`p_skjc=${encodeURIComponent(opts.section)}`);
+  if (opts.grade) parts.push(`p_ssnj=${encodeURIComponent(opts.grade)}`);
+  if (opts.kcflm) parts.push(`p_kcflm=${encodeURIComponent(opts.kcflm)}`);
+  if (opts.rxklxm) parts.push(`p_rxklxm=${encodeURIComponent(opts.rxklxm)}`);
+  if (opts.kctsm) parts.push(`p_kctsm=${encodeURIComponent(opts.kctsm)}`);
+  if (opts.onlyAvailable) parts.push("p_bkskyl_ig=0");
+  if (opts.gradAvail) parts.push("p_yjskyl_ig=0");
+  const html = await proxyZhjwxkApi(s, entry, `/xkBks.vxkBksJxjhBs.do?${parts.join("&")}&_t=${Date.now()}`);
+  assertNotDenied(s, html);
+  // 结构取证（教师空格悬案）：首个 trr2 行前后 2600 字 dump——DOM 直系子格取
+  // 出的教师格为空而插件能出名字，需原始结构定分晓
+  if (zhjwxkDebug) {
+    const rowsHtml: string[] = [];
+    const rowRe = /class="trr2"/g;
+    let rm: RegExpExecArray | null;
+    while ((rm = rowRe.exec(html)) !== null && rowsHtml.length < 3) {
+      rowsHtml.push(html.slice(rm.index, rm.index + 700).replace(/\s+/g, " "));
+    }
+    const hRow = /<tr[^>]*class="trr1"[^>]*>([\s\S]*?)<\/tr>/.exec(html)?.[1] ?? "";
+    const heads = [...hRow.matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/g)].map((t) => (t[1] ?? "").replace(/<[^>]*>/g, "").trim()).join("|");
+    zhjwxkDebug?.(`[SEARCH-ROW] heads=${heads} rows=${JSON.stringify(rowsHtml)}`);
+  }
+  const rows = parseXkCatalogPage(html);
+  const tp = /共\s*(\d+)\s*页/.exec(html);
+  const totalPages = tp ? parseInt(tp[1]!, 10) : undefined;
+  // 底部精确总数：「共 294 页（共 5,864 条记录）」——核对爬取完整性的锁死基准
+  const tr = /共\s*[\d,]+\s*页（共\s*([\d,]+)\s*条记录/.exec(html);
+  const totalRows = tr ? parseInt(tr[1]!.replace(/,/g, ""), 10) : undefined;
+  if (rows.length > 0) return { rows, page, hasMore: true, totalPages, totalRows, pageKind: "empty" };
+  // 0 行分类：结果页（含结果表头）= 真无匹配；否则异常页，带首段诊断
+  const isResultPage = html.includes("选课文字说明") || html.includes("trr2");
+  if (!isResultPage) return { rows, page, hasMore: false, totalPages, totalRows, pageKind: "unknown", htmlHead: html.slice(0, 600).replace(/\s+/g, " ") };
+  // 外校课号兜底（NextTHUxk 2.0）：kkxxSearch 索引不命中 PK/GPK/BW 前缀课号
+  // 且非纯数字 → 一级课表页签检索表单原样重搜（教务 web UI 同款路径）
+  if (opts.kch?.trim() && !/^\d+$/.test(opts.kch.trim())) {
+    const tabRows = await searchXkCoursesByTab(
+      {
+        get: (url) => proxyZhjwxkApi(s, entry, url),
+        post: (url, fields) => postZhjwxkApi(s, entry, url, fields),
+        semester: async () => semester,
+        assertAlive: (html) => assertNotDenied(s, html),
+        tokenRe: TOKEN_RE,
+      },
+      { semester, kch: opts.kch.trim() },
+    );
+    if (tabRows.length) return { rows: tabRows, page: 1, hasMore: false, totalPages: 1, totalRows: tabRows.length, pageKind: "empty" };
+  }
+  return { rows, page, hasMore: false, totalPages, pageKind: "empty" };
+}
+
+/** 院系定向志愿同步（NextTHUxk 2.0 fetchVolunteer 回移）：池内课程按院系去重 →
+ *  逐院系 GET（首页无 page 无 token，翻页 &page=N，p_lrdwnm=院系码）→ 院系内
+ *  分页通常 1-3 页。错页校验（用户十九报：070 被标 done 但页里没有该院系课程
+ *  ——错页/过滤器丢失污染 done 后按需补拉全部空转）：拉回的页里至少一行真属于
+ *  该院系，否则不标 done、数据不进 map。失败容忍不记 done，下次可重试。
+ *  Ty：体育志愿无院系轴，池含体育课时全量拉 ≤20 页。
+ *  doneMap = 本会话已拉院系（code → 时间戳；"ty" 为体育），调用方持有。 */
+export async function fetchXkVolunteerByDept(
+  s: ZhjwxkSession,
+  opts: {
+    semester?: string;
+    depts: string[];
+    hasSports: boolean;
+    doneMap: Record<string, number>;
+    force?: boolean;
+    onRows?: (rows: Record<string, XkVolRow>) => void;
+  },
+): Promise<Record<string, XkVolRow>> {
+  const { entry, semester } = await ensure(s, opts.semester);
+  const map: Record<string, XkVolRow> = {};
+  const pullPages = async (first: string, pageCount: number, consume: (h: string) => void): Promise<void> => {
+    const rest = Array.from({ length: pageCount - 1 }, (_, i) => i + 2);
+    for (let i = 0; i < rest.length; i += 3) {
+      const batch = rest.slice(i, i + 3);
+      const htmls = await Promise.all(batch.map((p) => proxyZhjwxkApi(s, entry, `${first}&page=${p}&_t=${Date.now()}`)));
+      htmls.forEach(consume);
+      if (i + 3 < rest.length) await sleep(50); // v1.5.0 同款 throttle
+    }
+  };
+  for (const code of opts.depts) {
+    try {
+      if (!opts.force && opts.doneMap[code]) continue; // 已拉院系跳过
+      const first = `/xkBks.xkBksZytjb.do?m=tbzySearchBR&p_xnxq=${semester}&p_lrdwnm=${code}`;
+      const fh = await proxyZhjwxkApi(s, entry, first);
+      assertNotDenied(s, fh);
+      const pg = parsePagerInfo(fh);
+      const pageCount = Math.min(pg.pages > 0 ? pg.pages : 1, 25);
+      let rows: Record<string, XkVolRow> = {};
+      const consume = (h: string): void => {
+        rows = { ...rows, ...parseVolRows(h) };
+      };
+      consume(fh);
+      await pullPages(first, pageCount, consume);
+      // 错页校验：页里至少一行真属于该院系（外校课 department 无码自然不算）
+      if (!Object.values(rows).some((r) => deptCodeOf(r.department) === code)) continue;
+      if (opts.onRows) opts.onRows(rows); // 流式上报（UI 增量合并，不等全部院系）
+      Object.assign(map, rows);
+      opts.doneMap[code] = Date.now();
+    } catch {
+      // 单院系失败容忍，下次可重试
+    }
+  }
+  // Ty：体育志愿无院系轴，全量 ≤20 页（force 重拉）
+  if (opts.hasSports && (opts.force || !opts.doneMap.ty)) {
+    try {
+      const first = `/xkBks.xkBksZytjb.do?m=tbzySearchTy&p_xnxq=${semester}`;
+      const fh = await proxyZhjwxkApi(s, entry, first);
+      assertNotDenied(s, fh);
+      const pg = parsePagerInfo(fh);
+      const pageCount = Math.min(pg.pages > 0 ? pg.pages : 1, 20);
+      const rows: Record<string, XkVolRow> = {};
+      const consume = (h: string): void => {
+        for (const [k, v] of Object.entries(parseVolSportsRows(h))) {
+          const prev: XkVolRow | undefined = rows[k];
+          rows[k] = {
+            code: v.code,
+            seq: v.seq,
+            department: prev?.department ?? "",
+            capacity: v.capacity,
+            applied: v.applied,
+            volRequired: prev?.volRequired ?? "",
+            volElective: prev?.volElective ?? "",
+            volOptional: prev?.volOptional ?? "",
+            volSports: v.volSports || prev?.volSports || "",
+          };
+        }
+      };
+      consume(fh);
+      await pullPages(first, pageCount, consume);
+      if (opts.onRows) opts.onRows(rows);
+      Object.assign(map, rows);
+      opts.doneMap.ty = Date.now();
+    } catch {
+      /* 体育统计失败容忍（v1.4.9 同款） */
+    }
+  }
+  return map;
+}
+
+/** 定向课号志愿查询（用户二十报：070 分院视图不含心智探秘——开课系显示
+ *  社科学院但分院页就是没有它这行；不分院的完整列表里有）。BR 表单自带
+ *  p_kch 课号查询框：POST token+p_kch 精确拉该课全部课序的志愿行。
+ *  存档 doQuery 实锤：新查询 page="-1"（重置分页语义），p_sort.asc* 真值是
+ *  "true" 不是 "asc"——此前非法表单被服务器整体拒绝（0 行）。
+ *  只保留请求课号的行，服务器若忽略 p_kch 返回大列表也不污染。 */
+export async function fetchXkVolCourse(
+  s: ZhjwxkSession,
+  opts: { semester?: string; code: string },
+): Promise<Record<string, XkVolRow>> {
+  const { entry, semester } = await ensure(s, opts.semester);
+  const fh = await proxyZhjwxkApi(s, entry, `/xkBks.xkBksZytjb.do?m=tbzySearchBR&p_xnxq=${semester}`);
+  assertNotDenied(s, fh);
+  const token = TOKEN_RE().exec(fh)?.[1] ?? "";
+  const html = await postZhjwxkApi(s, entry, "/xkBks.xkBksZytjb.do", {
+    m: "tbzySearchBR",
+    page: "-1",
+    token,
+    p_xnxq: semester,
+    "p_sort.p1": "",
+    "p_sort.p2": "",
+    "p_sort.asc1": "true",
+    "p_sort.asc2": "true",
+    p_kch: opts.code,
+    p_kcm: "",
+    p_lrdwnm: "",
+  });
+  const all = parseVolRows(html);
+  const out: Record<string, XkVolRow> = {};
+  for (const [k, v] of Object.entries(all)) if (v.code === opts.code) out[k] = v;
+  return out;
+}
+
+/** 课余量+排队（xkqkSearch 判 phase → kylSearch POST 翻页 → selectBksDlCount 批 100/熔断 3） */
+export async function getXkQueueData(
+  s: ZhjwxkSession,
+  opts: { semester?: string; codes?: string[]; onPartial?: (map: Record<string, XkQueueInfo>, phase: boolean) => void } = {},
+): Promise<{ map: Record<string, XkQueueInfo>; phase: boolean }> {
+  const { entry, semester } = await ensure(s, opts.semester);
+  const first = await proxyZhjwxkApi(s, entry, `/xkBks.vxkBksXkbBs.do?m=xkqkSearch&p_xnxq=${semester}`);
+  assertNotDenied(s, first);
+  if (!first.includes("gridData")) return { map: {}, phase: false };
+  const map: Record<string, XkQueueInfo> = parseXkQueueGrid(first);
+  // 渐进上屏（插件同感：xkqkSearch 一发全量帽/余量，先渲染，排队数逐门后补——
+  // 旧版等全部逐门爬完才 setQueueMap，切队列模式白等数秒）
+  opts.onPartial?.({ ...map }, Object.keys(map).length > 0);
+  const token = TOKEN_RE().exec(first)?.[1] ?? "";
+  if (token) {
+    // 按需逐门精确查（NextTHUxk 同款，2026-09-14 定案）：p_kch 单课号、
+    // 并发 5 微错峰、单课「共N页」翻页 cap 10、0 新行即停。
+    // 绝不全目录翻页爬——旧版无 p_kch 全量 100+ 页（先串行后并发都是错的）：
+    // 已选课余量 xkqkSearch 网格一发就有，候补/暂存走调用方传入的 codes。
+    const codes = [...new Set((opts.codes ?? []).map((c) => String(c).trim()).filter(Boolean))];
+    const kylPage = (code: string, page: number): Promise<string> =>
+      postZhjwxkApi(s, entry, "/xkBks.vxkBksJxjhBs.do", {
+        m: "kylSearch",
+        page: String(page),
+        token,
+        "p_sort.p1": "",
+        "p_sort.p2": "",
+        "p_sort.asc1": "true",
+        "p_sort.asc2": "true",
+        p_xnxq: semester,
+        pathContent: "",
+        p_kch: code,
+        p_kxh: "",
+        p_kcm: "",
+        p_skxq: "",
+        p_skjc: "",
+        bt: "",
+      });
+    let idx = 0;
+    const workers = Array.from({ length: Math.min(5, codes.length) }, async () => {
+      for (;;) {
+        const my = idx++;
+        if (my >= codes.length) return;
+        const code = codes[my]!;
+        await new Promise((r) => setTimeout(r, 30 * (my % 5)));   // 微错峰（插件 40/74 教训）
+        try {
+          const p0 = await kylPage(code, 0);
+          if (!p0.includes("gridData")) continue;
+          for (const [k, v] of Object.entries(parseXkQueueGrid(p0))) if (!map[k]) map[k] = v;
+          const tp = /共\s*(\d+)\s*页/.exec(p0);
+          const totalPages = Math.min(tp ? parseInt(tp[1]!, 10) : 1, 10);
+          for (let p = 1; p < totalPages; p++) {
+            const html = await kylPage(code, p);
+            if (!html.includes("gridData")) break;
+            let added = 0;
+            for (const [k, v] of Object.entries(parseXkQueueGrid(html))) {
+              if (!map[k]) { map[k] = v; added++; }
+            }
+            if (added === 0) break;
+          }
+        } catch { /* 单课失败：跳过，下轮刷新补 */ }
+      }
+    });
+    await Promise.all(workers);
+    opts.onPartial?.({ ...map }, Object.keys(map).length > 0);
+  }
+  const parts = Object.keys(map).map((k) => `${semester}_${k.replace("_", "_")}`);
+  let fails = 0;
+  for (let i = 0; i < parts.length; i += 100) {
+    try {
+      const qHtml = await proxyZhjwxkApi(
+        s,
+        entry,
+        `/xkBks.vxkBksXkbBs.do?m=selectBksDlCount&kc_message=${encodeURIComponent(parts.slice(i, i + 100).join(";"))}`,
+      );
+      const arr = JSON.parse(qHtml) as Array<{ kch: string; kxh: string; dlrs: string }>;
+      if (Array.isArray(arr)) {
+        for (const o of arr) {
+          const k = `${o.kch}_${o.kxh}`;
+          if (map[k]) map[k] = { ...map[k]!, qQueue: parseInt(o.dlrs) || 0 };
+        }
+        fails = 0;
+      }
+    } catch {
+      if (++fails >= 3) break; // v1.3.13 熔断：连败 3 批停手
+    }
+  }
+  return { map, phase: Object.keys(map).length > 0 };
+}
+
+/** 一级课表课型表（兜底/课型推断） */
+export async function getXkLevelTypes(
+  s: ZhjwxkSession,
+  opts: { semester?: string } = {},
+): Promise<Record<string, string>> {
+  const { entry, semester } = await ensure(s, opts.semester);
+  const html = await proxyZhjwxkApi(
+    s,
+    entry,
+    `/xkBks.vxkBksXkbBs.do?p_xnxq=${semester}&pathContent=${encodeURIComponent("一级课表")}`,
+  );
+  assertNotDenied(s, html);
+  return parseXkLevelTypes(html);
+}
+
+/* ── 写操作（v1.4.9 fetchFormSubmit/submitCourse/dropCourse/changeVolunteer）──── */
+
+const SUBMIT_M: Record<XkFlag, { search: string; save: string; id: string; zy: string }> = {
+  bx: { search: "bxSearch", save: "saveBxKc", id: "p_bxk_id", zy: "p_bxk_xkzy" },
+  xx: { search: "xxSearch", save: "saveXxKc", id: "p_xxk_id", zy: "p_xxk_xkzy" },
+  rx: { search: "rxSearch", save: "saveRxKc", id: "p_rx_id", zy: "p_rx_xkzy" },
+  ty: { search: "tySearch", save: "saveTyKc", id: "p_rxTy_id", zy: "p_rxTy_xkzy" },
+};
+
+/** 已选列表页是否含某 code+seq（pollUntil 判定） */
+function hasSelected(html: string, code: string, seq: string): boolean {
+  const rowRe = ROW_RE();
+  let m: RegExpExecArray | null;
+  while ((m = rowRe.exec(html)) !== null) {
+    if ((m[1] ?? "").includes(code)) return true;
+    void seq;
+  }
+  return false;
+}
+
+/** 业务拒绝字典（NextTHUxk 2.0 实证回移）：时间冲突/学分上限/先修不符等教务拒绝
+ *  页此前落进轮询兜底，用户只看到「未生效」而不知道原因。成功串必须先行短路。 */
+const XK_REJECT_RE = /时间冲突|上课时间冲突|先修|不符合|不允许|无法选课|选课失败|提交失败|余量不足|课余量不足|人数已满|已选满|请先|验证码|超出|达不到|不满足|存在冲突|已选过|重复选课|操作被拒绝|被拒绝|失败|上限|已选课程学分/;
+
+function rejectOf(html: string): XkWriteResult | null {
+  if (!XK_REJECT_RE.test(html)) return null;
+  const alertMsg = /alert\(["']([^"']{2,160})["']\)/.exec(html)?.[1];
+  const plain = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+  const snippet = /[^ ]{0,20}(?:冲突|先修|不符合|不允许|无法|失败|不足|已满|超出|请先|验证码|拒绝)[^ ]{0,30}/.exec(plain)?.[0];
+  return { ok: false, msg: ((alertMsg || snippet || "选课被教务拒绝").trim()).slice(0, 120), where: "none" };
+}
+
+/** 选课：GET 搜索页取一次性 token → POST save*Kc → 满员二次 POST saveBksKcDl（响应新 token）→ 轮询确认 */
+export async function submitXkCourse(
+  s: ZhjwxkSession,
+  opts: { semester?: string; code: string; seq: string; zy: number; flag: XkFlag },
+): Promise<XkWriteResult> {
+  const { entry, semester } = await ensure(s, opts.semester);
+  const M = SUBMIT_M[opts.flag];
+  const extra = opts.flag === "rx" ? "&is_zyrxk=1" : "";
+  const searchHtml = await proxyZhjwxkApi(
+    s,
+    entry,
+    `/xkBks.vxkBksXkbBs.do?m=${M.search}&p_xnxq=${semester}&tokenPriFlag=${opts.flag}${extra}`,
+  );
+  assertNotDenied(s, searchHtml);
+  const token = TOKEN_RE().exec(searchHtml)?.[1];
+  if (!token) return { ok: false, msg: "无法获取 token（会话或页面结构异常）", where: "none" };
+  const fields: Record<string, string> = {
+    m: M.save,
+    p_xnxq: semester,
+    tokenPriFlag: opts.flag,
+    page: "",
+    token,
+    [M.id]: `${semester};${opts.code};${opts.seq};`,
+    [M.zy]: String(opts.zy),
+  };
+  if (opts.flag === "rx") {
+    fields.is_zyrxk = "1";
+    fields.p_rxklxm = "";
+  }
+  if (opts.flag === "ty") fields.rxTyType = "";
+
+  const respond = (html: string): XkWriteResult | null => {
+    if (html.includes("accessDenied")) return { ok: false, msg: "操作被拒绝（会话失效）", where: "none" };
+    if (html.includes("加入队列成功")) return { ok: true, msg: "已加入候补队列", where: "queue" };
+    if (html.includes("选课成功")) return { ok: true, msg: "选课成功", where: "selected" };
+    return rejectOf(html); // NextTHUxk 2.0：拒绝页明确失败并带出可读原因（不落轮询）
+  };
+
+  let resp = await postZhjwxkApi(s, entry, "/xkBks.vxkBksXkbBs.do", fields);
+  let result = respond(resp);
+  if (!result && resp.includes("是否排队") && resp.includes("saveBksKcDl")) {
+    await sleep(1500); // v1.4.9：满员确认前置 1.5s
+    const newToken = TOKEN_RE().exec(resp)?.[1];
+    const queueFields: Record<string, string> = { ...fields, m: "saveBksKcDl" };
+    // NextTHUxk 2.2.1 同款实证：一次性 token 在第一次 POST 已消耗，响应页不带
+    // 新 token 时复用旧值必失败——显式报错而非静默复用
+    if (!newToken) return { ok: false, msg: "排队页未返回新 token，请稍后重试", where: "none" };
+    queueFields.token = newToken;
+    resp = await postZhjwxkApi(s, entry, "/xkBks.vxkBksXkbBs.do", queueFields);
+    result = respond(resp);
+  }
+  if (result?.ok) return result;
+
+  // 轮询确认（700ms × 3 查已选；再查候补）
+  for (let i = 0; i < 3; i++) {
+    await sleep(700);
+    const yx = await proxyZhjwxkApi(s, entry, `/xkBks.vxkBksXkbBs.do?m=yxSearchTab&p_xnxq=${semester}&tokenPriFlag=yx&_t=${Date.now()}`);
+    if (hasSelected(yx, opts.code, opts.seq)) return { ok: true, msg: "选课成功（已确认）", where: "selected" };
+  }
+  const dl = await proxyZhjwxkApi(s, entry, `/xkBks.vxkBksXkbBs.do?m=dlSearch&p_xnxq=${semester}`);
+  if (dl.includes(opts.code)) return { ok: true, msg: "已加入候补队列（已确认）", where: "queue" };
+  return result ?? { ok: false, msg: "选课未生效，请确认课程类型与志愿", where: "none" };
+}
+
+/** 退课：isQueue → dlDelete；否则 deleteYxk；轮询消失 ×3（500ms） */
+export async function dropXkCourse(
+  s: ZhjwxkSession,
+  opts: { semester?: string; code: string; seq: string; isQueue: boolean },
+): Promise<XkWriteResult> {
+  const { entry, semester } = await ensure(s, opts.semester);
+  const tokenPage = opts.isQueue
+    ? await proxyZhjwxkApi(s, entry, `/xkBks.vxkBksXkbBs.do?m=dlSearchTab&p_xnxq=${semester}`)
+    : await proxyZhjwxkApi(s, entry, `/xkBks.vxkBksXkbBs.do?m=yxSearchTab&p_xnxq=${semester}&tokenPriFlag=yx`);
+  assertNotDenied(s, tokenPage);
+  const token = TOKEN_RE().exec(tokenPage)?.[1];
+  if (!token) return { ok: false, msg: "无法获取 token", where: "none" };
+  const form: Record<string, string> = opts.isQueue
+    ? { m: "dlDelete", p_xnxq: semester, page: "", token, p_del_id: `${semester};${opts.code};${opts.seq};` }
+    : {
+        m: "deleteYxk",
+        p_xnxq: semester,
+        page: "",
+        token,
+        tokenPriFlag: "yx",
+        tk: "",
+        jhzy_kch: "",
+        jhzy_kxh: "",
+        jhzy_zy: "",
+        p_del_id: `${semester};${opts.code};${opts.seq};`,
+      };
+  const resp = await postZhjwxkApi(s, entry, "/xkBks.vxkBksXkbBs.do", form);
+  if (resp.includes("accessDenied")) return { ok: false, msg: "操作被拒绝（会话失效）", where: "none" };
+  const dropRej = rejectOf(resp); // NextTHUxk 2.0：退课被拒（如非本人课程/不允许退选）明确带出
+  if (dropRej) return dropRej;
+  for (let i = 0; i < 3; i++) {
+    await sleep(500);
+    const check = await proxyZhjwxkApi(
+      s,
+      entry,
+      `/xkBks.vxkBksXkbBs.do?m=${opts.isQueue ? "dlSearch" : "yxSearchTab"}&p_xnxq=${semester}${opts.isQueue ? "" : "&tokenPriFlag=yx"}&_t=${Date.now()}`,
+    );
+    if (!check.includes(opts.code)) return { ok: true, msg: opts.isQueue ? "已退出候补队列" : "退选成功", where: "none" };
+  }
+  return { ok: true, msg: opts.isQueue ? "已提交退队（未即时确认）" : "已提交退选（未即时确认）", where: "none" };
+}
+
+/** 调整志愿（changeZY；提交后固定等 1s，无轮询——v1.4.9 同款） */
+export async function changeXkVolunteer(
+  s: ZhjwxkSession,
+  opts: { semester?: string; code: string; seq: string; zy: number },
+): Promise<XkWriteResult> {
+  const { entry, semester } = await ensure(s, opts.semester);
+  const tokenPage = await proxyZhjwxkApi(s, entry, `/xkBks.vxkBksXkbBs.do?m=yxSearchTab&p_xnxq=${semester}&tokenPriFlag=yx`);
+  assertNotDenied(s, tokenPage);
+  const token = TOKEN_RE().exec(tokenPage)?.[1];
+  if (!token) return { ok: false, msg: "无法获取 token", where: "none" };
+  const resp = await postZhjwxkApi(s, entry, "/xkBks.vxkBksXkbBs.do", {
+    m: "changeZY",
+    p_xnxq: semester,
+    tokenPriFlag: "yx",
+    page: "",
+    token,
+    tk: "",
+    jhzy_kch: opts.code,
+    jhzy_kxh: opts.seq,
+    jhzy_zy: String(opts.zy),
+  });
+  if (resp.includes("accessDenied")) return { ok: false, msg: "操作被拒绝（会话失效）", where: "none" };
+  const zyRej = rejectOf(resp); // NextTHUxk 2.0：志愿调整被拒明确带出（名额上限/时间冲突等）
+  if (zyRej) return zyRej;
+  await sleep(1000);
+  return { ok: true, msg: `志愿已调整为第 ${opts.zy} 志愿`, where: "selected" };
+}
+
+/* ── 已选完整行（v1.4.9 fetchSelectedCourses：p_del_id + zyMap，退课/调志愿需要 seq）── */
+
+export interface XkSelectedRow {
+  code: string;
+  seq: string;
+  name: string;
+  teacher: string;
+  time: string;
+  credits: number;
+  typeLabel: string;
+  zy: number;
+  typeCode: string;
+}
+
+export function parseXkSelectedFull(html: string): XkSelectedRow[] {
+  const zyMap: Record<string, { zy: number; typeCode: string; typeLabel: string }> = {};
+  const zyRe = /\[\s*"(\d+),(\d+)"\s*,\s*"(\d+)"\s*,\s*"(\d+)"\s*,\s*"([^"]*)"\s*,\s*"[^"]*"\s*\]/g;
+  let zm: RegExpExecArray | null;
+  while ((zm = zyRe.exec(html)) !== null) {
+    zyMap[`${zm[1]}_${zm[2]}`] = {
+      zy: parseInt(zm[3] ?? "") || 0,
+      typeCode: zm[4] ?? "",
+      typeLabel: zm[5] === "是" ? "体育" : ({ "006": "必修", "008": "限选", "007": "任选" }[zm[4] ?? ""] ?? ""),
+    };
+  }
+  const out: XkSelectedRow[] = [];
+  const rowRe = ROW_RE();
+  let m: RegExpExecArray | null;
+  while ((m = rowRe.exec(html)) !== null) {
+    const row = m[1] ?? "";
+    const val = /name="p_del_id"[^>]*value="([^"]*)"/.exec(row)?.[1] ?? "";
+    const parts = val.split(";");
+    const code = parts[1] ?? "";
+    const seq = parts[2] ?? "";
+    if (!code) continue;
+    const tds = tdsOf(row);
+    const cell = (i: number): string => (tds[i] ?? "").replace(/\s+/g, " ").trim();
+    const info = zyMap[`${code}_${seq}`] ?? { zy: 0, typeCode: "", typeLabel: "" };
+    const zyFromCell = /第([一二三])志愿/.exec(cell(2));
+    const isSports = !cell(1) && zyFromCell;
+    // 2026-2027-1 起已选表列序变更（样本 xkBks.vxkBksXkbBs 实证）：课号独立成列
+    // → cell(3)=课号、cell(4)=课名（教师/时间/学分未动）。自适应取第一个非纯
+    // 数字的候选格，新旧列序通吃——否则预览课表整屏课号（实测事故）。
+    const nameCell = [cell(4), cell(3)].find((x) => x !== "" && !/^\d+$/.test(x)) ?? "";
+    out.push({
+      code,
+      seq,
+      name: nameCell || cell(1),
+      teacher: cell(7) || cell(2),
+      time: cell(6) || cell(3),
+      credits: parseFloat(cell(8) || cell(4)) || 0,
+      typeLabel: isSports ? "体育" : cell(1) || info.typeLabel,
+      zy: info.zy || (zyFromCell ? ({ 一: 1, 二: 2, 三: 3 }[zyFromCell[1] as "一" | "二" | "三"] ?? 0) : 0),
+      typeCode: isSports ? "ty" : info.typeCode,
+    });
+  }
+  return out;
+}
+
+/** 已选完整行（含 seq/zy/typeCode——退选、调志愿、名额校验都用它） */
+export async function getXkSelectedFull(
+  s: ZhjwxkSession,
+  opts: { semester?: string } = {},
+): Promise<XkSelectedRow[]> {
+  const { entry, semester } = await ensure(s, opts.semester);
+  const html = await proxyZhjwxkApi(
+    s,
+    entry,
+    `/xkBks.vxkBksXkbBs.do?m=yxSearchTab&p_xnxq=${semester}&tokenPriFlag=yx&_t=${Date.now()}`,
+  );
+  assertNotDenied(s, html);
+  return parseXkSelectedFull(html);
+}
+
+/* ── 课程简介（v1.4.9 fetchCourseDetail：js.vjsKcbBs.do?m=showToXs）── */
+
+export interface XkCourseDetail {
+  fields: Record<string, string>;
+}
+
+/** 课程简介：p_id = encodeURIComponent(teacherId + ';' + code)；GBK 表格标签值对 */
+export async function getXkCourseDetail(
+  s: ZhjwxkSession,
+  opts: { teacherId: string; code: string },
+): Promise<XkCourseDetail | null> {
+  await ensure(s);
+  const url = `/js.vjsKcbBs.do?m=showToXs&p_id=${encodeURIComponent(`${opts.teacherId};${opts.code}`)}`;
+  const html = await xkHttp(s).text(ZHJWXK + url);
+  if (!html.includes("table")) return null;
+  const fields: Record<string, string> = {};
+  const skip = new Set(["课程名", "课程号"]);
+  const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/g;
+  let m: RegExpExecArray | null;
+  while ((m = rowRe.exec(html)) !== null) {
+    const tds = [...m[1]!.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((t) =>
+      t[1]!.replace(/<[^>]*>/g, "").replace(/：/g, "").trim(),
+    );
+    if (tds.length < 2) continue;
+    const put = (l: string | undefined, v: string | undefined): void => {
+      if (l && v && l.length < 20 && !/^\d+$/.test(l) && !skip.has(l)) fields[l] = v;
+    };
+    put(tds[0], tds[1]);
+    if (tds.length >= 4) put(tds[2], tds[3]);
+  }
+  return Object.keys(fields).length ? { fields } : null;
+}
+
+
+/* ── 培养方案（v1.4.9 fetchTrainingPlan：jhBks.vjhBksPyfakcbBs.do）── */
+
+export interface XkPlanItem {
+  semester: string;
+  code: string;
+  name: string;
+  attr: string;
+  credits: number;
+  group: string;
+}
+
+// 必须解码 HTML 实体（&nbsp; 等）：培养方案课号单元格以 &nbsp; 结尾，
+// 不解码则 /^\d{8}$/ 永不匹配 → 0 行（插件 cheerio .text() 自带实体解码所以能用）
+const stripTags = (s: string): string => s.replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"").replace(/&#39;/g, "'").replace(/\s+/g, " ").trim();
+
+/** parsePlan 移植：table#kcTable 行 → {semester, code, name, attr, credits, group} */
+export async function getXkPlan(s: ZhjwxkSession, opts: { semester: string }): Promise<XkPlanItem[]> {
+  const { entry } = await ensure(s, opts.semester);
+  // 会话中途死亡的自愈与其余数据路对齐（原直连无死页重试：培养方案空+「暂无
+  // 培养方案数据」卡实录）——代理层作废 entry 静默重走登录链并重试一次
+  const page = await proxyZhjwxkApi(s, entry, `/jhBks.vjhBksPyfakcbBs.do?m=showBksZxZdxjxjhXmxqkclist&p_xnxq=${encodeURIComponent(opts.semester)}`);
+  // 照抄 querySelectorAll('table#kcTable tr')：只在 kcTable 内找行
+  // 教务老 HTML 不写 </tr>（15:24 现场实证：12 tr/60 td 在页面上、正则
+  // [\s\S]*?<\/tr> 全军覆没；插件用 cheerio 真 HTML 解析器无此问题）——
+  // 按 <tr 开标签切分行段，不依赖闭合；td 闭合正常（现场 </td> 可见）
+  const seg = /<table[^>]*id\s*=\s*"kcTable"[^>]*>([\s\S]*?)<\/table>/i.exec(page)?.[1] ?? page;
+  const html = seg;
+  const out: XkPlanItem[] = [];
+  let sem = "", season = "";
+  const rowSlices = html.split(/<tr[^>]*>/i).slice(1);
+  for (const slice of rowSlices) {
+    const cells = [...slice.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((t) => stripTags(t[1]!));
+    if (!cells.length) continue;
+    for (const t of cells) {
+      const sm = /(\d{4}-\d{4}学年)/.exec(t);
+      if (sm) sem = sm[1]!;
+      const sn = /^(秋|春|夏)$/.exec(t.trim());
+      if (sn) season = sn[1]!;
+    }
+    const code = cells.find((c) => /^\d{8}$/.test(c));
+    if (!code) continue;
+    const name = cells.find((c) => c.length > 1 && !/^\d+$/.test(c) && !["必修", "限选", "任选", "秋", "春", "夏"].includes(c) && !c.includes("学年"));
+    const attr = cells.find((c) => ["必修", "限选", "任选"].includes(c));
+    const credit = cells.find((c) => /^\d{1,2}(\.\d)?$/.test(c) && c !== code);
+    const group = cells.find((c) => c.length > 2 && !["必修", "限选", "任选"].includes(c) && !/^\d/.test(c) && !c.includes("学年") && c !== name);
+    if (name) out.push({ semester: `${sem} ${season}`.trim(), code: code!, name: name!.replace(/\s+/g, ""), attr: attr ?? "", credits: parseFloat(credit ?? "") || 0, group: group ?? "" });
+  }
+  zhjwxkDebug?.(`[XK-PLAN] len=${page.length} kcTable=${page.includes("kcTable") ? 1 : 0} 行=${out.length} 页首=${page.slice(0, 200).replace(/\s+/g, " ")}`);
+  if (!out.length) {
+    // 0 行现场：页面仅 16K，整页倾倒（压平换行）——split 修复后仍 0 行
+    //（15:48 实证），只有看到真实数据行才能定案
+    zhjwxkDebug?.(`[XK-PLAN-FULL] ${page.replace(/\s+/g, " ")}`);
+  }
+  return out;
+}
+
+/* ── 一级课表兜底（v1.4.9 fetchLevelTable / fallbackSelectedFromLevelTable）── */
+
+export interface XkLevelTableRow {
+  typeCode: string;
+  typeLabel: string;
+  attr: string;
+  /** 列表版式行邻位尽力提取的课名（8 位课号前一格；版式异常时为空） */
+  name?: string;
+  /** 邻位尽力提取的教师（课号后第 3 格；版式异常时为空） */
+  teacher?: string;
+  /** 邻位尽力提取的学分（课号后第 5 格；解析不出为 0） */
+  credits?: number;
+}
+
+/**
+ * 一级课表：code_seq → {typeCode,typeLabel,attr}；attr 非 必修/限选/任选 视为体育。
+ * 列表版式行（实测列位）：[学号, 姓名, 课名, 课号, 课序, 属性, 教师, …, 学分, …]——
+ * 以 8 位课号为锚点，在邻位尽力提取课名/教师/学分，供"一级课表先行"管线在
+ * 全量目录到达前渲染最小行（代码+序号+课名+类型/属性）；版式异常时留空兜底。
+ */
+export async function getXkLevelTable(s: ZhjwxkSession, opts: { semester: string }): Promise<Record<string, XkLevelTableRow>> {
+  await ensure(s, opts.semester);
+  // pathContent 为中文参数：GBK 编码（UTF-8 直发服务端解乱码，取不到一级课表页）
+  const html = await xkHttp(s).text(`${ZHJWXK}/xkBks.vxkBksXkbBs.do?p_xnxq=${encodeURIComponent(opts.semester)}&pathContent=${gbkPercentEncode("一级课表")}`);
+  const map: Record<string, XkLevelTableRow> = {};
+  const rowRe = /<tr[^>]*class="trr2"[^>]*>([\s\S]*?)<\/tr>/g;
+  let m: RegExpExecArray | null;
+  while ((m = rowRe.exec(html)) !== null) {
+    const cells = [...m[1]!.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((t) => stripTags(t[1]!));
+    let code = "", seq = "", attr = "", name = "", teacher = "", credits = 0;
+    for (let i = 0; i < cells.length; i++) {
+      if (/^\d{8}$/.test(cells[i]!) && !code) {
+        code = cells[i]!;
+        seq = cells[i + 1] || "0";
+        attr = cells[i + 2] || "";
+        if (!/^(必修|限选|任选)$/.test(attr)) attr = "";
+        // 邻位提取（对空值/串位宽容：不合法即留空，最小行渲染对空 teacher/time 宽容）
+        const prev = i > 0 ? cells[i - 1] ?? "" : "";
+        if (prev && prev.length <= 30 && !/^\d+$/.test(prev) && !/^(必修|限选|任选|体育|是|否)$/.test(prev)) name = prev;
+        const t = cells[i + 3] ?? "";
+        if (t && t.length <= 20 && !/^\d+$/.test(t) && !/^(必修|限选|任选|体育)$/.test(t)) teacher = t;
+        credits = parseFloat(cells[i + 5] ?? "") || 0;
+      }
+    }
+    if (!code) continue;
+    const isSports = !attr;
+    const typeLabel = isSports ? "体育" : attr;
+    const typeCode = isSports ? "ty" : attr === "必修" ? "006" : attr === "限选" ? "008" : "007";
+    map[`${code}_${seq || "0"}`] = { typeCode, typeLabel, attr, name, teacher, credits };
+  }
+  return map;
+}
+
+// 【特性冻结 2026-09-10】官方教评（#31）暂停：xgpg 端点对登录会话全 500（无登录态 curl 正常）。（以下整段注释保留：接口/解析/GET→POST→AJAX 梯子/预热均已就绪，教务修好解开即恢复）
+// /* ── 官方教评（选课学生推荐度）────────────────────────────────
+//  * #31（huangkaka666 的油猴脚本 thu-course-helper 逆向实录）：教务 AJAX
+//  * 接口 xgpg_xspjyxkt.do 按课号查 1-7 分分布（fs1..fs7，fs7=最高），教师
+//  * 粒度（jsm），含 kcm/kkdwmc。POST 表单 cm=xgpg_qbkcmycdzbShow。
+//  * 原生接入：走既有会话层（无需油猴），reqwest 自动 GBK→UTF-8 后
+//  * JSON.parse。 */
+// export interface XkRatingRow {
+//   code: string;
+//   name: string;
+//   teacher: string;
+//   department: string;
+//   distribution: number[]; // fs1..fs7（fs7 最高分档）
+//   total: number;
+//   average: number; // 1-7 加权平均
+//   highRatio: number; // (fs6+fs7)/total
+// }
+
+// const ratingPrimedSessions = new WeakSet<ZhjwxkSession>();
+
+// /** 单元格文本清理：只去标签 + 实体解码，**不折叠空白**——教师名里的全角空格
+//  * （李　蕉）折叠成半角会让 ratingOf 的精确匹配失灵（目录里是全角）。 */
+// const stripCell = (v: string): string =>
+//   v.replace(/<[^>]*>/g, "")
+//     .replace(/&nbsp;/g, " ")
+//     .replace(/&amp;/g, "&")
+//     .replace(/&lt;/g, "<")
+//     .replace(/&gt;/g, ">")
+//     .replace(/&quot;/g, '"')
+//     .replace(/&#39;/g, "'")
+//     .trim();
+
+// const ratingRowOf = (
+//   code: string, name: string, teacher: string, department: string, distribution: number[],
+// ): XkRatingRow => {
+//   const total = distribution.reduce((a, b) => a + b, 0);
+//   const average = total > 0 ? distribution.reduce((sum, v, i) => sum + v * (i + 1), 0) / total : 0;
+//   return {
+//     code, name, teacher, department, distribution, total,
+//     average: Math.round(average * 100) / 100,
+//     highRatio: total > 0 ? Math.round(((distribution[5]! + distribution[6]!) / total) * 1000) / 1000 : 0,
+//   };
+// };
+
+// /** 评教查询页（cm=xgpg_qbkcmycdzbShow）结果表解析——油猴 scrapeRatings 双策略移植
+//  * （正则实现：Node 测试环境无 DOMParser）。null=页面无结果表（服务端未渲染，走
+//  * AJAX 兜底）；[]=查到了但无行（真无教评）。普通表列序：0序号 1院系 2教师名 3课号
+//  * 4课名 5-11=分数1-7。 */
+// export function parseRatingShowHtml(html: string): XkRatingRow[] | null {
+//   if (!html) return null;
+//   // 策略① EasyUI：tr.datagrid-row + td[field=jsm/kch/kcm/kkdwmc/fs1..fs7]
+//   const easy: XkRatingRow[] = [];
+//   const easyRe = /<tr[^>]*datagrid-row[^>]*>([\s\S]*?)<\/tr>/gi;
+//   for (let m = easyRe.exec(html); m !== null; m = easyRe.exec(html)) {
+//     const td = (f: string): string => {
+//       const t = m![1]!.match(new RegExp(`<td[^>]*field="${f}"[^>]*>([\\s\\S]*?)</td>`, "i"));
+//       return t ? stripCell(t[1]!) : "";
+//     };
+//     const code = td("kch");
+//     const teacher = td("jsm");
+//     if (!code || !teacher) continue;
+//     easy.push(ratingRowOf(code, td("kcm"), teacher, td("kkdwmc"),
+//       [1, 2, 3, 4, 5, 6, 7].map((i) => parseInt(td(`fs${i}`), 10) || 0)));
+//   }
+//   if (easy.length) return easy;
+//   // 策略② 普通表：表头含「教师名」「分数1」
+//   const tableRe = /<table[^>]*>([\s\S]*?)<\/table>/gi;
+//   for (let m = tableRe.exec(html); m !== null; m = tableRe.exec(html)) {
+//     const t = m[1]!;
+//     if (!t.includes("教师名") || !t.includes("分数1")) continue;
+//     const out: XkRatingRow[] = [];
+//     const trRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+//     for (let tr = trRe.exec(t); tr !== null; tr = trRe.exec(t)) {
+//       const cells = [...tr[1]!.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)].map((c) => stripCell(c[1]!));
+//       if (cells.length < 12) continue;
+//       const teacher = cells[2]!;
+//       const code = cells[3]!;
+//       if (!teacher || !code) continue;
+//       out.push(ratingRowOf(code, cells[4] ?? "", teacher, cells[1] ?? "",
+//         [5, 6, 7, 8, 9, 10, 11].map((i) => parseInt(cells[i] ?? "", 10) || 0)));
+//     }
+//     return out;
+//   }
+//   return null;
+// }
+
+// export async function fetchXkRatings(
+//   s: ZhjwxkSession,
+//   opts: { semester?: string; code: string },
+// ): Promise<XkRatingRow[]> {
+//   const { entry, semester } = await ensure(s, opts.semester);
+//   // 主路径（油猴脚本主用法）：cm=Show 查询页表单提交——服务端渲染结果表，直接解析
+//   // HTML。作者实测采集走的就是这条路；AJAX（cm=Data）依赖页面建立的会话态，冷调
+//   // 实录 500（用户控制台 20 连发实锤）。
+//   const showForm: Record<string, string> = {
+//     p_xnxq: semester,
+//     p_xslb: "bks",
+//     query_kkdwnm: "",
+//     query_jsm: "",
+//     query_kch: opts.code,
+//     query_kcm: "",
+//     page: "1",
+//     rows: "20", // 油猴脚本实证值
+//   };
+//   // ① GET 查询页（油猴 README 实证页面链接形态，全参数进 URL——表单 method
+//   //    未知，GET/POST 谁出结果表谁赢）
+//   try {
+//     const html = await proxyZhjwxkApi(s, entry, `/xkBks.xgpg_xspjyxkt.do?cm=xgpg_qbkcmycdzbShow&p_xnxq=${semester}&p_xslb=bks&query_kkdwnm=&query_jsm=&query_kch=${encodeURIComponent(opts.code)}&query_kcm=&page=1&rows=20`);
+//     assertNotDenied(s, html);
+//     const parsed = parseRatingShowHtml(html);
+//     if (parsed !== null) return parsed;
+//   } catch (e) {
+//     if (e instanceof Error && e.message.includes("统一认证")) throw e;   // 会话死：透传
+//     /* GET 失败 → POST */
+//   }
+//   // ② POST 查询页（表单提交重建）
+//   let showHtml = "";
+//   try {
+//     showHtml = await postZhjwxkApi(s, entry, `/xkBks.xgpg_xspjyxkt.do?cm=xgpg_qbkcmycdzbShow&p_xnxq=${semester}&p_xslb=bks`, showForm);
+//   } catch { /* 查询页网络失败：落 AJAX 兜底 */ }
+//   if (showHtml) assertNotDenied(s, showHtml);
+//   const parsed = parseRatingShowHtml(showHtml);
+//   if (parsed !== null) return parsed;
+//   // 兜底路径（油猴批采用法）：先预热评教页再打 Data AJAX（冷会话直 POST 实录 500）
+//   if (!ratingPrimedSessions.has(s)) {
+//     ratingPrimedSessions.add(s);
+//     try {
+//       await proxyZhjwxkApi(s, entry, `/xkBks.xgpg_xspjyxkt.do?cm=xgpg_qbkcmycdzbShow&p_xnxq=${semester}&p_xslb=bks`);
+//     } catch { /* 预热失败：继续尝试 */ }
+//   }
+//   const form: Record<string, string> = {
+//     cm: "xgpg_qbkcmycdzbShow",
+//     p_xnxq: semester,
+//     p_xslb: "bks",
+//     query_kkdwnm: "",
+//     query_jsm: "",
+//     query_kch: opts.code,
+//     query_kcm: "",
+//     page: "1",
+//     rows: "20", // 油猴脚本实证值
+//   };
+//   const raw = await postZhjwxkApi(
+//     s,
+//     entry,
+//     `/xkBks.xgpg_xspjyxkt.do?cm=xgpg_qbkcmycdzbData&p_xnxq=${semester}&p_xslb=bks`,
+//     form,
+//   );
+//   assertNotDenied(s, raw);
+//   let data: { rows?: Array<Record<string, unknown>> };
+//   try {
+//     data = JSON.parse(raw) as { rows?: Array<Record<string, unknown>> };
+//   } catch {
+//     // 非 JSON（异常页/会话死页）：抛错让调用方记失败——静默当 0 行会毒化缓存，
+//     // 一次会话抖动 = 该课整学期徽章永久消失（#31 插件侧同病已修）
+//     throw new Error("教评接口返回非JSON（会话或接口异常）");
+//   }
+//   return [...(data.rows ?? [])].map((row) => ratingRowOf(
+//     String(row.kch ?? ""),
+//     String(row.kcm ?? ""),
+//     String(row.jsm ?? ""),
+//     String(row.kkdwmc ?? ""),
+//     [1, 2, 3, 4, 5, 6, 7].map((i) => parseInt(String(row[`fs${i}`] ?? ""), 10) || 0),
+//   ));
+// }

@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+build/
+dist/
+.venv/
+venv/
+env/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyright/
+.coverage
+.coverage.*
+htmlcov/
+
+# Node / Vite
+node_modules/
+.vite/
+coverage/
+*.tsbuildinfo
+
+# Tauri/Rust build output
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
+vendor/onethu/core/test/.venue-build/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.log
+
+# Local object storage scratch
+.local-storage/
+data/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Personal local note (not shared)
+/LESSONS_LEARNED.md

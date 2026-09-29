@@ -1,0 +1,33 @@
+{
+  "name": "@agenthu/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/check-csp.mjs && tsc -p tsconfig.json --noEmit && vite build",
+    "dev": "vite",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@agenthu/contracts": "workspace:*",
+    "@onethu/core": "workspace:*",
+    "@onethu/info-lib": "workspace:*",
+    "@tanstack/react-query": "^5.66.8",
+    "@tauri-apps/api": "^2.4.1",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "zustand": "^5.0.3",
+    "zod": "^3.25.67"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.8",
+    "@types/react-dom": "^19.0.3",
+    "@vitejs/plugin-react": "^4.4.1",
+    "jsdom": "^26.0.0",
+    "typescript": "^5.8.3",
+    "vite": "^6.2.1",
+    "vitest": "^3.2.4"
+  }
+}

@@ -1,0 +1,7 @@
+Alembic migration environment.
+
+- `alembic upgrade head` applies all migrations.
+- `alembic revision --autogenerate -m "message"` creates a migration by diffing
+  `Base.metadata` (all models imported in `backend.models`) against the database.
+
+The database URL comes from `DATABASE_URL` via application settings.
