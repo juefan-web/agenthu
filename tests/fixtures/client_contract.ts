@@ -10,6 +10,10 @@
 // agree. `next_cursor` is deprecated server-side (D-010) and kept here for
 // response compatibility (D-022).
 //
+// 2026-09-29 (PR #9 review): `TaskSchema.source` added to both copies —
+// backend serves "manual" | "onethu" | ..., optional on the client so older
+// payloads still parse.
+//
 // The desktop client (Developer B) owns this contract. The Backend serves these
 // exact shapes under `/v1` (DECISIONS.md D-009) and the drift check in
 // `backend/scripts/check_contract_drift.py` reads this file so CI can report an
@@ -67,6 +71,7 @@ export const TaskSchema = z.object({
   estimate_minutes: z.number().int().nonnegative().nullable(),
   status: z.enum(["todo", "in_progress", "done", "cancelled"]),
   source_event_ids: z.array(z.string()),
+  source: z.string().optional(),
 });
 
 export const CurrentStateSchema = z.object({

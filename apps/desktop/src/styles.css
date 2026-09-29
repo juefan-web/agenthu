@@ -49,6 +49,8 @@ textarea { resize: vertical; }
 .task-row span, .plan-row span, .plan-row time { color: #788686; font-size: 12px; }
 .plan-row time { min-width: 46px; }
 .status-label { white-space: nowrap; }
+.task-row .task-title-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.task-row .source-badge { border: 1px solid #b9d6cf; border-radius: 999px; background: #e9f0ef; color: #2b5b56; font-size: 11px; font-weight: 600; line-height: 1.2; padding: 2px 8px; white-space: nowrap; }
 .focus-workspace { max-width: 660px; }
 .focus-workspace p { color: #617272; font-size: 13px; }
 .note-label { margin: 18px 0; max-width: 520px; }

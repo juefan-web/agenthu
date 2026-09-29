@@ -38,6 +38,9 @@ export const EventBatchResponseSchema = z.object({
   next_cursor: z.string().nullable(),
 });
 
+// Task.source 是任务来源（"manual" | "onethu" | ...）：backend-only addition
+// 为派生任务徽标透出（D-028 后续 / PR #9）。optional 使缺失该字段的旧
+// Backend 载荷仍可解析（undefined，按 manual 对待）。
 export const TaskSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -45,6 +48,7 @@ export const TaskSchema = z.object({
   estimate_minutes: z.number().int().nonnegative().nullable(),
   status: z.enum(["todo", "in_progress", "done", "cancelled"]),
   source_event_ids: z.array(z.string()),
+  source: z.string().optional(),
 });
 
 export const CurrentStateSchema = z.object({
