@@ -1,7 +1,9 @@
 // Build-time guard for the packaged client's Content Security Policy.
 // Enforces the review decision from 2026-09-28: no scheme wildcards in
-// connect-src, no unsafe-eval/unsafe-inline in script-src, and every
-// VITE_BACKEND_URL origin must be explicitly allowlisted in tauri.conf.json.
+// connect-src and no unsafe-eval/unsafe-inline in script-src. Since B-4
+// (backend_request native forwarding), packaged Backend traffic rides the
+// Tauri IPC channel, so the production connect-src must NOT list any
+// backend origin — the WebView has no direct outlet left to guard.
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,28 +21,6 @@ function cspDirectives(csp) {
         return [name.toLowerCase(), values];
       }),
   );
-}
-
-function backendOrigin(problems) {
-  const candidates = [];
-  if (process.env.VITE_BACKEND_URL) candidates.push(process.env.VITE_BACKEND_URL);
-  for (const name of [".env.local", ".env"]) {
-    try {
-      const raw = readFileSync(join(root, name), "utf8");
-      const line = raw.split(/\r?\n/).find((entry) => entry.startsWith("VITE_BACKEND_URL="));
-      if (line) candidates.push(line.slice("VITE_BACKEND_URL=".length).trim().replace(/^["']|["']$/g, ""));
-    } catch {
-      // No .env file; Vite would fall through to .env.example only via docs.
-    }
-  }
-  const value = candidates.find((entry) => entry && entry.trim() !== "");
-  if (!value) return null;
-  try {
-    return new URL(value).origin;
-  } catch {
-    problems.push(`VITE_BACKEND_URL is not a valid URL: ${value}`);
-    return null;
-  }
 }
 
 const conf = JSON.parse(readFileSync(join(root, "src-tauri", "tauri.conf.json"), "utf8"));
@@ -70,9 +50,12 @@ if (!problems.length) {
   if (missingIpc.length) {
     problems.push(`connect-src must include the Tauri IPC origins (${missingIpc.join(" ")}); without them packaged IPC degrades to postMessage`);
   }
-  const origin = backendOrigin(problems);
-  if (origin && !connect.includes(origin)) {
-    problems.push(`VITE_BACKEND_URL origin ${origin} is not allowlisted in app.security.csp connect-src; add it to apps/desktop/src-tauri/tauri.conf.json before building`);
+  // B-4: production must not carry any backend origin — that would reopen a
+  // WebView-side direct outlet the native allowlist cannot govern. Browser-mode
+  // dev keeps its origins in devCsp.
+  const backendLeak = connect.filter((token) => token !== "'self'" && !requiredIpc.includes(token));
+  if (backendLeak.length) {
+    problems.push(`production connect-src must stay at 'self' + IPC only (${backendLeak.join(" ")} found); Backend traffic goes through backend_request (B-4), dev origins belong in devCsp`);
   }
 }
 

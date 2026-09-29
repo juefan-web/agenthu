@@ -49,5 +49,7 @@ Thumbs.db
 
 # Personal local note (not shared)
 /LESSONS_LEARNED.md
+
+# Playwright run artifacts（构建包冒烟）
 apps/desktop/test-results/
 apps/desktop/playwright-report/

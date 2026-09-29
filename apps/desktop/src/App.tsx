@@ -1,19 +1,39 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { FocusSession, Task } from "@agenthu/contracts";
 import { CampusAuthError } from "./adapters/campus/types";
+import { isTauriRuntime } from "./adapters/campus/tauriTransport";
 import { campus } from "./campus/instance";
 import { CampusConnection, applySession } from "./components/CampusConnection";
 import { BackendClient } from "./backend/client";
 import { createBackendSession } from "./backend/session";
+import { backendFetch } from "./backend/transport";
 import { createFocusDraftStore } from "./focus/draft";
 import { useSessionStore } from "./state/session";
 import { useBackendSessionStore } from "./state/backendSession";
 import { EventSyncCoordinator } from "./sync/coordinator";
 import { createEventQueue } from "./sync/queue";
 
-const backendUrl = import.meta.env.VITE_BACKEND_URL?.replace(/\/$/, "") ?? "";
-const backendSession = backendUrl ? createBackendSession({ baseUrl: backendUrl }) : null;
+const BUILD_TIME_BACKEND_URL = import.meta.env.VITE_BACKEND_URL?.replace(/\/$/, "") ?? "";
+const BACKEND_URL_PREFERENCE_KEY = "agenthu.backend-url";
+
+/** 运行时 Backend 源偏好（B-4）：用户在设置里保存过就覆盖构建期值；Tauri 下
+ *  全部流量经 backend_request 受控转发，Rust allowlist 是唯一事实源。 */
+function readBackendUrlPreference(): string {
+  try {
+    const saved = localStorage.getItem(BACKEND_URL_PREFERENCE_KEY);
+    return saved?.trim() ? saved.trim().replace(/\/$/, "") : BUILD_TIME_BACKEND_URL;
+  } catch {
+    return BUILD_TIME_BACKEND_URL;
+  }
+}
+
+const backendUrl = readBackendUrlPreference();
+const backendSession = backendUrl ? createBackendSession({
+  baseUrl: backendUrl,
+  fetcher: isTauriRuntime() ? backendFetch : undefined,
+}) : null;
 const backend = backendSession?.client ?? null;
 const queue = createEventQueue();
 const focusDraft = createFocusDraftStore();
@@ -41,6 +61,8 @@ export default function App() {
   const [backendEmail, setBackendEmail] = useState("");
   const [backendPassword, setBackendPassword] = useState("");
   const [backendBusy, setBackendBusy] = useState(false);
+  const [backendOriginInput, setBackendOriginInput] = useState(backendUrl);
+  const [backendOriginBusy, setBackendOriginBusy] = useState(false);
   const session = useSessionStore();
   const backendState = useBackendSessionStore();
   const queryClient = useQueryClient();
@@ -52,7 +74,21 @@ export default function App() {
   useEffect(() => {
     void campus.restore().then(applySession).catch((error) => setNotice(errorText(error)));
     void queue.list().then((events) => setPending(events.length));
-    if (backendSession) void backendSession.restore();
+    if (backendSession && isTauriRuntime()) {
+      // B-4：先幂等登记 allowlist（构建期源已在 Rust 常量里，运行时源经此入列），
+      // 再恢复会话——首个请求不会因源未登记被拒。
+      void (async () => {
+        try {
+          await invoke("backend_origin_add", { origin: new URL(backendUrl).origin });
+        } catch (error) {
+          setNotice(`Backend 源登记失败：${errorText(error)}`);
+        } finally {
+          await backendSession?.restore();
+        }
+      })();
+    } else if (backendSession) {
+      void backendSession.restore();
+    }
   }, []);
 
   async function backendLogin(event: FormEvent) {
@@ -68,6 +104,26 @@ export default function App() {
       await queryClient.invalidateQueries();
     } catch (error) { setNotice(errorText(error)); }
     finally { setBackendBusy(false); }
+  }
+
+  /** B-4 运行时源切换：Rust 侧先验证并入 allowlist，持久化偏好后重载生效
+   *  （校验失败即拒，不落任何状态）。清空输入则回落构建期默认。 */
+  async function saveBackendOrigin(event: FormEvent) {
+    event.preventDefault();
+    setBackendOriginBusy(true);
+    try {
+      const trimmed = backendOriginInput.trim().replace(/\/$/, "");
+      if (!trimmed) {
+        localStorage.removeItem(BACKEND_URL_PREFERENCE_KEY);
+      } else {
+        if (isTauriRuntime()) await invoke("backend_origin_add", { origin: new URL(trimmed).origin });
+        localStorage.setItem(BACKEND_URL_PREFERENCE_KEY, trimmed);
+      }
+      window.location.reload();
+    } catch (error) {
+      setNotice(`Backend 地址无法使用：${errorText(error)}`);
+      setBackendOriginBusy(false);
+    }
   }
 
   async function backendLogout() {
@@ -192,11 +248,17 @@ export default function App() {
           {backendState.status === "ready" && <button className="ghost-button" onClick={() => void backendLogout()}>退出 Backend</button>}
         </div>
       </header>
-      {backend && backendState.status !== "ready" && <form className="backend-login" onSubmit={(event) => void backendLogin(event)}>
-        <label>Backend 邮箱<input type="email" value={backendEmail} onChange={(event) => setBackendEmail(event.target.value)} required /></label>
-        <label>Backend 密码<input type="password" value={backendPassword} onChange={(event) => setBackendPassword(event.target.value)} required /></label>
-        <button className="primary-button" disabled={backendBusy}>{backendBusy ? "登录中…" : "登录 Backend"}</button>
-      </form>}
+      {backend && backendState.status !== "ready" && <>
+        <form className="backend-login" onSubmit={(event) => void saveBackendOrigin(event)}>
+          <label>Backend 地址<input type="url" value={backendOriginInput} onChange={(event) => setBackendOriginInput(event.target.value)} placeholder={BUILD_TIME_BACKEND_URL || "https://api.example.com"} /></label>
+          <button className="ghost-button" disabled={backendOriginBusy}>{backendOriginBusy ? "保存中…" : "保存并重载"}</button>
+        </form>
+        <form className="backend-login" onSubmit={(event) => void backendLogin(event)}>
+          <label>Backend 邮箱<input type="email" value={backendEmail} onChange={(event) => setBackendEmail(event.target.value)} required /></label>
+          <label>Backend 密码<input type="password" value={backendPassword} onChange={(event) => setBackendPassword(event.target.value)} required /></label>
+          <button className="primary-button" disabled={backendBusy}>{backendBusy ? "登录中…" : "登录 Backend"}</button>
+        </form>
+      </>}
       {backendState.message && <p className="error-text" role="alert">{backendState.message}</p>}
       {notice && <div className="notice" role="status">{notice}</div>}
       {view === "today" && <div className="workspace-grid">

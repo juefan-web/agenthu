@@ -306,6 +306,20 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   时间经 aware ISO 回传后 `toLocaleString` 在任意 OS 时区正确；重复采集不翻倍
   由服务端唯一约束保证（A 已测）；「来源可辨识」等 `ClientTask.source` 补充。
   desktop 76 测试（+7 映射用例）/lint/build 全绿。
+- **B-4 backendUrl 运行时配置已实现**（`feature/backend-request-proxy`，按 A 的
+  2026-09-29 拍板）：新增 `backend_request` Tauri 命令——Rust 侧 allowlist 为
+  唯一事实源（build.rs 注入构建期 `VITE_BACKEND_URL` 常量 + `backend_origins`
+  SQLite 表持久化用户显式添加的源），转发谓词要求源在列且 https（loopback
+  例外允许 http）；请求头白名单（Authorization/Content-Type/Accept）、响应头
+  白名单（content-type/retry-after/location，**Set-Cookie 一律不透传**）、无
+  cookie、**不跟随重定向**（Authorization 永不跨源）。TS 侧 `backendFetch`
+  经 IPC 转发（浏览器开发模式沿用 fetch）；登录面板新增「Backend 地址」
+  设置（Rust 验证通过才持久化 localStorage 并重载；清空回落构建期默认）。
+  生产 CSP 收紧为 `'self' + ipc:`（Backend 源全部移出，guard 改为反向校验
+  「生产 connect-src 不得出现 Backend 源」，失败路径已实测）；devCsp 保留
+  浏览器开发源。Rust 4 个新单测（谓词/入列校验/头过滤/持久化并入），
+  desktop 69 测试/build 全绿。构建包人工验收项：换源免重建实测 + DevTools
+  无新增 CSP violation。
 
 ## Next（2026-09-29 更新：PR #1 已转正合并进 main `c2b58c8`，A/B 均已回归）
 

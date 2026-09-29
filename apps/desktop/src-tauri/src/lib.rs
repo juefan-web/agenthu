@@ -1,3 +1,4 @@
+mod backend_proxy;
 mod campus;
 mod vault;
 
@@ -35,6 +36,9 @@ impl QueueStore {
             CREATE TABLE IF NOT EXISTS focus_draft (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 payload TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS backend_origins (
+                origin TEXT PRIMARY KEY NOT NULL
             );",
         ).map_err(|error| error.to_string())?;
         Ok(Self { connection })
@@ -117,6 +121,32 @@ impl QueueStore {
             self.connection.execute("DELETE FROM focus_draft WHERE id = 1", [])
                 .map_err(|error| error.to_string())?;
         }
+        Ok(())
+    }
+
+    /// B-4：用户显式添加的 Backend 源（allowlist 的持久化部分；构建期默认由
+    /// build.rs 常量提供，不落库）。
+    fn backend_origins(&self) -> Result<Vec<String>, String> {
+        let mut statement = self.connection.prepare("SELECT origin FROM backend_origins ORDER BY origin")
+            .map_err(|error| error.to_string())?;
+        let rows = statement.query_map([], |row| row.get::<_, String>(0))
+            .map_err(|error| error.to_string())?;
+        Ok(rows.filter_map(|row| row.ok()).collect())
+    }
+
+    fn backend_origin_add(&mut self, origin: &str) -> Result<(), String> {
+        self.connection.execute(
+            "INSERT OR IGNORE INTO backend_origins (origin) VALUES (?1)",
+            params![origin],
+        ).map_err(|error| error.to_string())?;
+        Ok(())
+    }
+
+    fn backend_origin_remove(&mut self, origin: &str) -> Result<(), String> {
+        self.connection.execute(
+            "DELETE FROM backend_origins WHERE origin = ?1",
+            params![origin],
+        ).map_err(|error| error.to_string())?;
         Ok(())
     }
 }
@@ -234,6 +264,7 @@ fn backend_token_clear(app: tauri::AppHandle) -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .manage(CampusState::default())
+        .manage(backend_proxy::BackendProxy::default())
         .setup(|app| {
             // 懒初始化只解析路径；真正的连接与 PRAGMA 在首个队列命令时建立。
             let dir = app.path().app_data_dir().map_err(|error| error.to_string())?;
@@ -246,6 +277,8 @@ pub fn run() {
             queue_add, queue_list, queue_remove, queue_get_cursor, queue_set_cursor,
             focus_get_draft, focus_set_draft,
             backend_token_get, backend_token_set, backend_token_clear,
+            backend_proxy::backend_request, backend_proxy::backend_origin_list,
+            backend_proxy::backend_origin_add, backend_proxy::backend_origin_remove,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Agenthu");
