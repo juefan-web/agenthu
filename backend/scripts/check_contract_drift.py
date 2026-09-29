@@ -269,9 +269,55 @@ def _ztype(expr: str, consts: dict[str, str], *, depth: int = 0) -> ZType:
     )
 
 
+def _strip_line_comments(source: str) -> str:
+    """Blank out ``//`` line comments while preserving string literals.
+
+    ``_split_top_level`` splits on commas, so a comment containing a comma
+    inside a schema body used to be misparsed as a field name — the reason
+    comments were conventionally kept above schema definitions. Stripping
+    comments first (string-aware, so a ``//`` inside a quoted literal such as
+    a URL string survives) makes that convention a style choice instead of a
+    load-bearing rule (PR #10 review follow-up).
+
+    Known limitation: a regex literal containing consecutive slashes (a
+    ``https`` URL pattern, for instance) would still be misread as a
+    comment — distinguishing regex literals from division requires a full
+    JS lexer. Neither contract source uses that shape (``sensitiveKey``'s
+    alternation has no ``//`` run), and the frozen snapshot is reviewed on
+    every change, so the limitation is accepted rather than half-parsed.
+    """
+
+    chars: list[str] = []
+    in_string: str | None = None
+    index = 0
+    while index < len(source):
+        char = source[index]
+        if in_string is not None:
+            chars.append(char)
+            if char == "\\" and index + 1 < len(source):
+                chars.append(source[index + 1])
+                index += 2
+                continue
+            if char == in_string:
+                in_string = None
+        elif char in "\"'`":
+            in_string = char
+            chars.append(char)
+        elif char == "/" and index + 1 < len(source) and source[index + 1] == "/":
+            while index < len(source) and source[index] != "\n":
+                index += 1
+            chars.append(" ")
+            continue
+        else:
+            chars.append(char)
+        index += 1
+    return "".join(chars)
+
+
 def parse_zod_schemas(source: str) -> dict[str, dict[str, ZType]]:
     """Parse ``export const XSchema = z.object({...})`` declarations."""
 
+    source = _strip_line_comments(source)
     consts = _collect_consts(source)
     schemas: dict[str, dict[str, ZType]] = {}
     for match in _SCHEMA_RE.finditer(source):

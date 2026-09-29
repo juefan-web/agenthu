@@ -214,3 +214,32 @@ def test_write_refreshes_artifact(tmp_path: Path) -> None:
     assert not report.has_drift
     assert target.is_file()
     assert json.loads(target.read_text(encoding="utf-8")) == app.openapi()
+
+
+def test_zod_parser_ignores_comments_inside_schema_bodies() -> None:
+    """Comments with commas inside object bodies must not become fields.
+
+    Regression for the convention formerly documented in PR #10's review:
+    an inline comment containing a comma used to be comma-split into a bogus
+    field name. The parser now strips line comments (string-aware) first, so
+    comment placement is a style choice, not a load-bearing rule.
+    """
+
+    source = """
+export const ProbeSchema = z.object({
+  id: z.string(),
+  // inline comment, with commas, and more: // nested-looking
+  url: z.string().default("https://example.com/a//b"),
+  count: z.number().int(),
+});
+const sensitiveKey = /^(?:password|cookie|token)$/i;
+"""
+    schemas = parse_zod_schemas(source)
+    assert set(schemas["ProbeSchema"]) == {"id", "url", "count"}
+    assert schemas["ProbeSchema"]["url"].types == frozenset({"string"})
+    # The "//" inside the quoted default survived stripping (string-aware),
+    # and the sensitiveKey regex literal (no "//" run) is untouched.
+    from backend.scripts.check_contract_drift import _collect_consts, _strip_line_comments
+
+    consts = _collect_consts(_strip_line_comments(source))
+    assert consts["sensitiveKey"].startswith("/")
