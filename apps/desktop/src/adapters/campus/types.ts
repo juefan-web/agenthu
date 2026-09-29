@@ -35,6 +35,9 @@ export interface CampusCourse {
 export interface CampusAssignment {
   id: string;
   courseId: string;
+  /** 课程名（L3）：learn 作业从课程列表映射（vendor Homework 不携带），
+   *  外部源（DSA 等）透传 vendor 的 courseName；未知为 undefined */
+  courseName?: string;
   title: string;
   content: string;
   publishTime: string;

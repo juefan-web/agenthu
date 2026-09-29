@@ -84,7 +84,9 @@ export class BackendClient {
   }
 
   async getTasks(): Promise<Task[]> {
-    const data = await this.requestJson("/v1/tasks");
+    // limit=200 是 D-029 落地前的短期过渡（默认 50 会截断真实作业量）；
+    // keyset 分页上线后改为 next_cursor 循环拉全量
+    const data = await this.requestJson("/v1/tasks?limit=200");
     return TaskSchema.array().parse(data);
   }
 

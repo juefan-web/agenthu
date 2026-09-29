@@ -94,6 +94,8 @@ export function mapAssignmentEvent(assignment: CampusAssignment, fetchedAt: stri
     {
       assignment_id: assignment.id,
       course_id: assignment.courseId,
+      // L3：供后端派生标题「{course_name}：{title}」；缺失为 null（旧载荷兼容分支）
+      course_name: assignment.courseName ?? null,
       title: assignment.title,
       content: assignment.content,
       publish_time: asCampusIso(assignment.publishTime),

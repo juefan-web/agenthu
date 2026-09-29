@@ -27,6 +27,8 @@ describe("BackendClient authentication", () => {
     const init = fetcher.mock.calls[0][1] as RequestInit;
     expect(init.credentials).toBe("omit");
     expect(new Headers(init.headers).get("Authorization")).toBe("Bearer jwt");
+    // D-029 过渡：显式拉满 limit，避免默认 50 截断真实作业量
+    expect(String(fetcher.mock.calls[0][0])).toContain("/v1/tasks?limit=200");
   });
 
   it("reports and clears an expired session on 401", async () => {
