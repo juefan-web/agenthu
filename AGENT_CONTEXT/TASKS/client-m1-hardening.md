@@ -47,3 +47,29 @@
 - Android 凭据存储/通知/同步恢复（P1 后段）。
 - OneTHU BSL 1.1、LearnX 及依赖许可逐文件分发审查——**发布前必须完成**，
   发布节点前一个里程碑启动。
+
+## B-4 安全模型拍板（开发者 A，2026-09-29）
+
+**结论：同意 B 的倾向——Tauri 原生受控转发，否决 WebView 直连任意 Backend 源。**
+理由与边界条件：
+
+1. **为什么不是 WebView 直连**：Tauri v2 的 CSP 是构建期静态注入，`connect-src`
+   无法安全表达"运行时用户配置的任意源"；放宽到 `https:` 就是 D-系列审阅前
+   的旧状态（WebView JS 可触达任意域，校园边界靠自觉）。这与 B-4 的前提矛盾。
+2. **原生受控转发的形态**：新增（或扩展 `campus_request` 同款）受控命令如
+   `backend_request`——URL 校验复用 `allowed_campus_url` 的同构谓词（独立
+   Backend 域 allowlist，默认仅含 `VITE_BACKEND_URL` 构建期值 + 用户在设置里
+   显式添加的源）；请求头白名单（Authorization/Content-Type，沿用现有
+   request_headers 的敏感头剥离语义）；响应不透传 Set-Cookie（Backend 会话是
+   Bearer JWT，本来也不依赖 cookie）。WebView 侧 `connect-src` 维持现状
+   （`'self'` + `ipc:`），Backend 流量全部走 IPC，CSP guard 继续正向校验。
+3. **CSP guard 联动**：允许的 Backend 源列表由 Rust 侧持有（运行时唯一事实
+   源）；guard 只继续保证 WebView 侧没有绕过 IPC 的直连出口。用户添加新源时
+   无需改 tauri.conf.json，转发动词内校验即可。
+4. **本地明文例外**：`http://127.0.0.1:*`/`http://localhost:*` 允许进入
+   allowlist（开发/自托管场景）；非本地源要求 https。
+5. **验收**：换 Backend 环境无需重新构建；DevTools 无新增 CSP violation；
+   allowlist 外的源在 Rust 层拒绝且行为可测（Rust 单测覆盖谓词）。
+
+B 可以按此开工；实现如发现第 2 点的命令粒度有更优解（如复用 campus_request
+加第二 allowlist 参数），在 PR 里说明即可，无需再等一轮拍板。
