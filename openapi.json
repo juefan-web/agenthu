@@ -5937,6 +5937,11 @@
             ],
             "title": "Goal Id"
           },
+          "source": {
+            "type": "string",
+            "title": "Source",
+            "default": "manual"
+          },
           "actual_duration_minutes": {
             "anyOf": [
               {
