@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CORRUPT_QUEUE_BACKUP_KEY, LocalEventQueue } from "./queue";
+import { CORRUPT_QUEUE_BACKUP_KEY, createEventQueue, LocalEventQueue } from "./queue";
 
 const event = {
   client_event_id: "event-1",
@@ -46,5 +46,25 @@ describe("LocalEventQueue recovery", () => {
 
     expect(await queue.list()).toEqual([]);
     expect(data.getItem(CORRUPT_QUEUE_BACKUP_KEY)).toContain("queue payload is not an object");
+  });
+});
+
+describe("queue boundary safety (B-3.2)", () => {
+  it("rejects sensitive fields on the direct enqueue path without a configured Backend", async () => {
+    // jsdom 环境走 LocalEventQueue 分支，Safety 包装在 createEventQueue 边界
+    const queue = createEventQueue();
+    const unsafe = {
+      ...event,
+      data: { ...event.data, password: "should-never-sync" },
+    };
+    await expect(queue.add([unsafe as never])).rejects.toThrow("敏感字段不得进入 Event");
+    // 抛出前不落任何事件
+    expect(await queue.list()).toEqual([]);
+  });
+
+  it("accepts normal events through the same boundary", async () => {
+    const queue = createEventQueue();
+    await queue.add([event as never]);
+    expect(await queue.list()).toHaveLength(1);
   });
 });
