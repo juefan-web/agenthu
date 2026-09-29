@@ -320,6 +320,13 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   浏览器开发源。Rust 4 个新单测（谓词/入列校验/头过滤/持久化并入），
   desktop 69 测试/build 全绿。构建包人工验收项：换源免重建实测 + DevTools
   无新增 CSP violation。
+- **B 对 PR #3（D-026/D-027）的审查已完成：Approve**，记录在
+  `HANDOFF/2026-09-29-b-review-pr3-currentstate.md`（含两条非阻塞备注：
+  课表最新修订解析失败时会回退旧修订的边缘场景、派生 label 的 recompute
+  时效已知悉）。round-5 呈现层对齐同步落地于
+  `feature/current-state-presentation`：今日计划标题新增 `available_minutes`
+  徽标（`formatAvailableMinutes`，`XhYm` 格式，null 不渲染），「空闲」派生
+  默认与 None 占位文案确认维持。desktop 56 测试/build 全绿。
 
 ## Next（2026-09-29 更新：PR #1 已转正合并进 main `c2b58c8`，A/B 均已回归）
 

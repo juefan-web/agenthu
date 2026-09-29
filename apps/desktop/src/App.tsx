@@ -11,6 +11,7 @@ import { createBackendSession } from "./backend/session";
 import { backendFetch } from "./backend/transport";
 import { createFocusDraftStore } from "./focus/draft";
 import { useSessionStore } from "./state/session";
+import { formatAvailableMinutes } from "./state/format";
 import { useBackendSessionStore } from "./state/backendSession";
 import { EventSyncCoordinator } from "./sync/coordinator";
 import { createEventQueue } from "./sync/queue";
@@ -268,7 +269,7 @@ export default function App() {
           <div className="section-actions"><button className="primary-button" disabled={session.status !== "ready" || collect.isPending} onClick={() => collect.mutate()}>{collect.isPending ? `${collectionStage === "saving" ? "正在保存" : collectionStage === "syncing" ? "正在同步" : "正在采集"}（${collectionElapsed}s）…` : "采集并同步"}</button></div>
         </section>
         <section className="workspace-section">
-          <div className="section-heading"><h2>今日计划</h2><span className="section-meta">{currentState.data?.context ?? "当前上下文未设置"}</span></div>
+          <div className="section-heading"><h2>今日计划</h2><div className="section-heading-meta"><span className="section-meta">{currentState.data?.context ?? "当前上下文未设置"}</span>{currentState.data?.available_minutes != null && <span className="section-meta minutes-badge">剩余可用 {formatAvailableMinutes(currentState.data.available_minutes)}</span>}</div></div>
           <PlanView plan={plan.data} loading={plan.isPending && !!backend} error={plan.error} onChanged={() => void queryClient.invalidateQueries({ queryKey: ["plan"] })} />
         </section>
         <section className="workspace-section wide"><div className="section-heading"><h2>待办任务</h2><span className="section-meta">{taskList.length} 项</span></div><TaskList tasks={taskList} loading={tasks.isPending && !!backend} error={tasks.error ?? currentState.error} /></section>
