@@ -146,6 +146,25 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   - 验证快照：ruff/pyright 干净；全量 pytest **201 passed**，1 skipped；
     OpenAPI 刷新；drift check（`--require-zod` 双 Zod 源）无漂移；迁移
     up→down→up + `alembic check` 通过。
+- **Round-5 遗留跟进（2026-09-29，`feature/round5-derivation-followups`，
+  见 D-028 附录 / D-027 附录 / D-029）**：
+  - **L5（已实现）**：哨兵作业（deadline 距事件时刻 >2 年，如上游 2099 占位）
+    Event 层照常入库、派生层排除（回归测试含 submitted 哨兵与正常对照）。
+  - **L3（已实现 + B 协作项）**：派生标题规则 = `{course_name}：{title}`
+    （course_name 存在时，缺省纯 title，回退链 course/upstream），`course_name`
+    进 `extra`。根因：vendor 标题是裸作业名、`CampusAssignment` 未携带 vendor
+    已有的 `courseName`——**B 侧协作**：适配层补 `courseName` 并在事件
+    `data.course_name` 透传（落地前按缺省分支渲染，向后兼容）。
+  - **L4（确认记录）**：当日含项草稿/已确认计划不自动吸收新任务是 D-019/
+    D-023 的预期（保护确认语义），显式路径 = cancel → 重排；M2 议「建议重排」
+    提示（Level 1）。
+  - **L2（D-029 冻结）**：tasks/events 统一 keyset 分页契约（opaque cursor +
+    `Page.next_cursor`、复合排序键、cursor 路径不返回 total、offset 兼容期后
+    弃用），实现排 M2；短期过渡 = B 侧请求 `limit=200`。
+  - **L1（D-027 附录裁定）**：breakdown 经 `recent_state` 入契约（B 侧 Zod 一行
+    `z.record(z.unknown())`），不建独立诊断端点；M2 实现。
+  - 验证快照：派生回归 8 个全过；全量 **202 passed**（哨兵/标题用例并入）；
+    ruff/pyright 干净。
 
 ## 开发者 B：客户端（`feature/client-tauri-campus-adapter` @ `a2693e9`）
 

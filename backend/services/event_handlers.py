@@ -16,7 +16,7 @@ import fnmatch
 import logging
 import uuid
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -150,6 +150,10 @@ def handle_task_event(session: Session, event: Event) -> None:
 # --------------------------------------------------------------------------- #
 
 _ASSIGNMENT_PREFIX = "study.assignment."
+# Upstream marks deadline-less assignments with a year-2099 placeholder; real
+# coursework never spans more than a semester, so anything further out than
+# this is a sentinel and is not derived (D-028 round-5 appendix, L5).
+_SENTINEL_HORIZON = timedelta(days=365 * 2)
 
 
 def _parse_tzaware(value: object) -> object:
@@ -169,6 +173,25 @@ def _parse_tzaware(value: object) -> object:
     return parsed if parsed.tzinfo is not None else None
 
 
+def _derived_assignment_title(data: dict[str, Any], upstream: str) -> str:
+    """``{course_name}：{title}`` when the course is known, else the raw title.
+
+    Vendor assignment titles are bare homework names ("Homework 2"); without
+    the course prefix, same-named assignments across courses are
+    indistinguishable in the task list (round-5 L3). The client adapter
+    forwards ``course_name`` when available; older payloads keep the plain
+    title.
+    """
+
+    title = data.get("title") if isinstance(data.get("title"), str) else ""
+    course = data.get("course_name") if isinstance(data.get("course_name"), str) else ""
+    if not title:
+        title = course or upstream
+    elif course:
+        title = f"{course}：{title}"
+    return title[:300]
+
+
 @register("study.assignment.discovered")
 @register("study.assignment.updated")
 def handle_assignment_event(session: Session, event: Event) -> None:
@@ -178,6 +201,9 @@ def handle_assignment_event(session: Session, event: Event) -> None:
     dedupe key embeds semantic_version, so a re-collected assignment with
     changed content lands as a *new* event that updates the existing task
     instead of creating a duplicate. COMPLETED is sticky (C2 semantics).
+    Sentinel assignments (deadline beyond the 2-year horizon, e.g. the
+    upstream year-2099 placeholder) are ingested as events but not derived
+    (round-5 L5).
     """
 
     upstream = event.provenance.get("upstream_id") if isinstance(event.provenance, dict) else None
@@ -185,6 +211,11 @@ def handle_assignment_event(session: Session, event: Event) -> None:
         return
 
     data = event.data if isinstance(event.data, dict) else {}
+    deadline = _parse_tzaware(data.get("deadline"))
+    if isinstance(deadline, datetime) and deadline - event.timestamp > _SENTINEL_HORIZON:
+        # Sentinel: keep the event (facts layer), skip the derived task.
+        return
+
     task = session.scalar(
         select(Task).where(
             Task.user_id == event.user_id,
@@ -192,7 +223,6 @@ def handle_assignment_event(session: Session, event: Event) -> None:
             Task.source_upstream_id == upstream,
         )
     )
-    created = task is None
     if task is None:
         task = Task(
             user_id=event.user_id,
@@ -202,18 +232,15 @@ def handle_assignment_event(session: Session, event: Event) -> None:
         )
         session.add(task)
 
-    if isinstance(data.get("title"), str) and data["title"]:
-        task.title = data["title"][:300]
-    elif created:
-        task.title = (upstream)[:300]
+    task.title = _derived_assignment_title(data, upstream)
     if isinstance(data.get("content"), str) and data["content"]:
         task.description = data["content"]
-    deadline = _parse_tzaware(data.get("deadline"))
     if deadline is not None:
         task.deadline = deadline  # type: ignore[assignment]
     task.extra = {
         "assignment_id": data.get("assignment_id"),
         "course_id": data.get("course_id"),
+        "course_name": data.get("course_name"),
         "url": data.get("url"),
         "deadline_raw": data.get("deadline_raw"),
         "late_deadline": data.get("late_deadline"),

@@ -340,3 +340,53 @@ def test_real_payload_replay_fixture(db_session, client, auth_headers) -> None:
     assert first.deadline.hour == 15  # +08:00 normalized to UTC storage
     assert first.extra["deadline_raw"] == "2026-10-10 23:59"
     assert first.extra["last_derived_event_id"]
+
+
+def test_sentinel_deadline_not_derived_but_event_ingested(db_session, client, auth_headers) -> None:
+    """Year-2099 placeholder assignments stay as events, never tasks (L5)."""
+
+    user_id = _me_id(client, auth_headers)
+    sentinel = _assignment_event(
+        assignment_id="hw-sentinel",
+        deadline="2099-09-30T23:59:59+08:00",
+        submitted=True,
+    )
+    _event, was_created = create_event(
+        db_session, user_id=user_id, payload=sentinel, client_event_id="ce-sentinel"
+    )
+    assert was_created  # the fact layer keeps the event
+    assert _derived_count(db_session, user_id) == 0
+
+    # Control: a real deadline within the horizon derives normally.
+    real = _assignment_event(
+        assignment_id="hw-real",
+        deadline=(datetime.now(UTC) + timedelta(days=30)).isoformat(),
+    )
+    create_event(db_session, user_id=user_id, payload=real, client_event_id="ce-real")
+    assert _derived_count(db_session, user_id) == 1
+    task = db_session.scalar(select(Task).where(Task.user_id == user_id))
+    assert task is not None
+    assert task.source_upstream_id == "assignment:hw-real"
+
+
+def test_course_name_prefixes_derived_title(db_session, client, auth_headers) -> None:
+    """Bare homework names become distinguishable with the course prefix (L3)."""
+
+    user_id = _me_id(client, auth_headers)
+    event = _assignment_event(assignment_id="hw-titled")
+    event.data["course_name"] = "数据结构"
+    create_event(db_session, user_id=user_id, payload=event, client_event_id="ce-titled")
+
+    task = db_session.scalar(select(Task).where(Task.user_id == user_id))
+    assert task is not None
+    assert task.title == "数据结构：作业一"
+    assert task.extra["course_name"] == "数据结构"
+
+    # Older payloads without course_name keep the plain title.
+    plain = _assignment_event(assignment_id="hw-plain")
+    create_event(db_session, user_id=user_id, payload=plain, client_event_id="ce-plain")
+    plain_task = db_session.scalar(
+        select(Task).where(Task.source_upstream_id == "assignment:hw-plain")
+    )
+    assert plain_task is not None
+    assert plain_task.title == "作业一"

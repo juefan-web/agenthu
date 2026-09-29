@@ -371,3 +371,59 @@ campus 作业事件（`study.assignment.discovered|updated`）需要服务端派
 - 迁移 up/down 完整（加列 + 唯一约束；down 删列）。fixtures、OpenAPI、drift
   基线随实现同步。回滚 = revert 迁移与 handler，Event 流不受影响（派生是
   投影，事实层不回滚）。
+
+## D-028 附录 — Round-5 遗留裁定（L3/L4/L5，2026-09-29）
+
+**L5 哨兵作业**：上游对无截止作业用 `2099-09-30 23:59` 占位。裁定：**Event 层如实
+入库（事实层不改写上游数据），派生层排除**——`data.deadline` 距事件时刻超过
+**2 年**视为哨兵，不派生 Task（真实课程作业不超过一学期，2 年是保守界）。
+无论 submitted/graded 状态，哨兵一律不派生。回归测试覆盖哨兵入库无任务 +
+正常 deadline 对照派生。
+
+**L3 派生标题**：vendor 作业标题是裸作业名（"Homework 2"），跨课程同名不可
+辨识（round-5 抽样 3 中 1 个可对上的根因；`CampusAssignment` 适配层类型当前
+未携带 vendor 已有的 `courseName`）。裁定：派生标题规则 = **`{course_name}：
+{title}`**（course_name 存在时），缺省纯 title，title 缺省回退 course_name 或
+upstream id。`course_name` 同时进 `task.extra` 溯源。**B 侧协作项**：适配层
+`CampusAssignment` 补 `courseName` 并在事件 `data.course_name` 透传（vendor
+`dsa.ts` 载荷已含该字段）；透传落地前旧载荷按缺省分支渲染，向后兼容。
+
+**L4 当日含项草稿不吸收新任务**：确认为 **D-019/D-023/D-028 的预期行为**。
+`latest_open_plan` 复用「items 非空」的当日草稿/已确认计划，是对用户已确认
+结构的保护——静默吸收新任务等于破坏确认语义（AGENTS.md 权限模型：计划变更
+应可解释、可拒绝）。新任务入计划的显式路径 = cancel → 重排（round-5 B7 实测
+路径，998ms 确认）。M2 planner 议题：新任务到达时的「建议重排」提示（Level 1
+建议，不自动执行）。
+
+## D-027 附录 — breakdown 出口裁定（Round-5 L1，2026-09-29）
+
+`available_minutes_breakdown` 当前仅在 `recent_state`（backend-only dict）内，
+客户端契约不可见，B6 分量合理性无法外部观测。裁定：**入契约而非独立诊断
+端点**——B 侧 `CurrentStateSchema` 增加可选 `recent_state:
+z.record(z.unknown())`（一行，不锁定内部结构，breakdown 演进无契约摩擦）。
+理由：① 可解释性数据与投影同生命周期，属投影本体（AGENTS.md「重要建议应
+给出原因」）；② 不新增端点即不膨胀 API 面与权限模型；③ record(unknown) 的
+弱类型恰当地表达"内部诊断、结构可演进"。M2 实现（B 侧 Zod 一行 + drift
+基线同步）；**不建独立诊断端点**。
+
+## D-029 — 列表 keyset 分页契约（Round-5 L2，冻结设计、M2 实现）
+
+Status: accepted（2026-09-29 冻结设计；实现排 M2）。Context：`/v1/tasks` 默认
+`limit=50`（上限 200）且客户端无分页，79 条任务 UI 只见 50 条；events 列表同
+为 offset 分页且事件量随采集增长（A-3 backlog 同族问题）。短期过渡：客户端
+请求 `limit=200`（B 侧，一行）。
+
+Decision：tasks 与 events 列表统一 keyset 分页契约：
+- 查询参数：可选 `cursor`（不传 = 首页，语义同今天的无参请求）；`limit` 语义
+  不变。**offset 参数保留但标记 deprecated**（兼容期一个 M 阶段后移除）。
+- 响应：现有 `Page` 契约增加可选 `next_cursor: string | null`——**null 表示
+  没有更多页**。注意与 D-022 的区别：D-022 弃用的是 `events/batch` 摄取响应
+  里的游标回显（客户端自有状态），本条是列表查询的**服务端游标**，语义不同、
+  不冲突；命名评审时确认 Zod 侧同步。
+- cursor 编码：opaque base64（含排序键），tasks 以 `(created_at, id)` 为键、
+  events 以 `(timestamp, id)` 为键（timestamp 非唯一，必须复合）；键序与现有
+  排序一致，保证 cursor 翻页与直接查询同一顺序。
+- 客户端职责：循环 `while next_cursor != null` 拉全量或按需增量；不估算
+  total（`total` 字段保留但 keyset 路径下可为 null——冻结时定为"cursor 请求
+  时不返回 total"以避免每页 COUNT）。
+- 契约变更走冻结流程：OpenAPI + 双侧 Zod + drift 基线 + fixtures 一次同步。
