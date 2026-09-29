@@ -12,6 +12,7 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    UniqueConstraint,
     Uuid,
     text,
 )
@@ -45,6 +46,11 @@ task_events = Table(
 
 class Task(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "tasks"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "source", "source_upstream_id", name="uq_tasks_user_source_upstream"
+        ),
+    )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
@@ -55,6 +61,10 @@ class Task(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     title: Mapped[str] = mapped_column(String(300), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     source: Mapped[str] = mapped_column(String(50), nullable=False, default="manual")
+    # Upstream identity for derived tasks (D-028): the event's
+    # provenance.upstream_id. Upsert key together with (user_id, source);
+    # manual tasks keep NULL (multiple NULLs pass the unique constraint).
+    source_upstream_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[TaskStatus] = mapped_column(
         sa_enum(TaskStatus, "task_status"), nullable=False, default=TaskStatus.TODO, index=True
     )

@@ -129,6 +129,23 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   - 验证快照：ruff/pyright 干净；全量 pytest **195 passed**，1 skipped；
     drift check（`--require-zod` 双 Zod 源）无漂移。
   - A-3 backlog（keyset 分页、Redis 限流、Memory 预研）按窗口排期，未动。
+- **M1-1 Backend 实现（2026-09-29，`feature/assignment-event-derivation`）**：
+  - 阶段 0 契约冻结落地为 **D-028**（派生规则、Task upsert 键与 Event dedupe
+    键的关系、deadline 时区 a 案、不派生清单、回滚语义）。
+  - 实现：`tasks.source_upstream_id` 列 + `(user_id, source, source_upstream_id)`
+    唯一约束（迁移 `b1d4a7c90e12` up/down 已验证）；`study.assignment.
+    discovered|updated` handler 运行在 C1 savepoint 内（幂等 upsert、
+    submitted/graded → COMPLETED 粘滞、`*_raw` 溯源进 `extra`）；deadline
+    naive 拒收作用在两个边界（events 单发 422 + batch `rejected` 不入库；
+    `TaskCreate/Update` deadline 422——C4 对 deadline 的定向收紧，其他
+    datetime 维持 naive→UTC）。`source_upstream_id` 不进 `TaskCreate`，
+    `TaskRead` 暴露（客户端 Zod strip，契约零变化）。
+  - 测试：6 个派生回归（创建/更新不重复/deadline 刷新、submitted 粘滞、
+    naive 双边界拒收、并发同键恰好一个 Task、真实载荷回放含 `*_raw`）+
+    main-chain 测试同步派生任务的新语义。
+  - 验证快照：ruff/pyright 干净；全量 pytest **201 passed**，1 skipped；
+    OpenAPI 刷新；drift check（`--require-zod` 双 Zod 源）无漂移；迁移
+    up→down→up + `alembic check` 通过。
 
 ## 开发者 B：客户端（`feature/client-tauri-campus-adapter` @ `a2693e9`）
 

@@ -8,7 +8,7 @@ from fastapi import APIRouter, Query, Response, status
 from sqlalchemy import select
 
 from backend.api.deps import CurrentUser, DBSession, PaginationDep
-from backend.core.errors import NotFoundError
+from backend.core.errors import NotFoundError, ValidationError
 from backend.models.event import Event
 from backend.schemas.client_contract import (
     EventBatchRejection,
@@ -17,7 +17,12 @@ from backend.schemas.client_contract import (
 )
 from backend.schemas.common import Page, normalize_naive_utc
 from backend.schemas.event import EventCreate, EventRead
-from backend.services.events import create_event, ingest_event_batch, list_events
+from backend.services.events import (
+    assignment_payload_rejection,
+    create_event,
+    ingest_event_batch,
+    list_events,
+)
 
 router = APIRouter(prefix="/events", tags=["events"])
 
@@ -29,6 +34,11 @@ def create(
     user: CurrentUser,
     db: DBSession,
 ) -> Event:
+    # Same boundary rule as the batch path (D-028 §3a): naive assignment
+    # deadlines are refused here instead of becoming un-derivable rows.
+    rejection = assignment_payload_rejection(payload.type, payload.data)
+    if rejection is not None:
+        raise ValidationError(rejection)
     event, created = create_event(db, user_id=user.id, payload=payload)
     response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
     response.headers["X-Deduplicated"] = "false" if created else "true"

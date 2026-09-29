@@ -13,13 +13,14 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from sqlalchemy import select
 
 from tests.fixtures.payloads import assignment_envelope, task_payload
 
 pytestmark = pytest.mark.integration
 
 
-def test_event_batch_to_focus_main_chain(client, auth_headers) -> None:
+def test_event_batch_to_focus_main_chain(client, auth_headers, db_session) -> None:
     upstream_id = f"hw-{uuid.uuid4().hex[:10]}"
     client_event_id = f"client-{upstream_id}"
     batch_request = {
@@ -56,14 +57,33 @@ def test_event_batch_to_focus_main_chain(client, auth_headers) -> None:
     assert task["estimate_minutes"] == 60
 
     # 3. Current state surfaces the pending task with the client shape.
+    # The ingested assignment event now also derives its own task (M1-1,
+    # D-028); filter to the manually created one for the shape comparison and
+    # assert the derived task exists alongside it.
     state = client.get("/v1/current-state", headers=auth_headers).json()
-    assert state["tasks"] == [task]
+    assert [t for t in state["tasks"] if t["id"] == task["id"]] == [task]
+    derived = [t for t in state["tasks"] if t["id"] != task["id"]]
+    assert len(derived) == 1 and derived[0]["title"] == "Linear Algebra HW2"
+    # The derived task carries its upstream identity in the persistence layer
+    # (stripped from the client contract shape above).
+    from backend.models.task import Task as TaskModel
+
+    derived_row = db_session.scalar(
+        select(TaskModel).where(TaskModel.id == uuid.UUID(derived[0]["id"]))
+    )
+    assert derived_row is not None
+    assert derived_row.source_upstream_id == upstream_id
+    assert derived_row.source == "onethu"
 
     # 4. Today's plan proposes the task and needs confirmation.
     plan = client.get("/v1/plans/today", headers=auth_headers).json()
     assert plan["status"] == "draft"
     assert plan["confirmation_required"] is True
-    assert [item["task_id"] for item in plan["items"]] == [task["id"]]
+    # Both the manual task and the derived assignment task are schedulable.
+    assert {item["task_id"] for item in plan["items"]} == {
+        task["id"],
+        derived[0]["id"],
+    }
 
     # 5. Confirmation makes it the current plan (current_plan = confirmed only).
     confirmed = client.post(f"/v1/plans/{plan['id']}/confirm", headers=auth_headers).json()
@@ -92,7 +112,8 @@ def test_event_batch_to_focus_main_chain(client, auth_headers) -> None:
     task_after = client.get(f"/v1/tasks/{task['id']}", headers=auth_headers).json()
     assert task_after["status"] == "done"
     state_after = client.get("/v1/current-state", headers=auth_headers).json()
-    assert state_after["tasks"] == []
+    # Only the derived (still pending) assignment task remains.
+    assert [t["id"] for t in state_after["tasks"]] == [derived[0]["id"]]
 
 
 def test_main_chain_requires_authentication(client, expired_token_headers) -> None:

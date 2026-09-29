@@ -303,3 +303,65 @@ derived 不落列：override 的持久化位置不变，derived 是纯函数输�
 在课 > 专注中 > 进行中任务 > 即将上课（≤30min）> 空闲（有待办）> None，
 经内部 `context_label` 传递，客户端契约不变。完整口径与 B 对齐清单见
 `TASKS/m1-2-currentstate-projection.md`；口径调整必须走 DECISIONS 变更。
+
+## D-028 — M1-1 契约冻结：assignment 事件派生 Task
+
+Status: accepted（2026-09-29，M1-1 阶段 0，A 产出、B 评审）。Context：D10 裁定后，
+campus 作业事件（`study.assignment.discovered|updated`）需要服务端派生 Task，
+驱动 Study + Time 主线进入真实数据。本条冻结四组语义，双方据此并行。
+
+### 1. 派生规则
+
+- `study.assignment.discovered` → 创建 Task（title、deadline、late_deadline、
+  description 按 event `data` 映射；`estimated_duration_minutes` 暂不猜，留空由
+  用户/后续 planner 补）。
+- `study.assignment.updated` → 幂等更新：deadline/标题变更刷新既有 Task；
+  `data.status` 为 submitted/graded → Task `COMPLETED` + `completed_at` =
+  event `occurred_at`。已 COMPLETED 的任务不回退（与 focus 完成语义一致，C2）。
+- 派生在 `process_event` 的 SAVEPOINT 内运行（C1 语义：handler 失败不丢原始
+  Event，失败审计为 `event.handler_failed`）。
+
+### 2. Task 上游身份与幂等键
+
+- `tasks` 新列 `source_upstream_id TEXT NULL` + 唯一约束
+  `(user_id, source, source_upstream_id)`（`uq_tasks_user_source_upstream`）；
+  手动任务该列为 NULL（PostgreSQL 唯一约束天然放行多 NULL）。
+- Task upsert 键 = `(user_id, source, source_upstream_id)`；其中 `source` 取
+  event `source` 字段（如 `campus`），`source_upstream_id` 取 event
+  `provenance.upstream_id`。**与 Event dedupe 键的关系**：dedupe 键含
+  `semantic_version`（同 upstream 新版本 = 新 Event 行），Task 键不含——
+  semantic_version 变化触发的是**更新既有 Task**而非新建，这是幂等的来源。
+- API 面：`source_upstream_id` 不进 `TaskCreate`（派生是服务端行为，客户端不
+  造上游身份）；`TaskRead` 暴露该列（Backend-only addition，客户端 Zod
+  strip，契约无破坏）。Task 标题冲突时后端不加后缀——最新事件赢（见上）。
+
+### 3. deadline 时区规则（冻结 a 案）
+
+- **客户端必须发 `+08:00`（或任意显式偏移）tz-aware ISO**；vendor 原始串保留
+  在 `deadline_raw` / `late_deadline_raw` 溯源。
+- **Backend 对 naive deadline 拒收**，作用点在两个边界：
+  a) `POST /v1/events` 与 `/v1/events/batch` 中 `study.assignment.*` 事件的
+     `data.deadline` / `data.late_deadline` 若为无偏移 ISO → 该 envelope 进
+     `rejected`（reason 注明 naive deadline），**不入库**——naive 串入库后没有
+     正确解释途径，只会成为永远无法正确派生的死数据；留在客户端队列等 B
+     修复后重发，行为立即可测。
+  b) `TaskCreate` / `TaskUpdate` 的 `deadline` naive → 422。这是对 C4「全部
+     datetime naive→UTC」的**定向收紧**：deadline 是排序核心字段，静默 +8h
+     偏移比拒收更危险。C4 的 naive→UTC 对 `GoalCreate.target_date`、
+     `PlanItemCreate.planned_*`、`PlanGenerateRequest.start_at` **维持不变**
+     （非本轮范围，待真实数据验证后再评估是否同样收紧）。
+- 已存的 naive 历史数据：M0 阶段无 campus 事件入库（D10 事实），无历史清洗
+  需求。
+
+### 4. 不派生清单（本轮冻结）
+
+`study.course.discovered`、`time.schedule.entry`、
+`time.academic_calendar.updated` 不派生 Task：课表已进入 CurrentState 投影
+（D-027），课程主数据与日历的领域化（Goal/Course 实体）属 M1 后段。新增派生
+类型必须先补 DECISIONS。
+
+### 兼容与回滚
+
+- 迁移 up/down 完整（加列 + 唯一约束；down 删列）。fixtures、OpenAPI、drift
+  基线随实现同步。回滚 = revert 迁移与 handler，Event 流不受影响（派生是
+  投影，事实层不回滚）。

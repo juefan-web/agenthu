@@ -72,13 +72,20 @@ def test_naive_datetimes_are_normalized_to_utc() -> None:
 
     from datetime import UTC, datetime
 
+    from pydantic import ValidationError
+
     from backend.schemas.goal import GoalCreate
     from backend.schemas.plan import PlanGenerateRequest, PlanItemCreate
     from backend.schemas.task import TaskCreate
 
     naive = datetime(2030, 1, 1, 9, 0, 0)
+    aware = datetime(2030, 1, 1, 9, 0, 0, tzinfo=UTC)
+
+    # D-028: TaskCreate/TaskUpdate deadlines reject naive values outright.
+    with pytest.raises(ValidationError):
+        TaskCreate(title="T", deadline=naive)
     cases = [
-        TaskCreate(title="T", deadline=naive),
+        TaskCreate(title="T", deadline=aware),
         GoalCreate(title="G", target_date=naive),
         PlanItemCreate(title="P", planned_start=naive, planned_end=naive),
         PlanGenerateRequest(start_at=naive),
