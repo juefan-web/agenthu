@@ -313,13 +313,32 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
 
 ## Blockers / decisions needed
 
+- **Round-5 E 组 spec 修订已落地**（`feature/e2e-round5-revision`，round5-followups
+  B-1）：E2 前置态改为「退出包进程 → 清 `campus.hold` → 带 CDP 重启」
+  （`appProcess.ts`，需 `AGENTHU_APP_EXE`；先杀进程再删文件，等旧实例 CDP
+  端口释放后才拉新实例）；2FA 方式从 combobox 实际可选项动态选择（不再
+  硬编码 totp；按钮文案随方式适配）；测试超时放宽到 10 分钟（原 config
+  180s 与等待人工验证码 300s 的既有矛盾顺手修复）。E3「派生任务出现且
+  截止时间无偏移」**断言已按 A 的 request-changes 修订**（`3a9f2a5`）：
+  偏移正则（环境耦合——docker UTC 库返回 Z 形态必误报）改为**时刻配对**
+  ——作业事件 `data.deadline`（JSONB 原样载荷，+08:00 恒定）建时刻集合，
+  派生任务 `due_at` 时刻须命中（8h 偏移必不命中、任何 tz 序列化不误报）；
+  事件侧 +08:00 形态断言保留（客户端序列化不变量）；tasks/events 直连
+  均 `limit=200`。UI 断言同前（徽标、标题非 UUID、页面引擎渲染比对）。
+  e2e 目录补真类型检查（`@types/node` + `tests/e2e/tsconfig.json` 接入
+  lint——此前仅 `--list` 转译口径）。首跑待与测试人约时间（E1 无凭据 +
+  E2/E3 真实链，动态方式后预计验证码 1 个）；首跑通过后 M2 起验收以 e2e
+  为常规工具。**等 A re-review**。
 - **PR #13（round5 followups）B 侧 review 已完成：Approve 并合并 `bd834f1`**，
   三条备注记录在 PR review（① D-029 冻结设计遗漏——`/v1/tasks` 今天是裸数组
   响应非 Page，加服务端游标是破坏性形状变更，实现前需补形状迁移策略与
   cursor/offset 优先级；② 哨兵 early-return 会跳过后续更新事件，已派生任务
   以旧 deadline 残留的理论边角；③ 标题改为无条件赋值，空 title 事件会回退
-  标题——客户端恒发非空 title，理论边角）。
-- **B 协作项已落地**（`feature/course-name-passthrough`，PR #13 的配套）：
+  标题——客户端恒发非空 title，理论边角）。备注 1 已由 A 补为 **D-029 附录**
+  （PR #15，B approve 并入 `434dafd`；B 补记了 `X-Next-Cursor` 会被 B-4 代理
+  响应头白名单剥掉的落地依赖——M2 实现需加白名单一行，否则打包客户端静默
+  停在第一页）。
+- **B 协作项已落地并合并**（PR #14 `6ad5814`，PR #13 的配套）：
   适配层 `CampusAssignment` 补 `courseName`——vendor `Homework.courseName` 仅
   外部源携带，learn 作业从 `getCourseList` 建 `courseId→name` 映射
   （`getAssignments` 与 `collectOnce` 两个采集路径都接）；`events.ts`
