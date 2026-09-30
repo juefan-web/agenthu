@@ -465,3 +465,37 @@ B 的 review 抓到冻结设计的真实遗漏：`GET /v1/tasks` 是**裸数组*
   裁定：接受——客户端映射恒发非空 title（`String(...)`），空 title 事件本身
   即上游异常，回退标题（course/upstream）比残留旧标题更可追溯；不加 if 守卫
   换取派生路径的赋值一致性。
+
+## D-030 — 路线图 M2-M8 采纳（插入独立 Agent 阶段；M2 硬出口 = 确定性闭环）
+
+Status: **proposed**（2026-09-30 协调人依大纲 §5.1 提交；**待 A/B 双人确认后
+转 accepted**——路线采纳属共同决策，AGENTS §5 协作规则）。
+
+输入：`HANDOFF/2026-09-30-roadmap-outline.md`（基于
+`2026-09-30-implementation-evaluation.md` 与 GOALS/AGENTS/TECH_STACK）。
+
+Decision（两处结构变化 + 一组原则）：
+
+1. 在 Memory/Grounding（M3）与 Alpha 加固之间**插入独立 Agent 阶段（新 M4）**：
+   Provider 适配、显式 Agent 循环、agent_runs 审计、pending_actions 确认、
+   Chat 与主动 Agent；确定性 planner 保留为工具与降级路径。原 M4（加固）
+   顺延为 M5，后续 M6 多端/Inbox、M7 Exercise/Life、M8 Review（与 AGENTS
+   P1-P3 优先级一一对应）。
+2. **M2 出口 = 确定性闭环**（AGENTS §8 全句在无 LLM 前提下过 e2e 新场景
+   E4），作为硬门槛；LLM/Agent 推迟至 M3/M4（消除评估指出的静默漂移）。
+3. 总体原则：确定性优先且规则版永为降级路径；一切建议带结构化 basis；
+   写入分级（模型产出默认 UNREVIEWED）；契约先行；出口场景一律 e2e 化。
+
+修订要求（协调人审阅附加，采纳时一并生效）：
+
+- M3 Memory schema 设计**必须同步产出删除/依赖图设计**（评估 §3.7 的告诫
+  不能在阶段顺延中丢失）：evidence 与 subject_key 血缘要使 M5 的级联删除
+  是机械遍历而非考古。
+- 采纳后按 AGENTS §4 更新依赖方：`TECH_STACK_AND_WORKPLAN.md` 的 M0-M4
+  里程碑节需注明被本路线取代（先记录决策、再改依赖文档）。
+- `TASKS/m2-breakdown.md` 以大纲 M2 节为准对齐（分页归 A；补 CurrentState
+  goals 摘要与摆状态），避免双源漂移。
+- 大纲 §5.4（CURRENT_STATE 头刷新）已随 `9b4b1d2` 完成。
+
+Rollback：纯文档决策，回滚 = 废弃本条并恢复 TECH_STACK 原里程碑节；各阶段
+实现不受已合并历史影响。
