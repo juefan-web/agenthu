@@ -1,6 +1,6 @@
 # CURRENT_STATE
 
-Updated: 2026-09-28 · Milestone: **M0 (engineering baseline + frozen contracts)**
+Updated: 2026-09-30 · Milestone: **M2（让闭环"学会"：planner v2 + 重规划建议 + 学习记忆）**。M0/M1 已合并（PR #1-#15，round-5 数据闭环验收通过 + e2e 首跑解锁）；对概念基线的完整差距评估见 `HANDOFF/2026-09-30-implementation-evaluation.md`（§8 七子句：4 达成 + 1 部分 + 2 缺失），M2 出口判据即该报告末节的场景化 §8 全句。
 · 集成分支 `integration/study-time-m0` 已合并 Backend（`61fcf82`）与客户端
 （`a2693e9`），冲突已解决，双侧 CI 与联合 drift check 全绿（draft PR #1）。
 · **Merge-1 Windows 构建包人工测试结论：不建议转正合并**（见
@@ -414,7 +414,10 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   50 个派生任务（徽标/标题/分钟级截止一致）→ 幂等不翻倍 → D-027 投影首次
   实测（「在课」context + 2h15m 徽标）→ 换源免重构建（8001 独立库证伪式
   验证）→ 断网队列重放不翻倍 → 全程 0 CSP violation。**Study + Time 真实
-  数据闭环（AGENTS.md §8 首阶段验收主链）达成。**
+  数据闭环达成**（勘误 2026-09-30：此前写「§8 首阶段验收主链达成」系
+  过度声明——§8 共七个子句，round-5 实际达成 4 项 + 计划授权半项；
+  「可解释计划」「偏差重规划」「学习记忆」三项目前缺失，见
+  `HANDOFF/2026-09-30-implementation-evaluation.md` 的逐句记分卡）。
 - **E 组（e2e 工具化）✅ 已完成（2026-09-30 首跑全绿）**：spec 三处修订
   （PR #12，含 E3 绝对时刻配对）+ 首跑 **3 passed (2.2m)**、人工验证码 1 个
   （报告：`HANDOFF/2026-09-30-e2e-first-run-report.md`）。**M2 起验收工具化
