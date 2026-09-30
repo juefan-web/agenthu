@@ -117,9 +117,13 @@ test.describe("构建包主链冒烟", () => {
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
     );
 
-    // 数据级（round5 B4 判据）：全部派生任务 due_at 带北京 +08:00——历史
-    // 8 小时偏移 bug 的形态是 naive 串被按 UTC 解释（Z / +00:00），在此断言
-    // 下必现。经 Node 直连 Backend 读取（页面 fetch 受 CSP 限制不经 IPC）。
+    // 数据级（round5 B4 判据，时区无关形态——A review 修订）：due_at 的序列化
+    // 偏移随 db 会话时区走（docker UTC 库返回 Z 形态，绝对时刻正确），断言
+    // 偏移串会环境耦合地误报。改为绝对时刻配对：事件 data 是客户端载荷
+    // 原样入库的 JSONB（+08:00 串恒定），派生任务的 due_at 时刻必须命中
+    // 某条作业事件 data.deadline 的时刻——历史 8 小时偏移 bug（naive 被按
+    // UTC 解释）下任务时刻 = 事件时刻 ±8h，必不命中。经 Node 直连读取
+    // （页面 fetch 受 CSP 限制不经 IPC）。
     const loginResponse = await fetch(`${backendUrl}/v1/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -127,17 +131,39 @@ test.describe("构建包主链冒烟", () => {
     });
     if (!loginResponse.ok) throw new Error(`Backend 登录失败：HTTP ${loginResponse.status}`);
     const token = (await loginResponse.json()) as { access_token: string };
-    const tasksResponse = await fetch(`${backendUrl}/v1/tasks`, {
-      headers: { Authorization: `Bearer ${token.access_token}` },
-    });
+    const authHeaders = { Authorization: `Bearer ${token.access_token}` };
+    // limit=200：默认 50 会截断真实作业量（round5 L2 短期过渡口径）
+    const tasksResponse = await fetch(`${backendUrl}/v1/tasks?limit=200`, { headers: authHeaders });
     if (!tasksResponse.ok) throw new Error(`读取任务失败：HTTP ${tasksResponse.status}`);
     const tasks = (await tasksResponse.json()) as Array<{ title: string; due_at: string | null; source?: string }>;
     const derived = tasks.filter((task) => task.source === "onethu");
     expect(derived.length, "存在派生任务（source=onethu）").toBeGreaterThan(0);
     const withDeadline = derived.filter((task) => task.due_at !== null);
     expect(withDeadline.length, "存在带截止时间的派生任务").toBeGreaterThan(0);
+
+    type EventPage = { items: Array<{ data: Record<string, unknown> }> };
+    const eventDeadlines = new Set<number>();
+    for (const type of ["study.assignment.discovered", "study.assignment.updated"] as const) {
+      const eventsResponse = await fetch(`${backendUrl}/v1/events?type=${encodeURIComponent(type)}&limit=200`, {
+        headers: authHeaders,
+      });
+      if (!eventsResponse.ok) throw new Error(`读取 ${type} 事件失败：HTTP ${eventsResponse.status}`);
+      const page = (await eventsResponse.json()) as EventPage;
+      for (const event of page.items) {
+        const deadline = event.data["deadline"];
+        if (typeof deadline !== "string" || !deadline) continue;
+        // 事件侧是客户端原样载荷：+08:00 形态是本客户端的序列化不变量
+        expect(deadline, `事件 data.deadline=${deadline} 应为客户端 +08:00 形态`).toMatch(/\+08:00$/);
+        eventDeadlines.add(new Date(deadline).getTime());
+      }
+    }
+    expect(eventDeadlines.size, "存在带截止时间的作业事件").toBeGreaterThan(0);
     for (const task of withDeadline) {
-      expect(task.due_at, `任务「${task.title}」due_at=${task.due_at} 须带 +08:00`).toMatch(/\+08:00$/);
+      const instant = new Date(task.due_at!).getTime();
+      expect(
+        eventDeadlines.has(instant),
+        `任务「${task.title}」due_at=${task.due_at} 的时刻须与某条作业事件 data.deadline 一致（8 小时偏移判定）`,
+      ).toBe(true);
     }
 
     // UI 与数据一致：抽样标题的任务行，「截止 …」应等于页面引擎对同一
