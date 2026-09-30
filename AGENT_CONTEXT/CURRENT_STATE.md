@@ -415,11 +415,14 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   实测（「在课」context + 2h15m 徽标）→ 换源免重构建（8001 独立库证伪式
   验证）→ 断网队列重放不翻倍 → 全程 0 CSP violation。**Study + Time 真实
   数据闭环（AGENTS.md §8 首阶段验收主链）达成。**
-- **E 组（e2e 工具化）后置为跟进项**：spec 硬编码 totp 与账号实际方式不符
-  等三处需先修（计划审核已定位）；**M2 起的验收以 e2e 为常规工具，E 组
-  首跑是解锁条件**。B 负责 spec 修订与首跑。
-- 后续任务已分派：`TASKS/round5-followups.md`（B：E 组 + D1 快速失败；
-  A：L2 任务截断优先、L1/L3/L4/L5 决策项）。
+- **E 组（e2e 工具化）✅ 已完成（2026-09-30 首跑全绿）**：spec 三处修订
+  （PR #12，含 E3 绝对时刻配对）+ 首跑 **3 passed (2.2m)**、人工验证码 1 个
+  （报告：`HANDOFF/2026-09-30-e2e-first-run-report.md`）。**M2 起验收工具化
+  正式解锁**；下一轮验收口径：e2e（E1-E3）先跑，人工组聚焦故障注入与新增
+  功能。首跑暴露两处 spec 健壮性问题（E1 视图假设、E2 选择器歧义，代码已
+  核实 L44/L47）——B 小 PR 修订（不阻塞，复跑已全绿）。
+- 后续任务已分派：`TASKS/round5-followups.md`（B：E 组 ✅ + D1 快速失败；
+  A：L2 ✅ 短期 / D-029 正解、L1/L3/L4/L5 ✅ 已裁定或实现）。
 - M2 规划输入：D1 断网快速失败、L1 breakdown 出口、L4 草稿吸收语义、
   events/tasks keyset 分页、多 worker Redis 限流；M3 Memory/Grounding
   预研启动。
