@@ -158,13 +158,18 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   - **L4（确认记录）**：当日含项草稿/已确认计划不自动吸收新任务是 D-019/
     D-023 的预期（保护确认语义），显式路径 = cancel → 重排；M2 议「建议重排」
     提示（Level 1）。
-  - **L2（D-029 冻结）**：tasks/events 统一 keyset 分页契约（opaque cursor +
-    `Page.next_cursor`、复合排序键、cursor 路径不返回 total、offset 兼容期后
-    弃用），实现排 M2；短期过渡 = B 侧请求 `limit=200`。
+  - **L2（D-029 冻结）**：tasks/events 统一 keyset 分页契约（opaque cursor、
+    复合排序键、cursor 路径不返回 total、offset 兼容期后弃用），实现排 M2；
+    短期过渡 = B 侧请求 `limit=200`（PR #14 已落地）。**D-029 附录（09-30，
+    B 的 review 备注 1）补形状裁定**：tasks 裸数组保持、游标走 `X-Next-Cursor`
+    响应头；events 走 `Page.next_cursor` 字段；cursor+offset 同传 422。
   - **L1（D-027 附录裁定）**：breakdown 经 `recent_state` 入契约（B 侧 Zod 一行
     `z.record(z.unknown())`），不建独立诊断端点；M2 实现。
   - 验证快照：派生回归 8 个全过；全量 **202 passed**（哨兵/标题用例并入）；
     ruff/pyright 干净。
+  - **review 后续（09-30）**：PR #13 已合并（`bd834f1`）；B 的三条 review
+    备置已裁定——备注 1（tasks 裸数组形状遗漏）补为 **D-029 附录**；备注 2/3
+    （哨兵残留、空标题重置）保持现状并记录于 **D-028 附录补充**。
 
 ## 开发者 B：客户端（`feature/client-tauri-campus-adapter` @ `a2693e9`）
 

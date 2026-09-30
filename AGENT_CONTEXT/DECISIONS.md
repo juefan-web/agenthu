@@ -427,3 +427,34 @@ Decision：tasks 与 events 列表统一 keyset 分页契约：
   total（`total` 字段保留但 keyset 路径下可为 null——冻结时定为"cursor 请求
   时不返回 total"以避免每页 COUNT）。
 - 契约变更走冻结流程：OpenAPI + 双侧 Zod + drift 基线 + fixtures 一次同步。
+
+## D-029 附录 — tasks 裸数组形状的游标裁定（PR #13 review 备注 1，2026-09-30）
+
+B 的 review 抓到冻结设计的真实遗漏：`GET /v1/tasks` 是**裸数组**响应
+（`response_model=list[ClientTask]`，客户端 `TaskSchema.array()` 消费），
+「现有 Page 契约增加 `next_cursor`」只对 events（Page 包装）成立；tasks 若
+改为 Page 形状属破坏性响应变更，D-029 原文未覆盖。补充裁定：
+
+- **统一原则**：游标语义两端点同构（opaque cursor、`null`/缺省 = 末页、
+  复合排序键），**载体按端点现有形状最小侵入**：
+  - events（已 Page 包装）：`Page.next_cursor` 字段，同 D-029 原文。
+  - tasks（裸数组）：**保持裸数组**，游标经响应头 **`X-Next-Cursor`** 携带
+    （缺省头 = 末页）。Zod 契约不变（客户端照旧 parse 数组，分页消费者
+    读 header）；fetch 侧 `response.headers.get()` 可达。
+- **cursor/offset 优先级**：同一请求同时携带 `cursor` 与 `offset` → **422
+  拒绝**（不静默忽略，避免歧义）。
+- **不采用**：改 Page 形状（breaking，客户端与 e2e 同步改造成本不成比例）、
+  新增分页端点（膨胀 API 面）、Link header（多值解析复杂度不值）。
+- 实现仍排 M2；OpenAPI 需为两端的 cursor 参数与响应头出文档（header 在
+  OpenAPI 用 `Header` 参数对象描述）。
+
+## D-028 附录补充 — 哨兵残留与空标题边角的处置（PR #13 review 备注 2/3）
+
+- **备注 2（哨兵 early-return 跳过更新）**：已派生任务随后续事件把 deadline
+  改为哨兵值时，任务以旧 deadline 残留。裁定：**保持现状**——「哨兵不触碰
+  已派生任务」与「哨兵不派生」语义一致；真实场景（作业截止被改为 2099 占位）
+  出现时由 M2 议显式关闭（task cancel 语义），不在派生层隐式改写用户可见数据。
+- **备注 3（标题无条件赋值）**：空 title 事件会把已派生任务标题重置为回退值。
+  裁定：接受——客户端映射恒发非空 title（`String(...)`），空 title 事件本身
+  即上游异常，回退标题（course/upstream）比残留旧标题更可追溯；不加 if 守卫
+  换取派生路径的赋值一致性。
