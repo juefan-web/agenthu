@@ -50,6 +50,13 @@ describe("mapAssignmentEvent", () => {
     expect(event.occurred_at).toBe("2026-09-26T09:00+08:00");
   });
 
+  it("forwards course_name for derived-title synthesis and nulls it when unknown (L3)", () => {
+    const withCourse = mapAssignmentEvent({ ...assignment, courseName: "线性代数(1)" }, FETCHED_AT);
+    expect(withCourse.data.course_name).toBe("线性代数(1)");
+    const withoutCourse = mapAssignmentEvent(assignment, FETCHED_AT);
+    expect(withoutCourse.data.course_name).toBeNull();
+  });
+
   it("falls back to fetchedAt for occurred_at only when the vendor strings are unusable", () => {
     const event = mapAssignmentEvent(
       { ...assignment, publishTime: "", deadline: "" },

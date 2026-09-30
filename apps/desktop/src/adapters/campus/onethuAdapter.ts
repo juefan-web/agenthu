@@ -50,10 +50,12 @@ function mapCourse(course: CourseInfo): CampusCourse {
   };
 }
 
-function mapAssignment(assignment: Homework): CampusAssignment {
+function mapAssignment(assignment: Homework, courseName?: string): CampusAssignment {
   return {
     id: assignment.id,
     courseId: assignment.courseId,
+    // vendor 的 courseName 仅外部源（exthw）携带；learn 作业从课程列表映射
+    courseName: assignment.courseName ?? courseName,
     title: assignment.title,
     content: assignment.content,
     publishTime: assignment.publishTime,
@@ -157,7 +159,9 @@ export class OneThuCampusAdapter implements CampusAdapter {
     await requireLearnSession(session);
     const semester = await session.learn.getCurrentSemester();
     const courses = await session.learn.getCourseList(semester.id);
-    return (await session.learn.getAllHomework(courses.map((course) => course.id))).map(mapAssignment);
+    const courseNames = new Map(courses.map((course) => [course.id, course.name]));
+    return (await session.learn.getAllHomework(courses.map((course) => course.id)))
+      .map((homework) => mapAssignment(homework, courseNames.get(homework.courseId)));
     });
   }
 
@@ -210,7 +214,8 @@ export class OneThuCampusAdapter implements CampusAdapter {
         schedulePromise, learnPromise,
       ]);
       const courses = coursesRaw.map(mapCourse);
-      const assignments = assignmentsRaw.map(mapAssignment);
+      const courseNames = new Map(coursesRaw.map((course) => [course.id, course.name]));
+      const assignments = assignmentsRaw.map((homework) => mapAssignment(homework, courseNames.get(homework.courseId)));
       const calendar = mapCalendar(calendarRaw);
       const schedule = scheduleRaw.map(mapSchedule);
       return {

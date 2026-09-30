@@ -82,6 +82,40 @@ describe("OneThuCampusAdapter", () => {
     ]);
     expect(snapshot.events[1]?.provenance.upstream_id).toBe("assignment:hw-1");
     expect(snapshot.events[1]?.context.course_id).toBe("course-1");
+    // courseName 经课程列表映射进入事件 data（L3 派生标题的输入）
+    expect(snapshot.events[1]?.data.course_name).toBe("线性代数");
+  });
+
+  it("maps the course name from the course list onto assignments (L3)", async () => {
+    const session = fakeSession();
+    // course-2 不在课程列表里：映射缺失时应得到 null 而不是误配
+    session.learn.getAllHomework = async () => [
+      {
+        id: "hw-1",
+        courseId: "course-1",
+        title: "HW1",
+        content: "",
+        publishTime: "2026-09-26 09:00",
+        deadline: "2026-09-28 23:59",
+        submitted: false,
+        graded: false,
+        url: "https://learn.tsinghua.edu.cn/hw-1",
+      },
+      {
+        id: "hw-orphan",
+        courseId: "course-2",
+        title: "HW2",
+        content: "",
+        publishTime: "2026-09-26 09:00",
+        deadline: "2026-09-28 23:59",
+        submitted: false,
+        graded: false,
+        url: "https://learn.tsinghua.edu.cn/hw-orphan",
+      },
+    ];
+    const adapter = new OneThuCampusAdapter({ session, auth });
+    const assignments = await adapter.getAssignments();
+    expect(assignments.map((item) => item.courseName)).toEqual(["线性代数", undefined]);
   });
 
   it("shares one in-flight collection when called twice", async () => {

@@ -308,6 +308,19 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
 
 ## Blockers / decisions needed
 
+- **PR #13（round5 followups）B 侧 review 已完成：Approve 并合并 `bd834f1`**，
+  三条备注记录在 PR review（① D-029 冻结设计遗漏——`/v1/tasks` 今天是裸数组
+  响应非 Page，加服务端游标是破坏性形状变更，实现前需补形状迁移策略与
+  cursor/offset 优先级；② 哨兵 early-return 会跳过后续更新事件，已派生任务
+  以旧 deadline 残留的理论边角；③ 标题改为无条件赋值，空 title 事件会回退
+  标题——客户端恒发非空 title，理论边角）。
+- **B 协作项已落地**（`feature/course-name-passthrough`，PR #13 的配套）：
+  适配层 `CampusAssignment` 补 `courseName`——vendor `Homework.courseName` 仅
+  外部源携带，learn 作业从 `getCourseList` 建 `courseId→name` 映射
+  （`getAssignments` 与 `collectOnce` 两个采集路径都接）；`events.ts`
+  透传 `data.course_name`（缺失 null，后端按缺省分支兼容）；`getTasks`
+  短期 `limit=200`（D-029 过渡）。87 测试（+2）/lint/build 全绿。
+  **生效条件**：标题合成对既有任务在下次语义版本变化的采集时刷新。
 - OneTHU 源/API 不可达 → 服务端 adapter 保持显式 stub。
 - `minio/minio` 镜像上游 404 → 本地用 `s3mock` profile 验证。
 - 联合 CI 应跑真实的 `packages/contracts` Vitest/typecheck；Backend 分支只有冻结
