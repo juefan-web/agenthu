@@ -16,6 +16,12 @@
 4. 「LLM/Agent 推迟至 §3.1-3.4 闭环之后」补正式决策条目（评估指出的
    静默漂移）。
 
+> **产出（2026-09-30，A）**：第 1–3 项冻结为 **D-031**（另冻结估时来源
+> `estimate_source` 语义，E4 断言依赖）；第 4 项已由 **D-030 第 2 点**覆盖。
+> E4 场景草案与 **fixture 冷启动注意**（估时 learned 路径需预置带 actual
+> 的同课程完成任务）见 `TASKS/m2-phase0-contract-freeze.md`；Memory 迁移
+> 全案（含删除/依赖图）见 `TASKS/m3-memory-schema-migration.md`。
+
 ## 开发者 A（Backend / 数据平台）
 
 1. **Planner v2**（评估 §3.1）：槽位式（复用 `_today_schedule_entries` 单一

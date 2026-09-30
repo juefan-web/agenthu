@@ -429,5 +429,13 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
 - M2 规划输入：D1 断网快速失败、L1 breakdown 出口、L4 草稿吸收语义、
   events/tasks keyset 分页、多 worker Redis 限流；M3 Memory/Grounding
   预研启动。
+- **M2 阶段 0 契约冻结产出（2026-09-30，A @ `feature/m2-phase0-contract-freeze`，
+  待 B 评审）**：三项冻结为 **D-031**（PlanItem.basis 与 recent_state 入
+  契约、重排建议 Level 1 形状与「接受即取代」、Memory 五项扩展形状与
+  M2 六列/M3 embedding 切片、`estimate_source` 估时语义）；LLM 推迟已由
+  D-030 覆盖。随附 M3 两份先决文档草案：`TASKS/m3-memory-schema-migration.md`
+  （含 D-030 修订要求的删除/依赖图设计）、`TASKS/m3-course-materials-privacy.md`
+  （课程资料隐私/合规，待双人签署）；E4 场景草案与 fixture 冷启动注意见
+  `TASKS/m2-phase0-contract-freeze.md`。
 - 流程规则不变：分支从 main 拉出；跨边界先冻结；PR 互审（A=rotcar07，
   B=juefan-web）。

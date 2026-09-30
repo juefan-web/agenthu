@@ -1,0 +1,169 @@
+# M3 先决文档 1：Memory schema 迁移方案（含删除/依赖图设计）
+
+状态：草案（A 产出 2026-09-30，随 M2 阶段 0 一并送 B 评审；D-031 §3 已冻结
+目标形状与切片，本文档是它的完整迁移与语义展开）。**D-030 修订要求「M3
+Memory schema 设计必须同步产出删除/依赖图设计」——见 §6，这是本文档不可
+省略的部分。**
+
+## 目标 / 输入 / 输出 / 范围（AGENTS §5.2）
+
+- **目标**：`memories` 表从「可 CRUD 的存储」升级为「可聚合、可版本化、
+  可修正、可级联删除的分层记忆底座」，支撑 M2 估时学习/L1 episode 与 M3
+  检索/grounding。
+- **输入**：D-031 §3（形状冻结）、评估 §3.4（缺口五项与写入者三类）、
+  D-030 修订要求（删除/依赖图）、现状代码（`backend/models/memory.py`、
+  `backend/schemas/memory.py`、`backend/api/v1/memory.py`，backend-only API，
+  不在客户端 Zod 契约内）。
+- **输出**：两条 Alembic 迁移（M2 六列切片 + M3 embedding 切片）、模型/
+  Read/Create/Update schema 扩展、写入者与检索语义、删除依赖图。
+- **负责范围**（A）：迁移、模型、API 语义、聚合写入者框架。
+- **不负责范围**：M3 客户端 Memory 页（B）、pgvector 检索实现细节（M3
+  任务另立）、实际删除端点实现（M5，本图是其规格）。
+- **验收标准**：见 §9。
+
+## 1. 现状与缺口
+
+现有列：`level`(L0-L3)、`domain`、`content`、`source`(JSONB)、
+`source_event_ids`(JSONB)、`confidence`、`correction_status`
+(UNREVIEWED/CONFIRMED/CORRECTED/REJECTED)。CRUD 完整、D-014 跨用户校验在位，
+但**无任何写入者**（event_handlers 不写 Memory）。缺口即评估 §3.4 五项：
+无稳定聚合键（聚合只能追加重复行）、无版本链（CORRECTED 只能原地改写，
+审计史丢失）、无 kind（episode 与 fact 混在 level 里）、证据只能指事件
+（无法指文档锚点）、无向量列。
+
+## 2. 目标形状（D-031 §3 冻结，DDL 草案）
+
+```sql
+-- M2 切片迁移
+ALTER TABLE memories
+  ADD COLUMN subject_key TEXT NULL,
+  ADD COLUMN kind VARCHAR(32) NULL
+    CONSTRAINT ck_memories_kind CHECK (kind IN
+      ('episode','fact','habit','preference','model')),
+  ADD COLUMN evidence JSONB NOT NULL DEFAULT '[]'::jsonb,
+  ADD COLUMN supersedes_id UUID NULL REFERENCES memories(id)
+    ON DELETE SET NULL,
+  ADD COLUMN valid_from TIMESTAMPTZ NULL,
+  ADD COLUMN valid_to   TIMESTAMPTZ NULL;
+CREATE UNIQUE INDEX uq_memories_user_subject_live
+  ON memories(user_id, subject_key)
+  WHERE subject_key IS NOT NULL;          -- M3 降级为部分唯一（见 §3）
+CREATE INDEX ix_memories_supersedes ON memories(supersedes_id)
+  WHERE supersedes_id IS NOT NULL;        -- 反向链遍历（删除/依赖图用）
+
+-- M3 切片迁移（先换 compose 镜像，见 §7）
+CREATE EXTENSION IF NOT EXISTS vector;
+ALTER TABLE memories ADD COLUMN embedding vector(1536) NULL;
+DROP INDEX uq_memories_user_subject_live;  -- 降级为版本感知的部分唯一
+CREATE UNIQUE INDEX uq_memories_user_subject_live
+  ON memories(user_id, subject_key)
+  WHERE subject_key IS NOT NULL AND supersedes_id IS NULL;
+```
+
+`evidence` 元素形状：`{type:"event", id: "<event uuid>"}` 或
+`{type:"document", file_id, checksum_sha256, page, span_start, span_end}`。
+checksum 把引用钉在被读取的具体版本上（与 M3 引用元组同构）。
+
+## 3. 不变式与索引（两步策略）
+
+- **live 行不变式**：每 `(user_id, subject_key)` 至多一行
+  `supersedes_id IS NULL` 的行；非聚合行（L1 episode）`subject_key` 为 NULL，
+  不受约束。M2 用普通唯一索引表达（此时无版本链写入者，等价成立）；M3
+  迁移降级为部分唯一索引，语义不变、升级路径显式。
+- `supersedes_id ON DELETE SET NULL`：删除被依赖的旧行不炸链，链断由删除
+  图（§6）负责显式处理，不为完整性牺牲删除能力。
+- upsert 写入者（L2 聚合）以唯一索引为目标做 `INSERT ... ON CONFLICT` /
+  SELECT-FOR-UPDATE + supersede，避免并发双写。
+
+## 4. 写入者语义（三类）
+
+1. **L1 episode（确定性 handler，M2）**：`focus.completed` handler 直写。
+   `level=1, kind=episode, subject_key=NULL, confidence=1.0,
+   correction_status=CONFIRMED`（确定性事实，非模型产出）；content 为结构化
+   摘要（任务、课程、planned vs actual、时段、`deviation_note`）；evidence
+   = focus.completed 事件 + 任务派生事件 id（同时镜像进 `source_event_ids`）。
+   追加式，永不更新。
+2. **L2 fact（worker 聚合，M2 起逐步加指标）**：按 `subject_key` upsert。
+   变化时**新行 supersede 旧行**（旧行补 `valid_to`），不原地改写；
+   `confidence = min(0.9, n/10)`（n = 样本量），evidence = 支撑它的 L1
+   episode id 列表（血缘向上可追）。首批指标：`estimate:course:<course>`
+   （同课程实际分钟中位数）、`estimate_ratio:user`（校准比）。
+3. **LLM 总结（M4+，规则先冻结）**：只能 `UNREVIEWED` + `confidence ≤ 0.5`
+   进入；晋升 = 用户确认（CONFIRMED）或 ≥2 次独立确定性证据派生出同键
+   live 行。AGENTS §2.3 的「未验证总结不得成为永久事实」由本规则 +
+   检索下限（§5）双层落实。
+
+## 5. 修正 / 拒绝 / 检索
+
+- **CORRECTED**：用户修正 = 新行（`supersedes_id` → 旧行，旧行
+  `correction_status=CORRECTED` 不变、补 `valid_to`），内容与置信度以用户
+  为准（`confidence` 上调、可附 `source={user_corrected:true}`）。原地
+  改写禁止——审计史是「可修正」验收句的底座。
+- **REJECTED**：live 行保留 REJECTED 状态占位 `subject_key`；**聚合器写前
+  必查**：live 行为 REJECTED → 跳过本轮并写审计（无 audit 行情的用日志 +
+  `source` 标记过渡），否则下一轮聚合悄悄重建用户刚删的事实。用户「解除
+  拒绝」= 显式确认或等新确定性证据按晋升规则覆盖（走 supersede，不复活旧行）。
+- **检索**（planner 与未来 Agent 共用同一路径）：默认过滤
+  `correction_status = REJECTED` 且 `supersedes_id IS NULL`（只要 live 行），
+  置信度下限默认 0.3（调用方可提高不可绕过）；M3 增加向量召回（下限过滤
+  之后应用）。
+- API 面：`MemoryRead` 增列全量透出（backend-only，无客户端契约影响）；
+  `MemoryCreate/Update` 增列可选；`MemoryUpdate` 保留原地字段更新的能力
+  （手动条目），但服务端写入者一律走版本链。
+
+## 6. 删除 / 依赖图设计（D-030 修订要求）
+
+设计目标：**M5 的级联删除与导出是本图的机械执行，不是考古**。每条记忆的
+依赖与被依赖都必须可 SQL 枚举。
+
+```text
+Event（事实层，删除入口之一）
+  └─ task_events ──> Task（派生投影）
+                      └─ L1 episode：evidence 引用其 focus.completed / 派生事件
+                            └─ L2 fact：evidence 引用 L1 id 列表（聚合血缘）
+                                  └─（M3）文档锚点 evidence 引用 file_id
+                                        └─ material_chunks → embedding → 对象存储 blob
+```
+
+- **血缘枚举**（删除入口的逆向查询，全部走已建索引）：
+  - 删事件 E → 受影响记忆：`evidence @> [{type:'event', id:E}]` 或
+    `source_event_ids @> [E]`（JSONB GIN 索引随 M2 迁移补：
+    `CREATE INDEX ... USING gin (evidence jsonb_path_ops)`）。
+  - 删 L1 → 依赖它的 L2：`evidence @> [{type:'memory', id:<L1>}]`（L2 引用
+    L1 时 evidence 元素用 `{type:'memory', id}`——在 §2 元素形状中补入）。
+  - 删文档 → 引用锚点的记忆：`evidence @> [{type:'document', file_id:F}]`。
+- **处置规则**：证据被删的记忆**不自动删除**——标记失效（`valid_to` 置
+  删除时刻）并触发一次该 `subject_key` 的重聚合；重聚合样本不足 → 该 L2
+  live 行删除（留下被 supersede 的历史链）。L1 的证据全灭（事件与任务都
+  删除）→ L1 一并删除（episode 依附于经历本身）。
+- **删除入口**（M5 实现，Level 2 确认 + 审计不含内容）：单条记忆、按
+  `subject_key` 全链（含历史版本）、按事件/文档源批量、**导出我的数据**
+  沿同一张图正序遍历。
+- 本图同时是 M3 回答落库（引用元组）与 E4「删除后回答不再体现该记忆」
+  （大纲 M3 出口句）的规格基础。
+
+## 7. 迁移步骤与依赖
+
+1. **M2 切片**（随 D-031 落地）：§2 第一段迁移；模型/schema/API 增列；
+   GIN 索引；fixtures 更新；`alembic check` 无漂移。无基础设施变化。
+2. **M3 切片**：`docker-compose.yml` 与 CI 镜像 `postgres:16-alpine` →
+   `pgvector/pgvector:16`（先验证 CI 可拉取）；§2 第二段迁移（扩展 +
+   列 + 索引降级）；本地/CI 数据库重建演练一次。
+3. 每条迁移 up/down 完整并跑 up→down→up；down 删列/索引/扩展均可逆
+   （`DROP EXTENSION` 仅 M3 迁移 down 中执行）。
+
+## 8. 开放问题（M3 开工前裁定）
+
+- embedding 换供应商 = 维度变更迁移 + 全量重嵌（已接受，D-031 §3）；
+  pgvector 索引（HNSW/IVFFlat）**暂不建**，规模测量后再决策。
+- L0 不入库：Event 表即 L0，`memories` 不复制原始事件（避免双事实源）。
+- `domain` 与 `kind` 的关系：domain 保留为粗分类（study/time/...），
+  kind 是结构分类，正交使用；不合并。
+
+## 9. 验收标准
+
+- 迁移 up→down→up + `alembic check` 通过；compose 镜像替换后 CI 全绿。
+- 回归测试：upsert-supersede 链（旧行不被改写、live 唯一）；REJECTED 阻断
+  再派生；CORRECTED 版本链；检索过滤 + 置信度下限；evidence（event/
+  memory/document 三型）round-trip；血缘枚举三类查询各一条用例。
+- E4 依赖项（M2 切片）：L1 直写带证据、L2 估时两键可 upsert。

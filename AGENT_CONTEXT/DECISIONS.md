@@ -499,3 +499,121 @@ Decision（两处结构变化 + 一组原则）：
 
 Rollback：纯文档决策，回滚 = 废弃本条并恢复 TECH_STACK 原里程碑节；各阶段
 实现不受已合并历史影响。
+
+## D-031 — M2 阶段 0 契约冻结：PlanItem.basis、recent_state、重排建议形状与 Memory 扩展
+
+Status: **proposed**（2026-09-30，M2 阶段 0，A 产出、待 B 评审；评审通过后
+双方按 `TASKS/m2-breakdown.md` 并行，场景草案与 E4 fixture 冷启动注意见
+`TASKS/m2-phase0-contract-freeze.md`）。
+
+Context：`TASKS/m2-breakdown.md`「冻结先行」四项中的三项尚无裁定；第四项
+（LLM/Agent 推迟）**已由 D-030 第 2 点覆盖**，不再另立条目。本条冻结其余
+三组的语义，全部为增量 optional 字段或既有列的语义化，无破坏性响应变更。
+
+### 1. PlanItem.basis（optional、弱类型）与 recent_state 入契约
+
+- 客户端 Zod：`PlanItemSchema` 增加 `basis: z.record(z.unknown()).optional()`，
+  与 D-027 附录 `recent_state` 同一模式。**双层解释契约**：`reason: z.string()`
+  保留，是服务端由 basis 渲染出的中文人话（直接显示）；`basis` 是结构化依据
+  （「为什么」面板与审计用），形状可演进、不锁契约。M2 客户端优先渲染
+  `reason`，`basis` 做展开面板。
+- 服务端存储：`plan_items` 新列 `basis JSONB NULL`（**不**塞进 plan 级
+  `basis` 的嵌套 dict——按项检索干净，plan.basis 不随任务数膨胀，只保留
+  `strategy` 版本标签等全局项）。旧行 NULL → 客户端 `basis` 缺省。
+- planner v2 写入的 basis 字段集（目标形状，弱类型下实现期可增补）：
+  `deadline`、`slack_minutes`、`estimate_minutes`、`estimate_source`（§4）、
+  `goal_id`、`slot_reason`、`score`（分量 dict）、`at_risk`（负 slack 标记）。
+  plan 级 `basis.strategy = "slots_v2"` 作为版本标签，便于同一批 fixture 与
+  `deadline_then_priority` 对比评估。`reason` 渲染模板从 basis 生成；旧计划
+  无 basis 时回退现状（notes → strategy → replan_reason → "planned"）。
+- `recent_state`：语义已由 **D-027 附录**冻结（`z.record(z.unknown())`、不建
+  诊断端点），本条仅将其排入 M2 落地清单（B 侧 Zod 一行 + drift 基线同步），
+  使 M2 契约变更一次冻结、一次同步。
+
+### 2. 重排建议契约（Level 1 语义）
+
+- 载体 = 既有 `plans` 表与状态机，**零迁移**：`replaces_plan_id`/
+  `replan_reason` 列自 M0 已存在。一条重排建议 = `status=DRAFT` +
+  `replaces_plan_id` 指向被替代计划 + `replan_reason`（中文人话，引用触发
+  事实，如「《XX》作业 Focus 超时 42 分钟，今日后续安排需要重排」）。
+- **Level 1 语义**（对照 AGENTS §3 权限等级）：触发评估（读事件模式）为
+  Level 0 自动；建议创建（新 DRAFT）为 Level 1 自动且**绝不修改被替代
+  计划**（D-028 附录 L4 的确认保护不变）；接受 = 用户走既有
+  `POST /v1/plans/{id}/confirm`（复用 `plan.confirm` 权限审计路径）；忽略 =
+  既有 `POST /v1/plans/{id}/cancel`。**无新端点、无新权限动作**。
+- **接受即取代（本条唯一的新行为规则）**：confirm 一个 `replaces_plan_id`
+  非空的计划时，若被替代计划仍为 CONFIRMED，则**同事务**置 SUPERSEDED
+  （幂等：已非 CONFIRMED 则跳过）。现状缺口：confirm 不触碰旧计划，旧计划
+  残留 CONFIRMED，仅靠 `current_plan_for` 的 `confirmed_at desc` 排序压住，
+  语义上是脏状态。触发引擎**不得**调用 `replan()`——它会在用户接受前就把
+  原计划置 SUPERSEDED（违反 L4 保护）；引擎直接
+  `generate_plan(status=DRAFT, replaces_plan_id=…, replan_reason=…)`。
+- 发现路径：客户端经既有 `GET /v1/plans?status=DRAFT` 发现建议
+  （`replaces_plan_id` 非空者即建议；列表分页随 D-029 落地）。`GET
+  /v1/plans/today` 语义不变（D-019：confirmed 优先，建议草稿不劫持 today
+  视图；无 confirmed 时 `latest_open_plan` 自然取到最新草稿——对「新任务
+  到达」触发器而言，含新任务的建议草稿成为 today 提案正是 L4 的显式路径）。
+- 客户端 Zod：`PlanSchema` 增加 `replaces_plan_id: z.string().optional()`、
+  `replan_reason: z.string().nullable().optional()`。服务端 `ClientPlan` 补
+  `replaces_plan_id` 映射（该列目前根本没进 client view，顺带修复），
+  `replan_reason` 从 backend-only 转正。
+- 去抖（约 30s/用户）与限频（无 deadline at-risk 豁免时 ≤1 条/30 分钟）是
+  触发引擎的实现参数，进任务文件验收，不入契约。
+
+### 3. Memory 五项扩展（形状冻结；迁移、写入者语义与删除/依赖图详见 `TASKS/m3-memory-schema-migration.md`）
+
+目标形状（五项）：
+
+| 字段 | 类型/约束 | 语义 |
+| --- | --- | --- |
+| `subject_key` | `TEXT NULL` | 聚合 upsert 稳定键（如 `estimate:course:<course_key>`、`estimate_ratio:user`）；L1 episode 追加式，键为 NULL |
+| `valid_from` / `valid_to` | `TIMESTAMPTZ NULL` | 适用时间窗（信息性，由写入者设置；被取代时旧行补 `valid_to`） |
+| `supersedes_id` | `UUID NULL → memories(id)` | 版本链；**live 行 = `supersedes_id IS NULL`** |
+| `kind` | `VARCHAR(32)` + CHECK（episode/fact/habit/preference/model，D-001 非 native） | 记忆种类，与 `level` 正交 |
+| `evidence` | `JSONB` | 通用证据列表：`{type:"event", id}` 或 `{type:"document", file_id, checksum, page, span_start, span_end}` |
+| `embedding` | `vector(1536) NULL`（M3 落列） | pgvector；维度对应 text-embedding-3-small，换供应商 = 迁移 + 重嵌 |
+
+- **live 行不变式**：每 `(user_id, subject_key)` 至多一个 `supersedes_id IS
+  NULL` 的行。两步实现：M2 落普通唯一索引（`WHERE subject_key IS NOT
+  NULL`）；M3 版本化迁移将其降级为 `WHERE subject_key IS NOT NULL AND
+  supersedes_id IS NULL` 的部分唯一索引，不变式不变。
+- **REJECTED 阻断再派生**：聚合器写 `subject_key` 前必须查 live 行，遇
+  REJECTED 跳过并审计——否则下一轮聚合会悄悄重建用户刚删的事实。
+  **CORRECTED 生成新版本**（新行 `supersedes_id` 指旧行）而非原地改写，
+  审计史保留。检索层默认过滤 REJECTED 并设置信度下限（默认 0.3）。
+- `source_event_ids` **保留**：作为事件 id 证据的反范式子集（D-014 跨用户
+  校验与既有 API 面不动）；`evidence` 是唯一权威的通用证据表，写入者保持
+  两者一致（事件类证据同时进两处）。
+- **M2 切片**（六列，除 embedding 外全部）：`subject_key`/`kind`/`evidence`
+  /`supersedes_id`/`valid_from`/`valid_to`。理由：估时学习（L2 upsert）、
+  L1 episode 证据、以及 m2-breakdown A-4 已排入 M2 的「CORRECTED 走
+  supersedes」都需要版本链；本切片无新基础设施依赖。
+- **M3 切片**：`embedding` 列 + `CREATE EXTENSION vector` + compose 镜像
+  `postgres:16-alpine` → `pgvector/pgvector:16`（现镜像无 pgvector，把镜像
+  替换拖进 M2 不成比例）；「预留」以形状冻结与维度记录兑现。
+- 模型产出（未来）只能以 `UNREVIEWED` + 置信度封顶（≤0.5）进入；晋升 =
+  用户确认或 ≥2 次独立的确定性证据（AGENTS §2.3）。
+- 删除/依赖图设计随迁移文档产出（D-030 修订要求）。
+
+### 4. 估时来源语义（`estimate_source`，E4 断言依赖）
+
+- 取值枚举冻结：`default | user | learned:course | learned:ratio`。
+- 分组键 = `task.extra.course_name`（D-028 附录 L3 已写入；缺失组 = 手动/
+  无课程任务，只用 ratio/default 路径）。
+- 采用阶梯（自上而下，第一个可用者生效）：① 任务显式估时 → `user`；
+  ② 同课程已完成任务 n≥2 → 近 20 次实际分钟**中位数**（四舍五入取整）→
+  `learned:course`（中位数已是实际尺度，**不**再乘校准比——校准比只修正
+  基于计划的估计，叠乘会重复修正）；③ 用户级校准比 n≥3 →
+  `default(60) × ratio` → `learned:ratio`；④ 都不满足 → 60 → `default`。
+  校准比 = 各已完成任务 `actual ÷ planned`（planned 取执行该任务的计划项
+  `planned_minutes`，缺失按 60）的截尾均值（n≥4 时去最高最低 10%）。
+- 置信度 = `min(0.9, n/10)`；低于激活阈值时回退并在 `estimate_source`
+  **如实标注**（E4 对 learned 与 default 双向断言）。
+
+### 5. 契约同步清单（一次性）与兼容回滚
+
+- 同步：`openapi.json` 刷新、`packages/contracts` Zod（B）、
+  `tests/fixtures/client_contract.ts` 冻结快照（A 侧）、drift check 双源、
+  e2e fixtures（E4）。新增字段全部 optional，旧 Backend 载荷必须仍可解析。
+- 回滚：revert 两条迁移（`plan_items.basis`；memories 六列）与映射即可，
+  无数据依赖；Event 流不动（计划与 Memory 均为投影）。
