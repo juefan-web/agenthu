@@ -468,8 +468,8 @@ B 的 review 抓到冻结设计的真实遗漏：`GET /v1/tasks` 是**裸数组*
 
 ## D-030 — 路线图 M2-M8 采纳（插入独立 Agent 阶段；M2 硬出口 = 确定性闭环）
 
-Status: **proposed**（2026-09-30 协调人依大纲 §5.1 提交；**待 A/B 双人确认后
-转 accepted**——路线采纳属共同决策，AGENTS §5 协作规则）。
+Status: **accepted**（2026-09-30 协调人提交；A/B 对大纲及三处修订均无异议，
+当日确认采纳）。
 
 输入：`HANDOFF/2026-09-30-roadmap-outline.md`（基于
 `2026-09-30-implementation-evaluation.md` 与 GOALS/AGENTS/TECH_STACK）。

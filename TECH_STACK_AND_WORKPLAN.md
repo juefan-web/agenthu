@@ -122,6 +122,12 @@
 
 ## 5. 里程碑与交付顺序
 
+> **[2026-09-30，D-030]** 本节的 M0–M4 计划已被
+> `AGENT_CONTEXT/HANDOFF/2026-09-30-roadmap-outline.md` 的 M2–M8 路线取代：
+> M2 出口改为确定性闭环硬门槛；插入独立 Agent 阶段（新 M4）；原 M4（Alpha
+> 加固）顺延为 M5；新增 M6 多端/Inbox、M7 Exercise/Life、M8 Review。M0/M1
+> 条目保留作历史记录。分歧时以 D-030 与路线大纲为准。
+
 ### M0：工程基线（1 周）
 
 - A：Backend 骨架、数据库迁移、健康检查、CI、Docker Compose。
