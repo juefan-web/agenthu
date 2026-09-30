@@ -445,6 +445,13 @@ B 的 review 抓到冻结设计的真实遗漏：`GET /v1/tasks` 是**裸数组*
   拒绝**（不静默忽略，避免歧义）。
 - **不采用**：改 Page 形状（breaking，客户端与 e2e 同步改造成本不成比例）、
   新增分页端点（膨胀 API 面）、Link header（多值解析复杂度不值）。
+- **落地依赖（B 补记，09-30）**：Tauri 包内 Backend 流量经 B-4 的
+  `backend_request` IPC 代理，其响应头白名单（`backend_proxy.rs
+  response_headers`：content-type/retry-after/location）**会剥掉
+  `X-Next-Cursor`**——M2 实现时必须把该头加入白名单（TS 侧
+  `backendFetch` 的 headers 通道已就绪，仅 Rust 一行）；浏览器 dev 模式
+  直连 fetch 还需 Backend 侧 CORS `Exposed-Headers` 包含该头（次要路径，
+  打包客户端不受 CORS 约束）。
 - 实现仍排 M2；OpenAPI 需为两端的 cursor 参数与响应头出文档（header 在
   OpenAPI 用 `Header` 参数对象描述）。
 
