@@ -15,6 +15,13 @@ import { test, expect } from "@playwright/test";
  * 待办可入计划——补第四份同课程**待办**作业 D 承接 learned 估时（中位数仍
  * 由 A/B 的 60/90 决定）；② 「删除（DELETE）」按已落地语义改为 reject
  * （REJECTED live 占位，#23 端点无 delete）。
+ *
+ * ⚠ 与 D-031 §4 估时阶梯参数**硬耦合**，调参必须同步本 spec 的数字：
+ * seed actual 60/90 → 课程 X 中位数 **75**；课程先验阈值 **n≥2**（seed 恰
+ * 两份完成）；校准比阈值 **n≥3**（seed 两份 → ratio 不激活）；超时触发
+ * **≥1.3×**（planned 75 → actual 100）。断言 (d) 刻意取负向（对照课程无
+ * 课程历史即不取课程先验）——用户级 ratio 样本跨次运行累积，第 4 次运行
+ * 起 learned:ratio 可能激活，`== "default"` 只在首跑成立（A review 修订）。
  */
 
 const backendUrl = process.env.AGENTHU_TEST_BACKEND_URL;
@@ -179,14 +186,16 @@ test.describe("E4 — M2 出口判据", () => {
     for (const item of plan.items) {
       expect(item.reason, `reason 含内部标识：${item.reason}`).not.toMatch(/deadline_then_priority|slots_v2/);
     }
-    // (c)/(d) 估时来源双向断言：课程 X（60/90 → 中位 75）learned，对照 Y default
+    // (c)/(d) 估时来源双向断言：课程 X（60/90 → 中位 75）learned；对照 Y 无
+    // 课程历史——负向断言（用户级 ratio 跨次运行累积可能激活 learned:ratio，
+    // == "default" 只在首跑成立；对照本质 = 有课程历史 vs 无课程历史）
     const itemD = plan.items.find((item) => item.title.includes("作业D"));
     const itemC = plan.items.find((item) => item.title.includes("作业C"));
     expect(itemD, "课程 X 待办作业 D 应入计划").toBeTruthy();
     expect(itemC, "对照课程 Y 作业 C 应入计划").toBeTruthy();
     expect(String(itemD!.basis?.["estimate_source"])).toBe("learned:course");
     expect(itemD!.basis?.["estimate_minutes"]).toBe(75); // seed 数与 n≥2 阈值对齐（D-031 §4）
-    expect(String(itemC!.basis?.["estimate_source"])).toBe("default");
+    expect(String(itemC!.basis?.["estimate_source"]), "对照课程不得取课程先验").not.toBe("learned:course");
 
     // 确认计划 → 超时 Focus（planned 75 → actual 100 ≥ 1.3×）→ 触发建议
     await api.post(`/v1/plans/${plan.id}/confirm`);
