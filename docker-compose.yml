@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: agenthu
       POSTGRES_DB: agenthu
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
@@ -22,7 +22,7 @@ services:
     image: redis:7-alpine
     command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redisdata:/data
     healthcheck:
@@ -41,8 +41,8 @@ services:
       MINIO_ROOT_USER: agenthu
       MINIO_ROOT_PASSWORD: agenthu123
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     volumes:
       - miniodata:/data
     healthcheck:
@@ -99,7 +99,7 @@ services:
       /bin/sh -c "alembic upgrade head &&
       uvicorn backend.main:app --host 0.0.0.0 --port 8000"
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     healthcheck:
       # Readiness endpoint: db reachability + object storage, not just the
       # process being up.
@@ -118,7 +118,7 @@ services:
       /bin/sh -c "alembic upgrade head &&
       uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload"
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - ./backend:/app/backend
       - ./migrations:/app/migrations
