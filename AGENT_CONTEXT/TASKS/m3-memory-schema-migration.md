@@ -44,7 +44,10 @@ ALTER TABLE memories
   ADD COLUMN supersedes_id UUID NULL REFERENCES memories(id)
     ON DELETE SET NULL,
   ADD COLUMN valid_from TIMESTAMPTZ NULL,
-  ADD COLUMN valid_to   TIMESTAMPTZ NULL;
+  ADD COLUMN valid_to   TIMESTAMPTZ NULL,
+  -- 使用遥测（2026-10-01 Hermes 预研补强）：只记「进入决策上下文」
+  ADD COLUMN use_count INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN last_used_at TIMESTAMPTZ NULL;
 CREATE UNIQUE INDEX uq_memories_user_subject_live
   ON memories(user_id, subject_key)
   WHERE subject_key IS NOT NULL AND supersedes_id IS NULL;
@@ -74,6 +77,10 @@ checksum 把引用钉在被读取的具体版本上（与 M3 引用元组同构�
   图（§6）负责显式处理，不为完整性牺牲删除能力。
 - upsert 写入者（L2 聚合）以唯一索引为目标做 `INSERT ... ON CONFLICT` /
   SELECT-FOR-UPDATE + supersede，避免并发双写。
+- **REJECTED 阻断与写入串行化**（2026-10-01 预研补强）：部分唯一索引排除了
+  REJECTED 行，「阻断再派生」无法由索引表达。`upsert_memory` 必须在同一
+  事务内先按 `(user_id, subject_key)` `SELECT ... FOR UPDATE` 锁存续 live
+  行，再查阻断、再写——否则 upsert 与 reject 并发时会写出已拒主题的新行。
 
 ## 4. 写入者语义（三类）
 
@@ -88,6 +95,8 @@ checksum 把引用钉在被读取的具体版本上（与 M3 引用元组同构�
    `confidence = min(0.9, n/10)`（n = 样本量），evidence = 支撑它的 L1
    episode id 列表（血缘向上可追）。首批指标：`estimate:course:<course>`
    （同课程实际分钟中位数）、`estimate_ratio:user`（校准比）。
+   **subject_key 键型登记**（2026-10-01 预研补强）：初始键型即上述两种；
+   新增键型 = 契约变更，必须先在本文件登记再使用。
 3. **LLM 总结（M4+，规则先冻结）**：只能 `UNREVIEWED` + `confidence ≤ 0.5`
    进入；晋升 = 用户确认（CONFIRMED）或 ≥2 次独立确定性证据派生出同键
    live 行。AGENTS §2.3 的「未验证总结不得成为永久事实」由本规则 +
@@ -159,6 +168,25 @@ Event（事实层，删除入口之一）
 - L0 不入库：Event 表即 L0，`memories` 不复制原始事件（避免双事实源）。
 - `domain` 与 `kind` 的关系：domain 保留为粗分类（study/time/...），
   kind 是结构分类，正交使用；不合并。
+- **`correction_status` 语义端点化**（2026-10-01 预研提案，待 A/B 签认）：
+  预研建议 `MemoryCreate/Update` 移除 `correction_status` 直填，改为语义
+  端点 `POST /memory/{id}/confirm|correct|reject`——理由是直填可绕过版本
+  链（与 §5「服务端写入者一律走版本链」存在旁路面）。属破坏性契约变更，
+  签认时连同 D-032 一并裁定；在此之前按 §5 现行语义实现。
+
+## 8a. 实现易错点（第一刀必防，2026-10-01 预研补强）
+
+1. **kind 列三步顺序**：加列(NULL) → 按 level 回填（L1→episode、L2→fact、
+   L3→model，无推导歧义）→ 需要收紧时再补 CHECK 内含 NULL 的过渡后置
+   NOT NULL；颠倒顺序在存量行上失败。`alembic check` + up→down→up 必跑。
+2. **use_count 计数点**：只在「进入决策上下文」递增——写入点两个（M2
+   planner 检索 L2 估时行、M4 上下文装配）；不记「被候选检索」；批内去抖
+   重算不重复计数。权威账本是 M4 `agent_runs` 的 context snapshot（memory
+   id 列表），两列只是可展示缓存，别在检索预览路径上递增。
+3. **版本链删除**：`supersedes_id` 维持 §2 的 `ON DELETE SET NULL`（评审
+   已定，链断由删除图显式处理）；服务层规则「版本化行只删最新版或整链
+   保留」，防链中硬删断链丢审计史。（预研原案 RESTRICT 与评审版冲突，
+   以评审版为准，见 §3。）
 
 ## 9. 验收标准
 
@@ -167,3 +195,5 @@ Event（事实层，删除入口之一）
   再派生；CORRECTED 版本链；检索过滤 + 置信度下限；evidence（event/
   memory/document 三型）round-trip；血缘枚举三类查询各一条用例。
 - E4 依赖项（M2 切片）：L1 直写带证据、L2 估时两键可 upsert。
+- 遥测断言（2026-10-01 补强）：`use_count` 只在决策装配递增（批内多次重算
+  不重复计数）；Memory 页可展示「这条事实参与过 N 次计划决策」。

@@ -1,8 +1,5 @@
 import type { Task } from "@agenthu/contracts";
-
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
+import { errorText } from "../../lib/errors";
 
 /** 派生任务可辨识（M1-1 B 侧验收）：manual / 缺省不标，其余来源标徽标；
  * 未知来源（未来 connector）直接显示原始 source 字符串。 */

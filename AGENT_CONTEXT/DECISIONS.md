@@ -627,3 +627,25 @@ Context：`TASKS/m2-breakdown.md`「冻结先行」四项中的三项尚无裁�
   e2e fixtures（E4）。新增字段全部 optional，旧 Backend 载荷必须仍可解析。
 - 回滚：revert 两条迁移（`plan_items.basis`；memories 六列）与映射即可，
   无数据依赖；Event 流不动（计划与 Memory 均为投影）。
+
+## D-032 — 不基于 Hermes agent 构建，采设计不采底座
+
+Status: **draft**（2026-10-01 依预研报告提交；待 A/B 签认后转 accepted。
+
+Context：NousResearch/hermes-agent（MIT）作为成熟对话 Agent harness 被评估
+为潜在底座（预研全文与逐条技术事实见
+`HANDOFF/2026-10-01-hermes-memory-prestudy.md`）。其单机单 home、平面文件
+记忆、进程级权限与本项目冻结边界冲突。
+
+Decision：维持现架构；采纳其可迁移机制（冻结快照与前缀稳定排序、写入前
+注入扫描、使用遥测、provenance 即政策——前两项已分别补进 M4 设计输入与
+M3 先决文档）；Hermes 仅可作为 M4 后的可选 chat surface 实验（经 MCP 调
+`/v1` API，不承重、不进主线）。不采纳其底座的六条依据见预研 §5（单机
+硬边界/权限无法数据化/记忆模型冲突/交互面映射不了/凭据 custody 退化/
+fork 维护成本）。
+
+Revisit：产品转向单机优先（放弃多用户与多端同步），或 M4 provider/agent
+工作连续两个里程碑停滞。
+
+附注：预研报告原编 D-031 与 M2 契约冻结决策撞号，登记时改为 D-032；预研
+的文档增量已由协调人调和移植进 main 现行版（详见报告归档注记）。
