@@ -58,6 +58,9 @@ export const CurrentStateSchema = z.object({
   context: z.string().nullable(),
   tasks: z.array(TaskSchema),
   available_minutes: z.number().int().nonnegative().nullable(),
+  // D-027 附录 / D-031 §1：backend-only 投影诊断（breakdown 等）转正；
+  // 弱类型不锁内部结构，服务端永不发 null（None 归一为对象）。
+  recent_state: z.record(z.unknown()).optional(),
 });
 
 export const PlanItemSchema = z.object({
@@ -66,6 +69,9 @@ export const PlanItemSchema = z.object({
   start_at: IsoDateTime,
   end_at: IsoDateTime,
   reason: z.string(),
+  // D-031 §1：结构化依据（「为什么」面板/审计用），形状可演进不锁契约；
+  // reason 保留为人话渲染层。服务端 None 归一为空对象，线上永不见 null。
+  basis: z.record(z.unknown()).optional(),
 });
 
 export const PlanSchema = z.object({
@@ -74,6 +80,10 @@ export const PlanSchema = z.object({
   items: z.array(PlanItemSchema),
   confirmation_required: z.boolean(),
   status: z.enum(["draft", "confirmed", "active", "completed", "superseded"]),
+  // D-031 §2：重排建议形状。普通计划服务端序列化显式 null——必须
+  // .nullable()（optional 只容缺失不容 null，B 评审修订）。
+  replaces_plan_id: z.string().nullable().optional(),
+  replan_reason: z.string().nullable().optional(),
 });
 
 export const FocusSessionSchema = z.object({
