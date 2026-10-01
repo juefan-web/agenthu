@@ -3407,7 +3407,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "$ref": "#/components/schemas/PlanStatus"
+                  "type": "string"
                 },
                 {
                   "type": "null"
@@ -8423,18 +8423,6 @@
           "reason"
         ],
         "title": "PlanReplanRequest"
-      },
-      "PlanStatus": {
-        "type": "string",
-        "enum": [
-          "DRAFT",
-          "PENDING_CONFIRMATION",
-          "CONFIRMED",
-          "CANCELLED",
-          "COMPLETED",
-          "SUPERSEDED"
-        ],
-        "title": "PlanStatus"
       },
       "SignedUrl": {
         "properties": {

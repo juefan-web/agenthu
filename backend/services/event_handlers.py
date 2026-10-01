@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import fnmatch
 import logging
+import statistics
 import uuid
 from collections.abc import Callable
 from datetime import datetime, timedelta
@@ -22,11 +23,27 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.models.enums import PlanItemStatus, PlanStatus, TaskStatus
+from backend.models.enums import (
+    MemoryCorrectionStatus,
+    MemoryKind,
+    PlanItemStatus,
+    PlanStatus,
+    TaskStatus,
+)
 from backend.models.event import Event
+from backend.models.memory import Memory
 from backend.models.plan import Plan, PlanItem
 from backend.models.task import Task
 from backend.services.audit import safe_record_audit
+from backend.services.estimates import (
+    RATIO_SUBJECT_KEY,
+    course_actuals,
+    course_subject_key,
+    plan_item_ratios,
+    round_half_up,
+    trimmed_mean,
+)
+from backend.services.memory_lifecycle import upsert_keyed_memory
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +137,144 @@ def handle_focus_completed(session: Session, event: Event) -> None:
             else:
                 task.status = TaskStatus.IN_PROGRESS
         _mark_confirmed_plan_items(session, task.id, actual)
+        # The learn step (D-031 §4, migration plan §4): the L1 episode is the
+        # experience itself; the L2 rows are the planner's lesson from it.
+        # Synchronous on purpose — the next plan must already see this
+        # completion (the E4 spec generates immediately after seeding).
+        if task.status == TaskStatus.COMPLETED:
+            _write_learning_memory(session, event, task)
     _recompute(session, event.user_id)
+
+
+_EPISODE_EVIDENCE_LIMIT = 20
+
+
+def _write_learning_memory(session: Session, event: Event, task: Task) -> None:
+    course = task.extra.get("course_name") if isinstance(task.extra, dict) else None
+    course_name = course if isinstance(course, str) and course else None
+    planned = _planned_minutes_for(session, task)
+    actual = task.actual_duration_minutes
+    note = event.data.get("notes")
+    note_text = note.strip() if isinstance(note, str) and note.strip() else None
+
+    parts = [f"完成「{task.title}」"]
+    if planned is not None:
+        parts.append(f"计划 {planned} 分钟；实际 {actual} 分钟")
+    else:
+        parts.append(f"实际 {actual} 分钟（未在计划中）")
+    if course_name:
+        parts.append(f"课程：{course_name}")
+    if note_text:
+        parts.append(f"偏差说明：{note_text}")
+    content = "；".join(parts) + f"。时段 {event.timestamp:%H:%M}"
+
+    derived_ids = [str(event_id) for event_id in task.related_event_ids]
+    episode = Memory(
+        user_id=event.user_id,
+        level=1,
+        domain="study",
+        content=content,
+        source={
+            "task_id": str(task.id),
+            "course_name": course_name,
+            "planned_minutes": planned,
+            "actual_minutes": actual,
+            "deviation_note": note_text,
+        },
+        source_event_ids=[str(event.id), *derived_ids],
+        confidence=1.0,
+        correction_status=MemoryCorrectionStatus.CONFIRMED,
+        kind=MemoryKind.EPISODE,
+        evidence=[
+            {"type": "event", "id": str(event.id)},
+            *[{"type": "event", "id": event_id} for event_id in derived_ids],
+        ],
+    )
+    session.add(episode)
+    session.flush()  # episode.id feeds the L2 evidence lineage
+
+    recent_episodes = _recent_episode_ids(session, user_id=event.user_id, course_name=course_name)
+    if course_name:
+        actuals = course_actuals(session, user_id=event.user_id, course=course_name)
+        if actuals:
+            median = round_half_up(statistics.median(actuals))
+            upsert_keyed_memory(
+                session,
+                user_id=event.user_id,
+                subject_key=course_subject_key(course_name),
+                level=2,
+                kind=MemoryKind.FACT,
+                domain="study",
+                content=(
+                    f"「{course_name}」作业实际用时中位数约 {median} 分钟"
+                    f"（近 {len(actuals)} 次完成）"
+                ),
+                source={
+                    "metric": "median_actual_minutes",
+                    "value": median,
+                    "sample_count": len(actuals),
+                    "unit": "minutes",
+                    "course_name": course_name,
+                },
+                confidence=min(0.9, len(actuals) / 10),
+                evidence=[{"type": "memory", "id": episode_id} for episode_id in recent_episodes],
+            )
+
+    ratios = plan_item_ratios(session, user_id=event.user_id)
+    if ratios:
+        value = trimmed_mean(ratios)
+        upsert_keyed_memory(
+            session,
+            user_id=event.user_id,
+            subject_key=RATIO_SUBJECT_KEY,
+            level=2,
+            kind=MemoryKind.FACT,
+            domain="study",
+            content=f"个人估时校准比约 {value:.2f} 倍（实际 ÷ 计划；近 {len(ratios)} 次计划执行）",
+            source={
+                "metric": "trimmed_mean_ratio",
+                "value": round(value, 3),
+                "sample_count": len(ratios),
+                "planned_source": "plan_item",
+            },
+            confidence=min(0.9, len(ratios) / 10),
+            evidence=[{"type": "memory", "id": episode_id} for episode_id in recent_episodes],
+        )
+
+
+def _planned_minutes_for(session: Session, task: Task) -> int | None:
+    """The planned minutes the task was last executed under (any live-ish
+    plan), for the episode record; None when it was never planned."""
+
+    stmt = (
+        select(PlanItem.planned_minutes)
+        .where(PlanItem.task_id == task.id)
+        .order_by(PlanItem.created_at.desc())
+        .limit(1)
+    )
+    return session.scalar(stmt)
+
+
+def _recent_episode_ids(
+    session: Session, *, user_id: uuid.UUID, course_name: str | None
+) -> list[str]:
+    """L1 episode ids as L2 evidence lineage (per course, or across courses
+    for the user-level ratio row)."""
+
+    conditions = [
+        Memory.user_id == user_id,
+        Memory.kind == MemoryKind.EPISODE,
+        Memory.supersedes_id.is_(None),
+    ]
+    if course_name is not None:
+        conditions.append(Memory.source["course_name"].as_string() == course_name)
+    rows = session.execute(
+        select(Memory.id)
+        .where(*conditions)
+        .order_by(Memory.created_at.desc())
+        .limit(_EPISODE_EVIDENCE_LIMIT)
+    ).all()
+    return [str(row_id) for (row_id,) in rows]
 
 
 def _mark_confirmed_plan_items(

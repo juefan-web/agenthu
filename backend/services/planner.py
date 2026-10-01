@@ -1,15 +1,20 @@
-"""Deterministic baseline planner.
+"""Deterministic planner v2 (slots_v2, D-031 §1/§4).
 
-M0 does not ship an LLM planner. This module provides a transparent,
-reproducible planner so the full loop (Task + deadline -> Plan -> confirm ->
-Focus -> result -> re-plan) can be exercised and tested. The LLM planner in M1
-will reuse the same Plan model and permission layer.
+No LLM (D-030): the planner is a transparent, reproducible baseline. v2 is
+state-aware and explainable — it reads today's schedule through the same
+`_today_schedule_entries` the projection uses, places tasks into free slots
+only, caps placement by the available-minutes budget (D-027口径) and writes a
+structured per-item basis; the human reason is rendered from that basis in
+`plan_reason`/client_view (the basis is the record, the reason is a view).
+The plan-level basis keeps the `slots_v2` strategy tag so new fixtures can be
+compared against historical `deadline_then_priority` plans.
 """
 
 from __future__ import annotations
 
 import hashlib
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -24,14 +29,18 @@ from backend.models.goal import Goal
 from backend.models.plan import Plan, PlanItem
 from backend.models.task import Task
 from backend.services.current_state import (
+    _overlap_minutes,
+    _task_remaining_minutes,
+    _today_schedule_entries,
     current_plan_for,
     get_or_create_state,
     pending_tasks,
     recompute_current_state,
 )
+from backend.services.estimates import DEFAULT_TASK_MINUTES, Estimate, estimate_for_task
 from backend.services.plan_validity import client_invalid_item_exists, is_client_valid_plan
 
-DEFAULT_TASK_MINUTES = 60
+# Legacy strategy tag (v1 plans in the wild); kept for fixture comparison.
 STRATEGY = "deadline_then_priority"
 
 
@@ -97,7 +106,7 @@ def generate_plan(
         generated_by=generated_by,
         replan_reason=replan_reason,
         basis={
-            "strategy": STRATEGY,
+            "strategy": STRATEGY_V2,
             "task_ids": [str(task.id) for task in tasks],
             "current_state_version": state.version,
             "horizon_minutes": horizon_minutes,
@@ -107,28 +116,222 @@ def generate_plan(
         },
     )
 
-    cursor = start
-    horizon_end = start + timedelta(minutes=horizon_minutes)
-    for index, task in enumerate(tasks):
-        minutes = task.estimated_duration_minutes or DEFAULT_TASK_MINUTES
-        planned_end = cursor + timedelta(minutes=minutes)
-        if index > 0 and planned_end > horizon_end:
-            break
-        plan.items.append(
-            PlanItem(
-                task_id=task.id,
-                title=task.title,
-                order_index=index,
-                planned_start=cursor,
-                planned_end=planned_end,
-                planned_minutes=minutes,
-            )
-        )
-        cursor = planned_end
+    # Planner v2 (D-031 §1/§4): build the free-slot list first, then score,
+    # split and place — never stacking work on top of today's classes and
+    # never exceeding the CurrentState available-minutes budget. Each item
+    # carries its structured basis; the human reason is rendered from it in
+    # client_view (the basis is the record, the reason is a view).
+    plan.items.extend(_generate_v2_items(session, user_id=user_id, tasks=tasks, start=start))
 
     session.add(plan)
     session.flush()
     return plan
+
+
+# --------------------------------------------------------------------------- #
+# Planner v2 internals
+# --------------------------------------------------------------------------- #
+
+STRATEGY_V2 = "slots_v2"
+_TRANSIT_BUFFER_MINUTES = 10
+_MAX_BLOCK_MINUTES = 90
+_DAY_START_HOUR = 8  # local clock; no honest plan starts before 08:00
+
+
+@dataclass(frozen=True)
+class _FreeSlot:
+    start: datetime
+    end: datetime
+    is_longest: bool
+
+
+def _day_bounds(now: datetime) -> tuple[datetime, datetime]:
+    timezone = ZoneInfo(get_settings().default_timezone)
+    local = now.astimezone(timezone)
+    day_start = local.replace(hour=0, minute=0, second=0, microsecond=0)
+    day_end = day_start + timedelta(days=1)
+    return day_start.astimezone(UTC), day_end.astimezone(UTC)
+
+
+def _free_slots(
+    now: datetime,
+    schedule: list[tuple[datetime, datetime, str, str | None]],
+) -> list[_FreeSlot]:
+    """Free intervals of the local day: [max(now, 08:00 local), day_end)
+    minus schedule entries padded with a transit buffer (evaluation §3.1)."""
+
+    day_start, day_end = _day_bounds(now)
+    work_start = day_start.replace(hour=_DAY_START_HOUR).astimezone(UTC)
+    window_start = max(now, work_start)
+
+    busy: list[tuple[datetime, datetime]] = []
+    buffer = timedelta(minutes=_TRANSIT_BUFFER_MINUTES)
+    for entry_start, entry_end, _course, _location in schedule:
+        clipped_start = max(entry_start - buffer, window_start)
+        clipped_end = min(entry_end + buffer, day_end)
+        if clipped_end > clipped_start:
+            busy.append((clipped_start, clipped_end))
+    busy.sort()
+
+    merged: list[list[datetime]] = []
+    for b_start, b_end in busy:
+        if merged and b_start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], b_end)
+        else:
+            merged.append([b_start, b_end])
+
+    raw: list[tuple[datetime, datetime]] = []
+    cursor = window_start
+    for b_start, b_end in merged:
+        if b_start > cursor:
+            raw.append((cursor, b_start))
+        cursor = max(cursor, b_end)
+    if day_end > cursor:
+        raw.append((cursor, day_end))
+
+    free = [_FreeSlot(start, end, False) for start, end in raw if end > start]
+    if free:
+        longest = max(free, key=lambda slot: (slot.end - slot.start).total_seconds())
+        free = [_FreeSlot(slot.start, slot.end, slot is longest) for slot in free]
+    return free
+
+
+def _available_budget(
+    schedule: list[tuple[datetime, datetime, str, str | None]],
+    current_task: Task | None,
+    now: datetime,
+) -> int:
+    """Same口径 as the projection's available minutes (D-027): local-day
+    remaining minus schedule overlap minus the current task's remaining
+    estimate, floored at 0 — the badge and the plan cannot disagree."""
+
+    _, day_end = _day_bounds(now)
+    day_remaining = int((day_end - now).total_seconds() // 60)
+    overlap = _overlap_minutes(schedule, now, day_end)
+    return max(0, day_remaining - overlap - _task_remaining_minutes(current_task))
+
+
+def _slack_minutes(task: Task, estimate_minutes: int, now: datetime) -> int | None:
+    if task.deadline is None:
+        return None
+    remaining = estimate_minutes - (task.actual_duration_minutes or 0)
+    return int((task.deadline - now).total_seconds() // 60) - remaining
+
+
+def _score(task: Task, slack: int | None) -> dict[str, int]:
+    """Deterministic urgency(slack) + goal + priority (evaluation §3.1)."""
+
+    clamped = max(0, min(slack, 1440)) if slack is not None else 1440
+    urgency = 1440 - clamped
+    goal = 50 if task.goal_id is not None else 0
+    priority = task.priority * 20
+    return {
+        "urgency": urgency,
+        "goal": goal,
+        "priority": priority,
+        "total": urgency + goal + priority,
+    }
+
+
+def _split_blocks(remaining_minutes: int) -> list[int]:
+    """Long tasks are worked in blocks of at most 90 minutes (§3.1)."""
+
+    blocks: list[int] = []
+    left = remaining_minutes
+    while left > 0:
+        blocks.append(min(left, _MAX_BLOCK_MINUTES))
+        left -= blocks[-1]
+    return blocks
+
+
+def _current_task_id(session: Session, user_id: uuid.UUID) -> uuid.UUID | None:
+    state = get_or_create_state(session, user_id)
+    return state.current_task_id
+
+
+def _generate_v2_items(
+    session: Session,
+    *,
+    user_id: uuid.UUID,
+    tasks: list[Task],
+    start: datetime,
+) -> list[PlanItem]:
+    now = start
+    schedule = _today_schedule_entries(session, user_id, now)
+    slots = _free_slots(now, schedule)
+    current_id = _current_task_id(session, user_id)
+    current_task = session.get(Task, current_id) if current_id is not None else None
+    budget = _available_budget(schedule, current_task, now)
+
+    ranked: list[tuple[dict[str, int], int, Estimate, Task]] = []
+    for task in tasks:
+        estimate = estimate_for_task(session, user_id=user_id, task=task)
+        slack = _slack_minutes(task, estimate.minutes, now)
+        ranked.append((_score(task, slack), slack if slack is not None else 10**6, estimate, task))
+    ranked.sort(key=lambda entry: (-entry[0]["total"], entry[1]))
+
+    items: list[PlanItem] = []
+    slot_index = 0
+    slot_cursor = slots[0].start if slots else now
+    placed_total = 0
+    for score, slack_sort, estimate, task in ranked:
+        remaining = estimate.minutes - (task.actual_duration_minutes or 0)
+        if remaining <= 0:
+            continue
+        slack = slack_sort if slack_sort != 10**6 else None
+        blocks = _split_blocks(remaining)
+        for block_minutes in blocks:
+            placed = False
+            while slot_index < len(slots) and not placed:
+                slot = slots[slot_index]
+                slot_cursor = max(slot_cursor, slot.start)
+                if slot_cursor >= slot.end:
+                    slot_index += 1
+                    continue
+                if placed_total + block_minutes > budget:
+                    return items  # the available-minutes budget is spent
+                block_end = slot_cursor + timedelta(minutes=block_minutes)
+                if block_end > slot.end:
+                    fit = int((slot.end - slot_cursor).total_seconds() // 60)
+                    if fit <= 0:
+                        slot_index += 1
+                        continue
+                    block_minutes -= fit
+                    block_end = slot.end
+                else:
+                    placed = True
+                minutes = int((block_end - slot_cursor).total_seconds() // 60)
+                items.append(
+                    PlanItem(
+                        task_id=task.id,
+                        title=task.title,
+                        order_index=len(items),
+                        planned_start=slot_cursor,
+                        planned_end=block_end,
+                        planned_minutes=minutes,
+                        basis={
+                            "deadline": task.deadline.isoformat() if task.deadline else None,
+                            "slack_minutes": slack,
+                            "estimate_minutes": estimate.minutes,
+                            "estimate_source": estimate.source,
+                            "sample_count": estimate.sample_count or None,
+                            "goal_id": str(task.goal_id) if task.goal_id else None,
+                            "slot_reason": "今天最长空档" if slot.is_longest else "空闲时段",
+                            "score": score,
+                            "at_risk": bool(slack is not None and slack < 0),
+                        },
+                    )
+                )
+                placed_total += minutes
+                slot_cursor = block_end
+                if placed_total >= budget:
+                    return items
+            if not placed and slot_index >= len(slots):
+                # No honest room left today for the remaining blocks: the
+                # task is not silently forgotten — it stays pending and the
+                # next generation (or a replan trigger) retries it.
+                break
+    return items
 
 
 def latest_open_plan(
