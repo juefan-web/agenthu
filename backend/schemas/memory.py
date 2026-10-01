@@ -46,7 +46,10 @@ class MemoryCreate(BaseModel):
     level: int = Field(default=1, ge=0, le=3)
     domain: str = Field(default="general", max_length=50)
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
-    correction_status: MemoryCorrectionStatus = MemoryCorrectionStatus.UNREVIEWED
+    # correction_status is NOT settable here: every memory enters as
+    # UNREVIEWED (or CONFIRMED via a server writer) and moves through the
+    # semantic endpoints only (D-032 ruling: direct fills bypass the
+    # version chain).
     source: dict[str, Any] = Field(default_factory=dict)
     source_event_ids: list[uuid.UUID] = Field(default_factory=list)
     # M2 extension (D-031 §3). subject_key/evidence are writable; the version
@@ -64,7 +67,9 @@ class MemoryUpdate(BaseModel):
     level: int | None = Field(default=None, ge=0, le=3)
     domain: str | None = Field(default=None, max_length=50)
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
-    correction_status: MemoryCorrectionStatus | None = None
+    # No correction_status: semantic endpoint only (confirm/correct/reject);
+    # a direct fill here would bypass the version chain (D-032 ruling). The
+    # key is silently ignored on the wire, same as any unknown key.
     source: dict[str, Any] | None = None
     source_event_ids: list[uuid.UUID] | None = None
     kind: MemoryKind | None = None
@@ -72,6 +77,18 @@ class MemoryUpdate(BaseModel):
     evidence: list[Evidence] | None = Field(default=None, max_length=100)
     valid_from: datetime | None = None
     valid_to: datetime | None = None
+
+
+class MemoryCorrectRequest(BaseModel):
+    """User correction payload for POST /memory/{id}/correct.
+
+    Content is the corrected text; confidence optionally overrides (the old
+    row's value carries over when absent). The new version is CONFIRMED by
+    definition — the user wrote it.
+    """
+
+    content: str = Field(min_length=1, max_length=10_000)
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
 
 
 class MemoryRead(ORMModel):

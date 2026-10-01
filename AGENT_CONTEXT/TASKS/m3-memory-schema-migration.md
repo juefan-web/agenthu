@@ -80,6 +80,12 @@ checksum 把引用钉在被读取的具体版本上（与 M3 引用元组同构�
   图（§6）负责显式处理，不为完整性牺牲删除能力。
 - upsert 写入者（L2 聚合）以唯一索引为目标做 `INSERT ... ON CONFLICT` /
   SELECT-FOR-UPDATE + supersede，避免并发双写。
+- **FK 可延迟**（2026-10-01 落地补记，迁移 `f63b7e2a5c91`）：superseded-by
+  方向的写入顺序由部分唯一索引钉死——旧行必须先退（置 `supersedes_id`）
+  新行才能插入（部分唯一**索引**在 PostgreSQL 中不可延迟，否则插入时会
+  看到两个 live 行）；而旧行的指针指向尚未插入的新行，非延迟 FK 会在
+  UPDATE 时即失败。故 FK 定为 `DEFERRABLE INITIALLY DEFERRED`（commit 时
+  校验），版本链表的标准做法。
 - **REJECTED 阻断与写入串行化**（2026-10-01 预研补强）：部分唯一索引排除了
   REJECTED 行，「阻断再派生」无法由索引表达。`upsert_memory` 必须在同一
   事务内先按 `(user_id, subject_key)` `SELECT ... FOR UPDATE` 锁存续 live

@@ -431,3 +431,105 @@ def test_today_regenerates_when_tasks_added_after_empty_draft(client, auth_heade
     # And the regenerated plan is the one that gets reused from now on.
     settled = client.get("/v1/plans/today", headers=auth_headers).json()
     assert settled["id"] == regenerated["id"]
+
+
+def _make_suggestion(
+    db_session, user_id: uuid.UUID, replaced_id: str, task_id: str, title: str
+) -> Plan:
+    """A replan-suggestion draft the way the M2 trigger engine will create
+    one: DRAFT + replaces_plan_id, never touching the replaced plan."""
+
+    now = datetime.now(UTC)
+    plan = Plan(
+        user_id=user_id,
+        replaces_plan_id=uuid.UUID(replaced_id),
+        title="重排建议",
+        status=PlanStatus.DRAFT,
+        basis={"trigger": "focus_overrun", "strategy": "deadline_then_priority"},
+        permission_level=1,
+        generated_by="replan_trigger",
+        replan_reason="《线性代数》作业 Focus 超时 42 分钟——今日后续安排需要重排",
+        items=[
+            PlanItem(
+                task_id=uuid.UUID(task_id),
+                title=title,
+                order_index=0,
+                planned_start=now,
+                planned_end=now + timedelta(minutes=60),
+                planned_minutes=60,
+            )
+        ],
+    )
+    db_session.add(plan)
+    db_session.flush()
+    return plan
+
+
+def test_confirming_a_replacement_supersedes_the_replaced_plan(
+    client, auth_headers, db_session
+) -> None:
+    task = _make_task(client, auth_headers, title="HW2", days=1)
+    original = client.post("/v1/plans/generate", json={}, headers=auth_headers).json()
+    client.post(f"/v1/plans/{original['id']}/confirm", headers=auth_headers)
+
+    me = client.get("/v1/auth/me", headers=auth_headers).json()
+    suggestion = _make_suggestion(
+        db_session, uuid.UUID(me["id"]), original["id"], task["id"], "HW2"
+    )
+
+    confirmed = client.post(f"/v1/plans/{suggestion.id}/confirm", headers=auth_headers)
+    assert confirmed.status_code == 200, confirmed.text
+    body = confirmed.json()
+    assert body["status"] == "confirmed"
+    assert body["replaces_plan_id"] == original["id"]
+
+    # Accept-means-supersede (D-031 §2): the replaced plan retired in the
+    # same transaction instead of lingering as a second CONFIRMED plan.
+    replaced = client.get(f"/v1/plans/{original['id']}", headers=auth_headers).json()
+    assert replaced["status"] == "superseded"
+
+    # Retry-safe: replaying confirm keeps the outcome (and must not 409 on
+    # the already-superseded replacement).
+    retried = client.post(f"/v1/plans/{suggestion.id}/confirm", headers=auth_headers)
+    assert retried.status_code == 200
+    assert retried.json()["status"] == "confirmed"
+    assert (
+        client.get(f"/v1/plans/{original['id']}", headers=auth_headers).json()["status"]
+        == "superseded"
+    )
+
+
+def test_confirming_unrelated_plan_leaves_replaced_plan_alone(
+    client, auth_headers, db_session
+) -> None:
+    # A manual draft without replaces_plan_id must not retire anything, and a
+    # suggestion whose target was cancelled by hand only confirms itself.
+    task_a = _make_task(client, auth_headers, title="A", days=1)
+    task_b = _make_task(client, auth_headers, title="B", days=2)
+    first = client.post("/v1/plans/generate", json={}, headers=auth_headers).json()
+    client.post(f"/v1/plans/{first['id']}/confirm", headers=auth_headers)
+
+    me = client.get("/v1/auth/me", headers=auth_headers).json()
+    manual = client.post(
+        "/v1/plans",
+        json={
+            "title": "Manual",
+            "items": [{"title": "A", "task_id": task_a["id"], "planned_minutes": 30}],
+        },
+        headers=auth_headers,
+    ).json()
+    client.post(f"/v1/plans/{manual['id']}/confirm", headers=auth_headers)
+    assert (
+        client.get(f"/v1/plans/{first['id']}", headers=auth_headers).json()["status"] == "confirmed"
+    )
+
+    suggestion = _make_suggestion(db_session, uuid.UUID(me["id"]), first["id"], task_b["id"], "B")
+    client.post(f"/v1/plans/{first['id']}/cancel", headers=auth_headers)
+    confirmed = client.post(f"/v1/plans/{suggestion.id}/confirm", headers=auth_headers)
+    assert confirmed.status_code == 200
+    # The client mapping cannot distinguish CANCELLED from SUPERSEDED (both
+    # "superseded"), so assert the stored status: the hand-cancelled target
+    # stays CANCELLED — the idempotent skip, not an overwrite.
+    row = db_session.get(Plan, uuid.UUID(first["id"]))
+    assert row is not None
+    assert row.status == PlanStatus.CANCELLED

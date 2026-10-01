@@ -194,6 +194,18 @@ def confirm(plan_id: uuid.UUID, user: CurrentUser, db: DBSession) -> ClientPlan:
         raise ConflictError("Permission denied for plan confirmation")
     plan.status = PlanStatus.CONFIRMED
     plan.confirmed_at = utcnow()
+    # Accept-means-supersede (D-031 §2): confirming a replan suggestion
+    # retires the plan it replaces in the same transaction — otherwise the
+    # replaced plan lingers CONFIRMED and only the current_plan_for ordering
+    # hides it. Idempotent: rows no longer CONFIRMED (already superseded,
+    # cancelled by hand) are skipped; a deleted replacement has its pointer
+    # SET NULL by the FK, so no dangling case exists.
+    if plan.replaces_plan_id is not None:
+        replaced = db.scalar(
+            select(Plan).where(Plan.id == plan.replaces_plan_id, Plan.user_id == user.id)
+        )
+        if replaced is not None and replaced.status == PlanStatus.CONFIRMED:
+            replaced.status = PlanStatus.SUPERSEDED
     db.flush()
     recompute_current_state(db, user.id)
     return _client(plan)

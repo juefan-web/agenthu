@@ -27,15 +27,32 @@ def test_memory_crud(client, auth_headers) -> None:
     fetched = client.get(f"/v1/memory/{memory['id']}", headers=auth_headers)
     assert fetched.status_code == 200
 
-    corrected = client.patch(
+    # Correction goes through the semantic endpoint (D-032 ruling): direct
+    # correction_status fills are ignored on PATCH.
+    ignored = client.patch(
         f"/v1/memory/{memory['id']}",
-        json={"content": "I tend to underestimate time", "correction_status": "CORRECTED"},
+        json={"correction_status": "CORRECTED"},
         headers=auth_headers,
     )
-    assert corrected.json()["correction_status"] == "CORRECTED"
+    assert ignored.status_code == 200
+    assert ignored.json()["correction_status"] == "UNREVIEWED"
 
-    assert client.delete(f"/v1/memory/{memory['id']}", headers=auth_headers).status_code == 204
-    assert client.get(f"/v1/memory/{memory['id']}", headers=auth_headers).status_code == 404
+    corrected = client.post(
+        f"/v1/memory/{memory['id']}/correct",
+        json={"content": "I tend to underestimate time", "confidence": 0.9},
+        headers=auth_headers,
+    )
+    assert corrected.status_code == 201, corrected.text
+    body = corrected.json()
+    assert body["correction_status"] == "CONFIRMED"
+    assert body["source"]["user_corrected"] is True
+
+    old = client.get(f"/v1/memory/{memory['id']}", headers=auth_headers).json()
+    assert old["correction_status"] == "CORRECTED"
+    assert old["supersedes_id"] == body["id"]
+
+    assert client.delete(f"/v1/memory/{body['id']}", headers=auth_headers).status_code == 204
+    assert client.get(f"/v1/memory/{body['id']}", headers=auth_headers).status_code == 404
 
 
 def test_memory_list_filters(client, auth_headers) -> None:
@@ -190,3 +207,95 @@ def test_memory_evidence_rejects_other_users_event(client, auth_factory) -> None
         headers=bob,
     )
     assert patched.status_code == 404
+
+
+def test_memory_confirm_and_reject_semantics(client, auth_headers) -> None:
+    key = "estimate:course:linear-algebra"
+    created = client.post(
+        "/v1/memory",
+        json={**memory_payload(), "kind": "fact", "subject_key": key},
+        headers=auth_headers,
+    ).json()
+
+    confirmed = client.post(f"/v1/memory/{created['id']}/confirm", headers=auth_headers)
+    assert confirmed.status_code == 200
+    assert confirmed.json()["correction_status"] == "CONFIRMED"
+    # Idempotent: confirming again is a no-op.
+    assert (
+        client.post(f"/v1/memory/{created['id']}/confirm", headers=auth_headers).status_code == 200
+    )
+
+    rejected = client.post(f"/v1/memory/{created['id']}/reject", headers=auth_headers)
+    assert rejected.status_code == 200
+    assert rejected.json()["correction_status"] == "REJECTED"
+    # The REJECTED row stays live and keeps occupying its subject_key (the
+    # re-derivation block): a fresh live row for the same key still conflicts.
+    conflict = client.post(
+        "/v1/memory",
+        json={**memory_payload(), "subject_key": key},
+        headers=auth_headers,
+    )
+    assert conflict.status_code == 409
+    listed = client.get(
+        "/v1/memory", params={"correction_status": "REJECTED"}, headers=auth_headers
+    )
+    assert listed.json()["total"] == 1
+
+    # Confirm is the documented un-reject path.
+    unrejected = client.post(f"/v1/memory/{created['id']}/confirm", headers=auth_headers)
+    assert unrejected.json()["correction_status"] == "CONFIRMED"
+
+
+def test_memory_correct_walks_the_superseded_by_chain(client, auth_headers) -> None:
+    key = "estimate_ratio:user"
+    created = client.post(
+        "/v1/memory",
+        json={
+            **memory_payload(),
+            "kind": "fact",
+            "subject_key": key,
+            "confidence": 0.4,
+            "valid_from": "2026-10-01T08:00:00+08:00",
+        },
+        headers=auth_headers,
+    ).json()
+
+    first = client.post(
+        f"/v1/memory/{created['id']}/correct",
+        json={"content": "corrected ratio: 1.2x"},
+        headers=auth_headers,
+    )
+    assert first.status_code == 201, first.text
+    v2 = first.json()
+    # New version is the live, user-confirmed row; keyed identity carries over.
+    assert v2["id"] != created["id"]
+    assert v2["supersedes_id"] is None
+    assert v2["correction_status"] == "CONFIRMED"
+    assert v2["content"] == "corrected ratio: 1.2x"
+    assert v2["subject_key"] == key
+    assert v2["kind"] == "fact"
+    assert v2["confidence"] == 0.4  # carried over when not overridden
+
+    # Old row: retired in place — CORRECTED, superseded-by pointer at the new
+    # row (the confirmed direction), validity closed, content untouched.
+    v1 = client.get(f"/v1/memory/{created['id']}", headers=auth_headers).json()
+    assert v1["correction_status"] == "CORRECTED"
+    assert v1["supersedes_id"] == v2["id"]
+    assert v1["valid_to"] is not None
+    assert v1["content"] == memory_payload()["content"]
+
+    # Operating on history is an error; correcting the live row chains again.
+    stale = client.post(
+        f"/v1/memory/{created['id']}/correct", json={"content": "stale"}, headers=auth_headers
+    )
+    assert stale.status_code == 409
+    second = client.post(
+        f"/v1/memory/{v2['id']}/correct",
+        json={"content": "corrected ratio: 1.3x", "confidence": 0.9},
+        headers=auth_headers,
+    )
+    v3 = second.json()
+    assert v3["confidence"] == 0.9
+    v2_after = client.get(f"/v1/memory/{v2['id']}", headers=auth_headers).json()
+    assert v2_after["supersedes_id"] == v3["id"]
+    assert v2_after["correction_status"] == "CORRECTED"

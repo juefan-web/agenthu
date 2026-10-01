@@ -12,8 +12,16 @@ from backend.core.errors import ConflictError
 from backend.models.enums import MemoryCorrectionStatus
 from backend.models.memory import Memory
 from backend.schemas.common import Page
-from backend.schemas.memory import EventEvidence, Evidence, MemoryCreate, MemoryRead, MemoryUpdate
+from backend.schemas.memory import (
+    EventEvidence,
+    Evidence,
+    MemoryCorrectRequest,
+    MemoryCreate,
+    MemoryRead,
+    MemoryUpdate,
+)
 from backend.services.lookup import ensure_owned_events, get_memory
+from backend.services.memory_lifecycle import confirm_memory, correct_memory, reject_memory
 
 router = APIRouter(prefix="/memory", tags=["memory"])
 
@@ -28,22 +36,45 @@ def _dump_evidence(evidence: Sequence[Evidence]) -> list[dict]:
     return [item.model_dump(mode="json") for item in evidence]
 
 
+def _live_key_owner(db: DBSession, user_id: uuid.UUID, subject_key: str | None) -> uuid.UUID | None:
+    """Id of the live row occupying (user, subject_key), if any (D-031 §3)."""
+
+    if subject_key is None:
+        return None
+    stmt = select(Memory.id).where(
+        Memory.user_id == user_id,
+        Memory.subject_key == subject_key,
+        Memory.supersedes_id.is_(None),
+    )
+    return db.scalar(stmt)
+
+
 @router.post("", response_model=MemoryRead, status_code=status.HTTP_201_CREATED)
 def create(payload: MemoryCreate, user: CurrentUser, db: DBSession) -> Memory:
     # P2: every referenced source event must belong to the current user.
     ensure_owned_events(db, user_id=user.id, event_ids=payload.source_event_ids)
     ensure_owned_events(db, user_id=user.id, event_ids=_evidence_event_ids(payload.evidence))
+    # Pre-check first (D-003 pattern): the common conflict exits cleanly and
+    # only the true race falls into the savepoint below. A failed flush
+    # poisons the session until an explicit rollback, which is fine in
+    # production (get_db rolls back on exception) but noisy in tests; the
+    # pre-check keeps the happy path of every caller clean either way.
+    if _live_key_owner(db, user.id, payload.subject_key) is not None:
+        raise ConflictError(
+            "A live memory with this subject_key already exists; supersede it "
+            "instead of creating a second live row"
+        )
     data = payload.model_dump()
     data["source_event_ids"] = [str(event_id) for event_id in payload.source_event_ids]
     data["evidence"] = _dump_evidence(payload.evidence)
     memory = Memory(user_id=user.id, **data)
     db.add(memory)
     try:
-        db.flush()
+        with db.begin_nested():
+            db.flush()
     except IntegrityError:
-        # The live-row invariant (one non-superseded row per user+subject_key,
-        # D-031 §3) rejects a second live row for the same key.
-        db.rollback()
+        # Race backstop: someone else inserted the live row between the
+        # pre-check and the insert.
         raise ConflictError(
             "A live memory with this subject_key already exists; supersede it "
             "instead of creating a second live row"
@@ -101,12 +132,22 @@ def update(memory_id: uuid.UUID, payload: MemoryUpdate, user: CurrentUser, db: D
         if evidence is not None:
             ensure_owned_events(db, user_id=user.id, event_ids=_evidence_event_ids(evidence))
             data["evidence"] = _dump_evidence(evidence)
+    # Same pre-check as create; the row itself keeps its own key.
+    if (
+        "subject_key" in data
+        and data["subject_key"] != memory.subject_key
+        and _live_key_owner(db, user.id, data["subject_key"]) not in (None, memory.id)
+    ):
+        raise ConflictError(
+            "A live memory with this subject_key already exists; supersede it "
+            "instead of creating a second live row"
+        )
     for field, value in data.items():
         setattr(memory, field, value)
     try:
-        db.flush()
+        with db.begin_nested():
+            db.flush()
     except IntegrityError:
-        db.rollback()
         raise ConflictError(
             "A live memory with this subject_key already exists; supersede it "
             "instead of creating a second live row"
@@ -120,3 +161,35 @@ def delete(memory_id: uuid.UUID, user: CurrentUser, db: DBSession) -> Response:
     db.delete(memory)
     db.flush()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/{memory_id}/confirm", response_model=MemoryRead)
+def confirm(memory_id: uuid.UUID, user: CurrentUser, db: DBSession) -> Memory:
+    """Confirm a memory (also the documented "un-reject" path)."""
+
+    return confirm_memory(db, get_memory(db, user_id=user.id, memory_id=memory_id))
+
+
+@router.post(
+    "/{memory_id}/correct",
+    response_model=MemoryRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def correct(
+    memory_id: uuid.UUID, payload: MemoryCorrectRequest, user: CurrentUser, db: DBSession
+) -> Memory:
+    """Replace a memory with a corrected version (201: a new row is created)."""
+
+    return correct_memory(
+        db,
+        get_memory(db, user_id=user.id, memory_id=memory_id),
+        content=payload.content,
+        confidence=payload.confidence,
+    )
+
+
+@router.post("/{memory_id}/reject", response_model=MemoryRead)
+def reject(memory_id: uuid.UUID, user: CurrentUser, db: DBSession) -> Memory:
+    """Reject a memory; the live row stays as a REJECTED subject_key placeholder."""
+
+    return reject_memory(db, get_memory(db, user_id=user.id, memory_id=memory_id))
