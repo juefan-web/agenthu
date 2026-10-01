@@ -47,29 +47,29 @@ ALTER TABLE memories
   ADD COLUMN valid_to   TIMESTAMPTZ NULL;
 CREATE UNIQUE INDEX uq_memories_user_subject_live
   ON memories(user_id, subject_key)
-  WHERE subject_key IS NOT NULL;          -- M3 降级为部分唯一（见 §3）
+  WHERE subject_key IS NOT NULL AND supersedes_id IS NULL;
+  -- B 评审修订 2026-10-01：版本感知部分唯一索引直接在 M2 建（见 §3）
 CREATE INDEX ix_memories_supersedes ON memories(supersedes_id)
   WHERE supersedes_id IS NOT NULL;        -- 反向链遍历（删除/依赖图用）
 
 -- M3 切片迁移（先换 compose 镜像，见 §7）
 CREATE EXTENSION IF NOT EXISTS vector;
 ALTER TABLE memories ADD COLUMN embedding vector(1536) NULL;
-DROP INDEX uq_memories_user_subject_live;  -- 降级为版本感知的部分唯一
-CREATE UNIQUE INDEX uq_memories_user_subject_live
-  ON memories(user_id, subject_key)
-  WHERE subject_key IS NOT NULL AND supersedes_id IS NULL;
 ```
 
 `evidence` 元素形状：`{type:"event", id: "<event uuid>"}` 或
 `{type:"document", file_id, checksum_sha256, page, span_start, span_end}`。
 checksum 把引用钉在被读取的具体版本上（与 M3 引用元组同构）。
 
-## 3. 不变式与索引（两步策略）
+## 3. 不变式与索引
 
 - **live 行不变式**：每 `(user_id, subject_key)` 至多一行
   `supersedes_id IS NULL` 的行；非聚合行（L1 episode）`subject_key` 为 NULL，
-  不受约束。M2 用普通唯一索引表达（此时无版本链写入者，等价成立）；M3
-  迁移降级为部分唯一索引，语义不变、升级路径显式。
+  不受约束。以版本感知部分唯一索引（`WHERE subject_key IS NOT NULL AND
+  supersedes_id IS NULL`）表达，**M2 迁移直接建**（B 评审修订 2026-10-01：
+  原案 M2 普通索引 + M3 降级的两步走与 §4 写入者语义矛盾——CORRECTED-
+  supersedes 与 L2 聚合 supersede 均为 M2 范围，第一次 keyed supersede
+  写入即撞普通唯一索引；部分索引在无写入者时同样成立，M3 也无需索引换装）。
 - `supersedes_id ON DELETE SET NULL`：删除被依赖的旧行不炸链，链断由删除
   图（§6）负责显式处理，不为完整性牺牲删除能力。
 - upsert 写入者（L2 聚合）以唯一索引为目标做 `INSERT ... ON CONFLICT` /
@@ -148,7 +148,7 @@ Event（事实层，删除入口之一）
    GIN 索引；fixtures 更新；`alembic check` 无漂移。无基础设施变化。
 2. **M3 切片**：`docker-compose.yml` 与 CI 镜像 `postgres:16-alpine` →
    `pgvector/pgvector:16`（先验证 CI 可拉取）；§2 第二段迁移（扩展 +
-   列 + 索引降级）；本地/CI 数据库重建演练一次。
+   列；唯一索引已在 M2 为最终形态，无换装）；本地/CI 数据库重建演练一次。
 3. 每条迁移 up/down 完整并跑 up→down→up；down 删列/索引/扩展均可逆
    （`DROP EXTENSION` 仅 M3 迁移 down 中执行）。
 

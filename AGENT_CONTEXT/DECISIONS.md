@@ -502,8 +502,10 @@ Rollback：纯文档决策，回滚 = 废弃本条并恢复 TECH_STACK 原里程
 
 ## D-031 — M2 阶段 0 契约冻结：PlanItem.basis、recent_state、重排建议形状与 Memory 扩展
 
-Status: **proposed**（2026-09-30，M2 阶段 0，A 产出、待 B 评审；评审通过后
-双方按 `TASKS/m2-breakdown.md` 并行，场景草案与 E4 fixture 冷启动注意见
+Status: **accepted**（2026-09-30 产出、2026-10-01 B 评审通过；两处评审修订
+随合并落盘——§2 客户端 `replaces_plan_id` 补 `.nullable()`、§3 live 唯一索引
+M2 直接建版本感知部分索引，均标注「B 评审修订」可追溯。双方按
+`TASKS/m2-breakdown.md` 并行，场景草案与 E4 fixture 冷启动注意见
 `TASKS/m2-phase0-contract-freeze.md`）。
 
 Context：`TASKS/m2-breakdown.md`「冻结先行」四项中的三项尚无裁定；第四项
@@ -553,8 +555,13 @@ Context：`TASKS/m2-breakdown.md`「冻结先行」四项中的三项尚无裁�
   /v1/plans/today` 语义不变（D-019：confirmed 优先，建议草稿不劫持 today
   视图；无 confirmed 时 `latest_open_plan` 自然取到最新草稿——对「新任务
   到达」触发器而言，含新任务的建议草稿成为 today 提案正是 L4 的显式路径）。
-- 客户端 Zod：`PlanSchema` 增加 `replaces_plan_id: z.string().optional()`、
-  `replan_reason: z.string().nullable().optional()`。服务端 `ClientPlan` 补
+- 客户端 Zod：`PlanSchema` 增加 `replaces_plan_id:
+  z.string().nullable().optional()`、`replan_reason:
+  z.string().nullable().optional()`（**B 评审修订 2026-10-01**：原案
+  `replaces_plan_id` 只写 `.optional()`——服务端未设
+  `response_model_exclude_none`，普通计划会序列化 `"replaces_plan_id": null`，
+  而 Zod 的 optional 只容缺失不容 null，缺 `.nullable()` 会让客户端解析
+  **每一个**无替代的计划时失败）。服务端 `ClientPlan` 补
   `replaces_plan_id` 映射（该列目前根本没进 client view，顺带修复），
   `replan_reason` 从 backend-only 转正。
 - 去抖（约 30s/用户）与限频（无 deadline at-risk 豁免时 ≤1 条/30 分钟）是
@@ -574,9 +581,12 @@ Context：`TASKS/m2-breakdown.md`「冻结先行」四项中的三项尚无裁�
 | `embedding` | `vector(1536) NULL`（M3 落列） | pgvector；维度对应 text-embedding-3-small，换供应商 = 迁移 + 重嵌 |
 
 - **live 行不变式**：每 `(user_id, subject_key)` 至多一个 `supersedes_id IS
-  NULL` 的行。两步实现：M2 落普通唯一索引（`WHERE subject_key IS NOT
-  NULL`）；M3 版本化迁移将其降级为 `WHERE subject_key IS NOT NULL AND
-  supersedes_id IS NULL` 的部分唯一索引，不变式不变。
+  NULL` 的行，以部分唯一索引 `WHERE subject_key IS NOT NULL AND supersedes_id
+  IS NULL` 表达。**B 评审修订 2026-10-01：直接在 M2 迁移建该部分唯一索引**
+  （原案「M2 普通唯一索引 + M3 降级」两步走与本条 §4 写入者语义矛盾：
+  CORRECTED-supersedes 与 L2 聚合 supersede 均为 M2 范围（m2-breakdown
+  A-4/本条 M2 切片理由），第一次 keyed supersede 写入即撞普通唯一索引；
+  部分索引在尚无写入者时同样成立，且省去 M3 的索引换装步骤）。
 - **REJECTED 阻断再派生**：聚合器写 `subject_key` 前必须查 live 行，遇
   REJECTED 跳过并审计——否则下一轮聚合会悄悄重建用户刚删的事实。
   **CORRECTED 生成新版本**（新行 `supersedes_id` 指旧行）而非原地改写，
