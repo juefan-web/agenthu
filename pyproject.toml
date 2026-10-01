@@ -57,9 +57,10 @@ ignore = [
     "RUF012", # mutable class attributes in pydantic/sqlalchemy models are intentional
 ]
 # Fullwidth punctuation is intentional in Chinese user-facing strings
-# (CurrentState context labels, planner reason templates D-031 §1, memory
-# content); allow exactly these, not all confusables.
-allowed-confusables = ["：", "（", "）", "；", "。", "–"]
+# (CurrentState context labels, planner/replan reason templates D-031 §1/§2
+# — the frozen example reasons use fullwidth commas — and memory content);
+# allow exactly these, not all confusables.
+allowed-confusables = ["：", "（", "）", "；", "。", "，", "–"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101"]

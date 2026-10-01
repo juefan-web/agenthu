@@ -18,6 +18,7 @@ from backend.schemas.client_contract import ClientTask
 from backend.schemas.task import TaskCreate, TaskRead, TaskUpdate
 from backend.services.client_view import task_to_client
 from backend.services.lookup import get_event, get_goal, get_task
+from backend.worker.enqueue import mark_user_dirty
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
@@ -59,6 +60,9 @@ def create(payload: TaskCreate, user: CurrentUser, db: DBSession) -> ClientTask:
     task.related_events = _load_events(db, user.id, payload.related_event_ids)
     db.add(task)
     db.flush()
+    # Manual tasks with near deadlines satisfy the same trigger as derived
+    # ones (derived tasks get marked by the event path).
+    mark_user_dirty(user.id)
     return _client(task)
 
 

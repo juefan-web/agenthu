@@ -519,8 +519,25 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   spec 的 `?status=draft` 422（D-009 客户端契约优先；已实证 422 复现）。
   验证：**220 passed**（main 215，+5 planner v2 集成）/pyright 0/ruff/
   drift 双源绿。E4 服务端孪生测试 = `test_planner_v2.py`（避课表/learned
-  双向/拒绝阻断/状态过滤）。**下一批**：触发引擎（超时/新任务/时段已过/
-  课表变更 + 旧建议自动取消）+ worker 去抖重算。
+  双向/拒绝阻断/状态过滤）。
+- **A 第四批 = M2 末批写入者（2026-10-01 深夜，`feature/trigger-engine`）——
+  重排建议触发引擎**：`services/replan_triggers.py` 四类触发（Focus 超时
+  ≥1.3×/提前 ≤0.5×【reason 引用实际分钟数，E4 断言点】、确认后 48h 内
+  新任务【L4 显式路径，手动任务经 tasks 端点同样标脏】、已确认项时段已过
+  未开始【排除 RUNNING/PAUSED 会话】、今日课表确认后变更；摆状态触发待
+  CurrentState 补齐后置）。**签名幂等**（已产生过建议的事实不再重复触发，
+  重复评估不叠加）；**限频** ≤1 条/30 分钟，逾期任务（at-risk）豁免；
+  **新触发自动取消同目标旧建议**（#22 审阅备注 3）；**绝不改已确认计划**
+  （L4）、绝不调用 `replan()`，建议 = `generate_plan(DRAFT,
+  replaces_plan_id, replan_reason)`。**Worker 首批真实任务**（D-024）：
+  摄取路径 best-effort 标脏（同步 Redis `agenthu:trigger:dirty`，宕机不
+  阻塞摄取）+ arq cron 每 30s `drain_trigger_evaluation`（轮询粒度即去抖
+  + 引擎幂等兜底）。验证：**227 passed**（main 220，+7 触发/worker）/
+  pyright 0/ruff/drift 绿；四个 today 测试加「深夜窗口跳过」守卫（v2
+  预算随墙钟收缩是「徽标与计划一致」的正确行为，orders 测试改固定晨间
+  start_at 求确定性）。**E4 全链服务端依赖至此齐备**，剩
+  `AGENTHU_E4_FULL=1` 联合首跑。批末重算/哈希去重优化（评估 #4）显式
+  后置小尾巴 PR。
 - 流程规则不变：分支从 main 拉出；跨边界先冻结；PR 互审（A=rotcar07，
   B=juefan-web）；**并行会话各用独立 worktree**（2026-10-01 混合提交事故
   后的新规则）。
