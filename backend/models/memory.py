@@ -87,9 +87,14 @@ class Memory(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
     )
     # Version chain: a correction/aggregation writes a NEW row pointing at the
-    # row it replaces; live rows have supersedes_id IS NULL.
+    # row it replaces; live rows have supersedes_id IS NULL. The FK is
+    # DEFERRABLE because the write order is fixed the other way round: the old
+    # row must retire (take the pointer) BEFORE the new live row inserts —
+    # the partial unique index cannot be deferred, so it demands that order,
+    # and the pointer is checked at commit instead (migration plan §3).
     supersedes_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("memories.id", ondelete="SET NULL"), nullable=True
+        ForeignKey("memories.id", ondelete="SET NULL", deferrable=True, initially="DEFERRED"),
+        nullable=True,
     )
     valid_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

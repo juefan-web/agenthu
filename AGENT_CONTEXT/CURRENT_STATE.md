@@ -484,6 +484,22 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   （`feature/a-signoffs-d032-m3docs`）：D-032 A 签（待 B）、两份 M3 先决
   文档 A 签；迁移方案 §8 提交两项待 B 会签裁定（supersedes_id 方向勘误
   提案 = superseded-by、correction_status 语义端点化 A 立场倾向采纳）。
+- **PR #18/#19/#20 收口 + A 第二批（2026-10-01）**：#18/#19 已由 B approve
+  并合并（`de4e0dc`/`ea46ee3`）；**superseded-by 方向经双方独立复核确认**
+  （D-031 §3 勘误注记落盘）、语义端点化采纳（排 M2 Memory 页批次）、
+  D-032 双签转正、隐私决策转录 **D-033**；A 已 approve PR #20（四行 Zod
+  镜像，drift 双源交叉验证通过）。**A 第二批在途**
+  （`feature/memory-lifecycle-endpoints`）：Memory 三语义端点
+  （`confirm`/`correct`/`reject`，correct 走 superseded-by 版本链，
+  reject 保持 live 占位；`MemoryCreate/Update` 移除 correction_status
+  直填）+ **接受即取代**（confirm 带 `replaces_plan_id` 的计划同事务
+  SUPERSEDED 被替代 CONFIRMED 计划，幂等跳过非 CONFIRMED）。
+  **实现期新裁定**（迁移方案 §3 补记 + 迁移 `f63b7e2a5c91`）：superseded-by
+  的写入顺序被部分唯一索引钉死（旧行先退、新行后插），旧行指针指向尚未
+  插入的新行 → **FK 定为 DEFERRABLE INITIALLY DEFERRED**（commit 时校验）；
+  live-key 冲突走 D-003 先查后插模式（savepoint 只兜真竞态，避免 flush
+  失败毒化共享测试会话）。验证：**215 passed**（main 211）/ruff/pyright 0/
+  迁移 up→down→up + `alembic check`/drift 双源全绿。
 - 流程规则不变：分支从 main 拉出；跨边界先冻结；PR 互审（A=rotcar07，
   B=juefan-web）；**并行会话各用独立 worktree**（2026-10-01 混合提交事故
   后的新规则）。
