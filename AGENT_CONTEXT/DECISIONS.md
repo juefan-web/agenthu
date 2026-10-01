@@ -580,6 +580,15 @@ Context：`TASKS/m2-breakdown.md`「冻结先行」四项中的三项尚无裁�
 | `evidence` | `JSONB` | 通用证据列表：`{type:"event", id}` 或 `{type:"document", file_id, checksum, page, span_start, span_end}` |
 | `embedding` | `vector(1536) NULL`（M3 落列） | pgvector；维度对应 text-embedding-3-small，换供应商 = 迁移 + 重嵌 |
 
+- **勘误 2026-10-01（链方向裁定，A 提案、B 会签确认，详见迁移方案 §8）**：
+  本条 §3 表与迁移方案 §5 的原括注「新行 `supersedes_id` 指旧行」（supersedes
+  方向）与「live 行 = `supersedes_id IS NULL`」的不变式、部分唯一索引谓词、
+  检索过滤**不共容**——supersedes 方向下新行带非空指针，同时逃出唯一索引
+  又被检索排除，旧行保持 NULL 反成唯一「live」，每次替换产出无约束新行且
+  用户恒取最旧版本。裁定：**superseded-by 方向**——新行落库时**同事务把
+  旧行 `supersedes_id` 置为新行 id**（新行保持 NULL = live），两处括注措辞
+  以此为准。已落地的列与索引（PR #18）方向无关，零代码变更，写入者批次
+  按此实现。
 - **live 行不变式**：每 `(user_id, subject_key)` 至多一个 `supersedes_id IS
   NULL` 的行，以部分唯一索引 `WHERE subject_key IS NOT NULL AND supersedes_id
   IS NULL` 表达。**B 评审修订 2026-10-01：直接在 M2 迁移建该部分唯一索引**
@@ -630,11 +639,11 @@ Context：`TASKS/m2-breakdown.md`「冻结先行」四项中的三项尚无裁�
 
 ## D-032 — 不基于 Hermes agent 构建，采设计不采底座
 
-Status: **A 已签认**（2026-10-01，rotcar07：六条不采依据与可迁移机制清单
-核验无异议，「采设计不采底座」与既有冻结边界一致；随签认在
-`TASKS/m3-memory-schema-migration.md` §8 提交两项待 B 会签裁定——
-supersedes_id 链方向勘误、correction_status 语义端点化）。待 B 签认后转
-accepted。
+Status: **accepted**（A：rotcar07 2026-10-01；B：juefan-web 2026-10-01 会签，
+六条不采依据与可迁移机制清单核验无异议，「采设计不采底座」与既有冻结
+边界一致。随会签裁定 §8 两项：**supersedes_id 链方向 = superseded-by**
+（勘误注记见 D-031 §3）、**correction_status 语义端点化采纳**（排 M2
+Memory 页批次））。
 
 Context：NousResearch/hermes-agent（MIT）作为成熟对话 Agent harness 被评估
 为潜在底座（预研全文与逐条技术事实见
@@ -653,3 +662,25 @@ Revisit：产品转向单机优先（放弃多用户与多端同步），或 M4 
 
 附注：预研报告原编 D-031 与 M2 契约冻结决策撞号，登记时改为 D-032；预研
 的文档增量已由协调人调和移植进 main 现行版（详见报告归档注记）。
+
+## D-033 — 课程资料隐私 / 合规决策（M3 先决文档 2 转正）
+
+Status: accepted（2026-10-01 A/B 双签；**规范文本 = `TASKS/m3-course-materials-
+privacy.md`**，本条为转录索引，冲突时以规范文本为准）。
+
+Decision 要点：① 文件元数据随采集自动入库（`downloadUrl` 不进 Event——
+会话态认证参数，D-012 与最小化采集违例）；文件本体默认不上传，仅用户对
+单个文件的显式动作经 Tauri 中转，不留本地持久副本。② 一切资料数据仅本人
+可访问——用户隔离是隐私与版权双重要求下的 **P0 硬要求**（跨用户/匿名暴露
+= P0 缺陷）。③ alpha 无自动过期；删除是 Level 2 确认（不可逆），沿依赖图
+级联。④ 文本送模型供应商**默认关闭**；用户按课程/按问题显式开启后只送
+命中 chunk、限当前课程；每次回答落库记录送出 chunk、模型与 prompt 版本；
+断供/未开启时降级标注「未落地」，不伪造 grounded。⑤ 内容安全扫描（
+2026-10-01 补强）：chunk 文本按不可信输入处理（prompt injection 载体），
+分层扫描 + `scanner_version` 入 chunk 元数据 + 对抗 fixture 回归。
+
+排除项：课堂录音/转写是独立数据类别，**另行决策**，本条不覆盖、不隐含
+授权。Provider 政策核对（API 输入不用于训练）于 M3 摄取开工前完成首核并
+记录链接，未核前第 ④ 条保持默认关闭。
+
+Revisit：供应商政策变更、跨课程混问（M3 末）、Android 端资料访问（M6）。

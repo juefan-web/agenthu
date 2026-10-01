@@ -313,6 +313,19 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
 
 ## Blockers / decisions needed
 
+- **B 侧评审/会签（2026-10-01，第二轮）**：PR #18（D-031 迁移 + 契约同步）
+  核验通过并合并 `de4e0dc`（本地 ruff/84 unit/drift 双源全绿 + CI 六项
+  success；迁移与 B 修订逐项一致、`basis` never-null validator 边界确认、
+  快照预置四行形状无误）。PR #19 B 会签随分支落盘：**D-032 转 accepted**、
+  隐私文档双签转 accepted 并转录 **D-033**、迁移方案 §8 两项裁定——
+  **superseded-by 方向确认**（B 独立复核坐实矛盾机制；D-031 §3 补勘误
+  注记）、**correction_status 语义端点化采纳**（B 作为 Memory 页实现者
+  补落地口径：correct 端点收覆盖值内部走版本链、reject 保持 REJECTED
+  live 占位、页面按钮 ↔ 端点一一对应）。B 下一步：镜像四行 Zod（
+  `basis`/`recent_state` optional-only、`replaces_plan_id`/`replan_reason`
+  `.nullable().optional()`——三种形状别混）→ basis 面板/重排建议 UI/
+  Memory 页（含三语义端点接线）→ E4 spec。
+
 - **M2 B 侧第一批（2026-10-01）**：
   - **App.tsx 拆分已完成并在 main**——⚠ 落地方式异常：B 的暂存文件被同日
     协调人的提交 `9ba07c1`（Hermes 预研归档 + D-032 草案）一并裹入并推送
