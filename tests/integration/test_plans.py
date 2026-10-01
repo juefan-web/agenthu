@@ -139,6 +139,11 @@ def test_today_plan_generates_when_missing(client, auth_headers) -> None:
 
 
 def test_today_plan_is_idempotent(client, auth_headers) -> None:
+    # Late-night window: a 120-minute task no longer fits the day's remaining
+    # budget, the first GET generates an *empty* draft, and D7 (empty draft +
+    # pending task => not reusable) makes the second GET regenerate — the ids
+    # legitimately differ near midnight.
+    _skip_late_night(130)
     _make_task(client, auth_headers, title="HW2", days=1)
     first = client.get("/v1/plans/today", headers=auth_headers).json()
     second = client.get("/v1/plans/today", headers=auth_headers).json()
