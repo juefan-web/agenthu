@@ -17,6 +17,7 @@ import {
   type Token,
   type User,
 } from "@agenthu/contracts";
+import { MemoryItemSchema, type MemoryItem } from "./memory";
 
 export type FocusSessionUpdate = Partial<Pick<FocusSession, "status" | "actual_minutes" | "deviation_note">>;
 
@@ -106,6 +107,28 @@ export class BackendClient {
     return this.requestValidated(`/v1/plans/${encodeURIComponent(planId)}/cancel`, PlanSchema, {
       method: "POST",
     });
+  }
+
+  async listMemories(): Promise<MemoryItem[]> {
+    // Page 包装本地解析（同 listPlans 口径）；Memory API backend-only
+    const data = await this.requestJson("/v1/memory?limit=200");
+    return MemoryItemSchema.array().parse((data as { items?: unknown }).items);
+  }
+
+  async confirmMemory(memoryId: string): Promise<MemoryItem> {
+    return this.requestValidated(`/v1/memory/${encodeURIComponent(memoryId)}/confirm`, MemoryItemSchema, { method: "POST" });
+  }
+
+  async correctMemory(memoryId: string, payload: { content: string; confidence?: number }): Promise<MemoryItem> {
+    return this.requestValidated(`/v1/memory/${encodeURIComponent(memoryId)}/correct`, MemoryItemSchema, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: payload.content, confidence: payload.confidence ?? null }),
+    });
+  }
+
+  async rejectMemory(memoryId: string): Promise<MemoryItem> {
+    return this.requestValidated(`/v1/memory/${encodeURIComponent(memoryId)}/reject`, MemoryItemSchema, { method: "POST" });
   }
 
   async confirmPlan(planId: string): Promise<Plan> {

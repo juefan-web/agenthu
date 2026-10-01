@@ -62,6 +62,20 @@ textarea { resize: vertical; }
 .replan-suggestion { border: 1px solid #c9a25c; border-radius: 6px; background: #fdf8ee; padding: 12px 14px; margin-bottom: 16px; }
 .replan-suggestion .replan-reason { color: #614a2c; font-size: 13px; margin: 0 0 8px; }
 .replan-suggestion .replan-diff { margin: 0 0 12px; padding-left: 18px; color: #617272; font-size: 13px; display: grid; gap: 3px; }
+.memory-list { border-top: 1px solid #e0e6e4; max-width: 760px; }
+.memory-row { display: flex; justify-content: space-between; gap: 16px; padding: 13px 2px; border-bottom: 1px solid #e0e6e4; font-size: 13px; }
+.memory-row > div:first-child { display: grid; gap: 4px; min-width: 0; }
+.memory-row strong { font-weight: 600; overflow-wrap: anywhere; }
+.memory-row span { color: #788686; font-size: 12px; }
+.memory-row .memory-actions { display: flex; flex: none; align-items: flex-start; gap: 6px; }
+.memory-row .memory-actions button { font-size: 12px; padding: 6px 10px; }
+.memory-edit { display: grid; gap: 8px; flex: 1 1 320px; max-width: 420px; }
+.memory-status { border-radius: 999px; font-size: 11px; font-weight: 600; padding: 2px 8px; white-space: nowrap; }
+.memory-status.unreviewed { background: #fbf5e9; color: #8a6a2f; }
+.memory-status.confirmed { background: #e9f4ea; color: #2f6b3c; }
+.memory-status.corrected { background: #eceff1; color: #546e7a; }
+.memory-status.rejected { background: #f9ebea; color: #a03d38; }
+.memory-history { opacity: .75; }
 .focus-workspace { max-width: 660px; }
 .focus-workspace p { color: #617272; font-size: 13px; }
 .note-label { margin: 18px 0; max-width: 520px; }

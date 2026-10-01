@@ -11,13 +11,14 @@ import { FocusView } from "./features/focus/FocusView";
 import { PlanView } from "./features/plans/PlanView";
 import { ReplanSuggestion } from "./features/plans/ReplanSuggestion";
 import { TaskList } from "./features/tasks/TaskList";
+import { MemoryView } from "./features/memory/MemoryView";
 import { errorText } from "./lib/errors";
 import { useSessionStore } from "./state/session";
 import { formatAvailableMinutes } from "./state/format";
 import { useBackendSessionStore } from "./state/backendSession";
 import type { EventSyncCoordinator } from "./sync/coordinator";
 
-type View = "today" | "tasks" | "focus";
+type View = "today" | "tasks" | "focus" | "memory";
 type CollectionStage = "collecting" | "saving" | "syncing" | null;
 
 function syncResultText(result: Awaited<ReturnType<EventSyncCoordinator["flush"]>>): string {
@@ -169,9 +170,9 @@ export default function App() {
       <aside className="sidebar">
         <div className="brand">agenthu</div>
         <nav aria-label="主导航">
-          {(["today", "tasks", "focus"] as const).map((item) =>
+          {(["today", "tasks", "focus", "memory"] as const).map((item) =>
             <button key={item} className={`nav-item ${view === item ? "active" : ""}`} onClick={() => setView(item)}>
-              {item === "today" ? "今天" : item === "tasks" ? "任务" : "专注"}
+              {item === "today" ? "今天" : item === "tasks" ? "任务" : item === "focus" ? "专注" : "记忆"}
             </button>)}
         </nav>
         <div className="sidebar-footer"><span className={`status-dot ${session.status}`} />{session.status === "ready" ? `${session.username} 已连接` : "校园未连接"}</div>
@@ -179,7 +180,7 @@ export default function App() {
 
       <section className="content">
         <header className="topbar">
-          <div><p className="eyebrow">STUDY / TIME</p><h1>{view === "today" ? "今天" : view === "tasks" ? "任务" : "专注"}</h1></div>
+          <div><p className="eyebrow">STUDY / TIME</p><h1>{view === "today" ? "今天" : view === "tasks" ? "任务" : view === "focus" ? "专注" : "记忆"}</h1></div>
           <div className="top-actions">
             {pending > 0 && <span className="pending-count">{pending} 条待同步</span>}
             <button className="ghost-button" disabled={!sync || pending === 0 || retry.isPending} onClick={() => retry.mutate()}>重试同步</button>
@@ -205,6 +206,7 @@ export default function App() {
         </div>}
         {view === "tasks" && <section className="workspace-section"><div className="section-heading"><h2>全部任务</h2><span className="section-meta">{taskList.length} 项</span></div><TaskList tasks={taskList} loading={tasks.isPending && !!backend} error={tasks.error} configured={!!backend} /></section>}
         {view === "focus" && <FocusView tasks={taskList} />}
+        {view === "memory" && <MemoryView />}
       </section>
     </main>
   </AppServicesContext.Provider>;
