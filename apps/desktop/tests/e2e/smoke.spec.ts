@@ -41,10 +41,13 @@ test.describe("构建包主链冒烟", () => {
   test("应用启动并渲染外壳与校园登录表单", async ({ app }) => {
     const { page } = app;
     await expect(page.getByRole("navigation", { name: "主导航" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "今天" })).toBeVisible();
+    // 首跑修订：旧实例可能停在任务/专注视图（人工组遗留），标题放宽为任一
+    // 主视图；「密码」加 exact——getByLabel 默认子串匹配会同时命中
+    // 「Backend 密码」（Backend 登录表单同屏时 strict-mode 双匹配）。
+    await expect(page.getByRole("heading", { name: /^(今天|任务|专注)$/ })).toBeVisible();
     await expect(page.getByText("校园未连接").or(page.getByText("已连接"))).toBeVisible();
     await expect(page.getByLabel("学号")).toBeVisible();
-    await expect(page.getByLabel("密码")).toBeVisible();
+    await expect(page.getByLabel("密码", { exact: true })).toBeVisible();
   });
 
   test("登录进入 2FA 并按凭据完成主链", async ({ freshApp }) => {
@@ -57,7 +60,7 @@ test.describe("构建包主链冒烟", () => {
     await expect(page.getByLabel("学号")).toBeVisible({ timeout: 30_000 });
 
     await page.getByLabel("学号").fill(testUsername!);
-    await page.getByLabel("密码").fill(testPassword!);
+    await page.getByLabel("密码", { exact: true }).fill(testPassword!);
     await page.getByRole("button", { name: "登录" }).click();
 
     // 未受信设备会出现方式选择；受信设备直接就绪——两分支都接受
