@@ -94,6 +94,20 @@ export class BackendClient {
     return this.requestValidated("/v1/plans/today", PlanSchema);
   }
 
+  async listPlans(status: Plan["status"]): Promise<Plan[]> {
+    // Page 包装（items/total/limit/offset）暂非客户端契约（D-029 落地后
+    // next_cursor 入契约）；此处本地解析只用 items。limit=200 为过渡口径。
+    const data = await this.requestJson(`/v1/plans?status=${encodeURIComponent(status)}&limit=200`);
+    const items = PlanSchema.array().parse((data as { items?: unknown }).items);
+    return items;
+  }
+
+  async cancelPlan(planId: string): Promise<Plan> {
+    return this.requestValidated(`/v1/plans/${encodeURIComponent(planId)}/cancel`, PlanSchema, {
+      method: "POST",
+    });
+  }
+
   async confirmPlan(planId: string): Promise<Plan> {
     return this.requestValidated(`/v1/plans/${encodeURIComponent(planId)}/confirm`, PlanSchema, {
       method: "POST",

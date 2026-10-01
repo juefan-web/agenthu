@@ -9,6 +9,7 @@ import { AppServicesContext, createAppServices } from "./app/services";
 import { BackendForms } from "./features/backend/BackendForms";
 import { FocusView } from "./features/focus/FocusView";
 import { PlanView } from "./features/plans/PlanView";
+import { ReplanSuggestion } from "./features/plans/ReplanSuggestion";
 import { TaskList } from "./features/tasks/TaskList";
 import { errorText } from "./lib/errors";
 import { useSessionStore } from "./state/session";
@@ -197,6 +198,7 @@ export default function App() {
           </section>
           <section className="workspace-section">
             <div className="section-heading"><h2>今日计划</h2><div className="section-heading-meta"><span className="section-meta">{currentState.data?.context ?? "当前上下文未设置"}</span>{currentState.data?.available_minutes != null && <span className="section-meta minutes-badge">剩余可用 {formatAvailableMinutes(currentState.data.available_minutes)}</span>}</div></div>
+            <ReplanSuggestion currentPlan={plan.data ?? undefined} />
             <PlanView plan={plan.data} loading={plan.isPending && !!backend} error={plan.error} onChanged={() => void queryClient.invalidateQueries({ queryKey: ["plan"] })} />
           </section>
           <section className="workspace-section wide"><div className="section-heading"><h2>待办任务</h2><span className="section-meta">{taskList.length} 项</span></div><TaskList tasks={taskList} loading={tasks.isPending && !!backend} error={tasks.error ?? currentState.error} configured={!!backend} /></section>
