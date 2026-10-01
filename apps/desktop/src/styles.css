@@ -51,6 +51,14 @@ textarea { resize: vertical; }
 .status-label { white-space: nowrap; }
 .task-row .task-title-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .task-row .source-badge { border: 1px solid #b9d6cf; border-radius: 999px; background: #e9f0ef; color: #2b5b56; font-size: 11px; font-weight: 600; line-height: 1.2; padding: 2px 8px; white-space: nowrap; }
+.basis-panel { margin-top: 3px; }
+.basis-panel summary { cursor: pointer; color: #677879; font-size: 12px; user-select: none; }
+.basis-panel summary:hover { color: #28766c; }
+.basis-panel dl { margin: 6px 0 0; display: grid; gap: 3px; }
+.basis-panel dl div { display: flex; gap: 10px; }
+.basis-panel dt { color: #788686; flex: none; }
+.basis-panel dd { margin: 0; color: #617272; overflow-wrap: anywhere; }
+.basis-panel .basis-at-risk { color: #a03d38; font-weight: 600; }
 .focus-workspace { max-width: 660px; }
 .focus-workspace p { color: #617272; font-size: 13px; }
 .note-label { margin: 18px 0; max-width: 520px; }
