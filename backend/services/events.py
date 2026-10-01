@@ -17,6 +17,7 @@ from backend.models.task import Task
 from backend.schemas.client_contract import EventEnvelope
 from backend.schemas.event import EventCreate
 from backend.services.event_handlers import process_event
+from backend.worker.enqueue import mark_user_dirty
 
 _ASSIGNMENT_PREFIX = "study.assignment."
 # Deadline-bearing fields of assignment payloads that must be timezone-aware
@@ -137,6 +138,10 @@ def create_event(
 
     process_event(session, event)
     session.flush()
+    # New facts may satisfy a replan trigger (focus overrun, schedule change,
+    # near-deadline task). Best-effort dirty marker; the worker cron drains it
+    # (D-031 §2) — Redis being down must never fail ingestion.
+    mark_user_dirty(user_id)
     return event, True
 
 
