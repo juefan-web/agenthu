@@ -14,15 +14,19 @@ the new live row, so the partial unique index never sees two live rows).
 
 from __future__ import annotations
 
+import logging
 import uuid
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.core.errors import ConflictError
 from backend.db.base import utcnow
 from backend.models.enums import MemoryCorrectionStatus
 from backend.models.memory import Memory
+
+logger = logging.getLogger(__name__)
 
 
 def _require_live(memory: Memory) -> None:
@@ -113,3 +117,97 @@ def correct_memory(
     session.add(replacement)
     session.flush()
     return replacement
+
+
+def upsert_keyed_memory(
+    session: Session,
+    *,
+    user_id: uuid.UUID,
+    subject_key: str,
+    level: int,
+    kind: str,
+    domain: str,
+    content: str,
+    source: dict,
+    confidence: float,
+    evidence: list[dict],
+) -> Memory | None:
+    """Deterministic keyed upsert along the superseded-by chain (§4.2).
+
+    The L2 aggregation writer's primitive: FOR UPDATE the live row, skip when
+    the user REJECTED the subject (blocking re-derivation, §5), no-op when
+    the derived value is unchanged (no version churn per aggregation run),
+    otherwise supersede — old row retires (pointer + valid_to) *before* the
+    new live row inserts, exactly like ``correct_memory``. Returns the live
+    row (existing or new), or None when blocked or race-lost.
+    """
+
+    locked = session.scalar(
+        select(Memory)
+        .where(
+            Memory.user_id == user_id,
+            Memory.subject_key == subject_key,
+            Memory.supersedes_id.is_(None),
+        )
+        .with_for_update()
+    )
+    now = utcnow()
+    if locked is not None:
+        if locked.correction_status == MemoryCorrectionStatus.REJECTED:
+            logger.info(
+                "Keyed memory re-derivation blocked by REJECTED live row",
+                extra={"subject_key": subject_key, "user_id": str(user_id)},
+            )
+            return None
+        unchanged = (
+            locked.source.get("value") == source.get("value")
+            and locked.source.get("sample_count") == source.get("sample_count")
+            if isinstance(locked.source, dict)
+            else False
+        )
+        if unchanged:
+            return locked
+        replacement = Memory(
+            id=uuid.uuid4(),
+            user_id=user_id,
+            level=level,
+            domain=domain,
+            content=content,
+            source=source,
+            source_event_ids=[],
+            confidence=confidence,
+            correction_status=MemoryCorrectionStatus.CONFIRMED,
+            subject_key=subject_key,
+            kind=kind,
+            evidence=evidence,
+            valid_from=now,
+        )
+        locked.valid_to = locked.valid_to or now
+        locked.supersedes_id = replacement.id
+        session.flush()
+        session.add(replacement)
+        session.flush()
+        return replacement
+
+    fresh = Memory(
+        id=uuid.uuid4(),
+        user_id=user_id,
+        level=level,
+        domain=domain,
+        content=content,
+        source=source,
+        source_event_ids=[],
+        confidence=confidence,
+        correction_status=MemoryCorrectionStatus.CONFIRMED,
+        subject_key=subject_key,
+        kind=kind,
+        evidence=evidence,
+        valid_from=now,
+    )
+    session.add(fresh)
+    try:
+        with session.begin_nested():
+            session.flush()
+    except IntegrityError:
+        return None  # lost a race against another writer for this key
+    return fresh

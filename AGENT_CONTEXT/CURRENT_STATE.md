@@ -500,6 +500,27 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   live-key 冲突走 D-003 先查后插模式（savepoint 只兜真竞态，避免 flush
   失败毒化共享测试会话）。验证：**215 passed**（main 211）/ruff/pyright 0/
   迁移 up→down→up + `alembic check`/drift 双源全绿。
+- **A 第三批（2026-10-01 晚，`feature/planner-v2-estimate-learning`）——
+  planner v2 + 估时学习 + L1/L2 写入者**：① `slots_v2`——空闲槽（复用
+  `_today_schedule_entries` + 10 分钟缓冲、08:00 起算、日终截止）→ 确定性
+  打分（slack+goal+priority）→ >90 分钟拆块 → 塞槽总量受 D-027 口径
+  available_minutes 约束（badge 与计划不再打架）；每项写结构化 basis
+  （deadline/slack/estimate+source/slot_reason/score/at_risk），中文人话
+  reason 由 `plan_reason` 从 basis 渲染（**strategy 标签泄露为 reason 的
+  旧回退已删除**——正是评估报告的原始批评）。② 估时学习——`focus.completed`
+  同步写 L1 episode（含 deviation_note、evidence 指向事件）+ L2 行
+  （`estimate:course:<course>` 中位数 / `estimate_ratio:user` 截尾均值，走
+  `upsert_keyed_memory` superseded-by 版本链、REJECTED 阻断再派生、值不变
+  不换版本）；planner 经 D-031 §4 阶梯读取（user > learned:course(n≥2) >
+  learned:ratio(n≥3) > default，激活由样本数门控而非通用置信度下限）。
+  **ratio 采样勘误（A 提案待 B 会签）**：无计划项的完成不计样本。
+  ③ **plans 列表 status 过滤改客户端枚举**（draft→{DRAFT,PENDING_CONFIRMATION}、
+  superseded→{SUPERSEDED,CANCELLED}，大小写都收）——修复 #22 横幅与 E4
+  spec 的 `?status=draft` 422（D-009 客户端契约优先；已实证 422 复现）。
+  验证：**220 passed**（main 215，+5 planner v2 集成）/pyright 0/ruff/
+  drift 双源绿。E4 服务端孪生测试 = `test_planner_v2.py`（避课表/learned
+  双向/拒绝阻断/状态过滤）。**下一批**：触发引擎（超时/新任务/时段已过/
+  课表变更 + 旧建议自动取消）+ worker 去抖重算。
 - 流程规则不变：分支从 main 拉出；跨边界先冻结；PR 互审（A=rotcar07，
   B=juefan-web）；**并行会话各用独立 worktree**（2026-10-01 混合提交事故
   后的新规则）。

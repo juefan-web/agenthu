@@ -91,8 +91,12 @@ def test_generate_plan_orders_by_deadline(client, auth_headers) -> None:
     plan = generated.json()
     assert plan["status"] == "draft"
     assert plan["confirmation_required"] is True
-    assert [item["title"] for item in plan["items"]] == ["Sooner", "Later"]
-    assert plan["basis"]["strategy"] == "deadline_then_priority"
+    titles = [item["title"] for item in plan["items"]]
+    # Both tasks appear, earlier deadline first; the 120-minute fixture
+    # estimate may split each into <=90-minute blocks (order preserved).
+    assert set(titles) == {"Sooner", "Later"}
+    assert titles == ["Sooner"] * titles.count("Sooner") + ["Later"] * titles.count("Later")
+    assert plan["basis"]["strategy"] == "slots_v2"
     # Client plan items require present start/end/reason.
     for item in plan["items"]:
         assert item["task_id"] is not None
@@ -107,7 +111,11 @@ def test_today_plan_generates_when_missing(client, auth_headers) -> None:
     assert today.status_code == 200, today.text
     body = today.json()
     assert body["status"] == "draft"
-    assert len(body["items"]) == 1
+    assert body["items"]
+    # Planner v2 splits tasks longer than 90 minutes into blocks (§3.1): the
+    # fixture's 120-minute estimate lands as 90 + 30 on the same task.
+    assert {item["task_id"] for item in body["items"]} == {body["items"][0]["task_id"]}
+    assert sum(item["planned_minutes"] for item in body["items"]) == 120
 
 
 def test_today_plan_is_idempotent(client, auth_headers) -> None:
@@ -254,18 +262,28 @@ def test_plan_item_basis_round_trip(client, auth_headers) -> None:
     assert fetched["items"][0]["basis"] == basis
 
 
-def test_plan_item_basis_serializes_empty_not_null(client, auth_headers) -> None:
+def test_plan_item_basis_serializes_object_not_null(client, auth_headers) -> None:
     # The frozen client Zod is `basis: z.record(z.unknown()).optional()` —
-    # optional does not accept null, so items without structured data must
-    # serialize an empty object (recent_state pattern, D-027 appendix), and
-    # ordinary plans must serialize replaces_plan_id/replan_reason as null
-    # only because those are declared `.nullable().optional()` (D-031 §2).
+    # optional does not accept null, so basis must always serialize an object:
+    # an empty one for manual/legacy items (recent_state pattern, D-027
+    # appendix), a populated one for planner v2 items. Ordinary plans
+    # serialize replaces_plan_id/replan_reason as null only because those are
+    # declared `.nullable().optional()` (D-031 §2).
     _make_task(client, auth_headers, title="Bare homework", days=1)
-    plan = client.get("/v1/plans/today", headers=auth_headers).json()
-    assert plan["replaces_plan_id"] is None
-    assert plan["replan_reason"] is None
-    for item in plan["items"]:
-        assert item["basis"] == {}
+    generated = client.get("/v1/plans/today", headers=auth_headers).json()
+    assert generated["replaces_plan_id"] is None
+    assert generated["replan_reason"] is None
+    assert generated["items"]
+    # v2-generated items carry the structured explainability payload.
+    assert all(item["basis"].get("estimate_source") for item in generated["items"])
+
+    task = generated["items"][0]
+    manual = client.post(
+        "/v1/plans",
+        json={"title": "Manual", "items": [{"title": "Bare homework", "task_id": task["task_id"]}]},
+        headers=auth_headers,
+    ).json()
+    assert manual["items"][0]["basis"] == {}
 
 
 def test_replan_rejects_terminal_plans(client, auth_headers) -> None:
@@ -426,7 +444,9 @@ def test_today_regenerates_when_tasks_added_after_empty_draft(client, auth_heade
     task = _make_task(client, auth_headers, title="HW3", days=1)
     regenerated = client.get("/v1/plans/today", headers=auth_headers).json()
     assert regenerated["id"] != empty["id"]
-    assert [item["task_id"] for item in regenerated["items"]] == [task["id"]]
+    # The 120-minute fixture estimate may split into <=90-minute blocks, all
+    # on the new task.
+    assert {item["task_id"] for item in regenerated["items"]} == {task["id"]}
 
     # And the regenerated plan is the one that gets reused from now on.
     settled = client.get("/v1/plans/today", headers=auth_headers).json()

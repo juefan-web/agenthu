@@ -132,17 +132,45 @@ def today(user: CurrentUser, db: DBSession) -> ClientPlan:
     return _client(resolve_today_plan(db, user.id))
 
 
+_CLIENT_STATUS_FILTERS = {
+    # Client-visible statuses (client_view._PLAN_STATUS) map back to the
+    # internal statuses they are served from. The query param therefore
+    # accepts the client contract's enum values (D-009) — "draft" must not
+    # 422 — and mirrors client_view's one-to-many mappings exactly.
+    "draft": (PlanStatus.DRAFT, PlanStatus.PENDING_CONFIRMATION),
+    "confirmed": (PlanStatus.CONFIRMED,),
+    "active": (),  # never produced by the mapping; an honest empty result
+    "completed": (PlanStatus.COMPLETED,),
+    "superseded": (PlanStatus.SUPERSEDED, PlanStatus.CANCELLED),
+}
+
+
+def _resolve_status_filter(raw: str) -> tuple[PlanStatus, ...]:
+    lowered = raw.lower()
+    if lowered in _CLIENT_STATUS_FILTERS:
+        return _CLIENT_STATUS_FILTERS[lowered]
+    internal = PlanStatus(raw.upper())  # raises ValueError -> 422 below
+    return (internal,)
+
+
 @router.get("", response_model=Page[ClientPlan])
 def list_all(
     user: CurrentUser,
     db: DBSession,
     pagination: PaginationDep,
-    status_filter: Annotated[PlanStatus | None, Query(alias="status")] = None,
+    status_filter: Annotated[str | None, Query(alias="status")] = None,
     goal_id: Annotated[uuid.UUID | None, Query()] = None,
 ) -> Page[ClientPlan]:
     conditions = [Plan.user_id == user.id]
     if status_filter is not None:
-        conditions.append(Plan.status == status_filter)
+        try:
+            statuses = _resolve_status_filter(status_filter)
+        except ValueError as exc:
+            raise ValidationError(f"Unknown plan status filter: {status_filter}") from exc
+        if statuses:
+            conditions.append(Plan.status.in_(statuses))
+        else:
+            return Page(items=[], total=0, limit=pagination.limit, offset=pagination.offset)
     if goal_id is not None:
         conditions.append(Plan.goal_id == goal_id)
     total = db.scalar(select(func.count()).select_from(Plan).where(*conditions)) or 0

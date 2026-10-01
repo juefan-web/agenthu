@@ -7,6 +7,7 @@ that translates Backend state into them.
 
 from __future__ import annotations
 
+from backend.db.base import utcnow
 from backend.models.enums import PlanStatus, TaskStatus
 from backend.models.focus_session import FocusSession
 from backend.schemas.client_contract import (
@@ -19,6 +20,7 @@ from backend.schemas.client_contract import (
 from backend.schemas.current_state import CurrentStateRead
 from backend.schemas.plan import PlanRead
 from backend.schemas.task import TaskRead
+from backend.services.plan_reason import render_reason
 
 _TASK_STATUS = {
     TaskStatus.TODO: "todo",
@@ -75,9 +77,18 @@ def task_to_client(task: TaskRead) -> ClientTask:
 def _plan_item_reason(item, plan: PlanRead) -> str:
     if item.notes:
         return item.notes
-    strategy = plan.basis.get("strategy") if isinstance(plan.basis, dict) else None
-    if isinstance(strategy, str) and strategy:
-        return strategy
+    # v2 items render the human sentence from their structured basis
+    # (D-031 §1). The strategy-tag fallback is deliberately gone: serving an
+    # internal identifier like "slots_v2" as the reason was the original
+    # explainability complaint (evaluation §1.2).
+    rendered = render_reason(
+        item.basis,
+        planned_start=item.planned_start,
+        planned_end=item.planned_end,
+        now=utcnow(),
+    )
+    if rendered is not None:
+        return rendered
     if plan.replan_reason:
         return plan.replan_reason
     return "planned"
