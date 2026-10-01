@@ -57,7 +57,8 @@ def test_concurrent_today_requests_return_one_plan(engine) -> None:
     # Late-night window (same class as the test_plans guards): an empty
     # first draft is not reusable under D7, so the second resolve would
     # legitimately produce a different plan near local midnight.
-    from datetime import datetime as _dt, timedelta
+    from datetime import datetime as _dt
+    from datetime import timedelta
     from zoneinfo import ZoneInfo as _ZI
 
     from backend.config import get_settings as _gs
