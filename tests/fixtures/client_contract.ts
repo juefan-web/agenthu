@@ -14,6 +14,19 @@
 // backend serves "manual" | "onethu" | ..., optional on the client so older
 // payloads still parse.
 //
+// 2026-10-01 (D-031 §1/§2, M2 phase-0 freeze): three lines staged on the
+// Backend side, mirroring the 2026-09-28 `title` precedent — Developer B
+// must mirror them in `packages/contracts/src/index.ts`:
+//   `PlanItemSchema.basis: z.record(z.unknown()).optional()`
+//     (structured per-item explainability; `reason` stays the human string)
+//   `CurrentStateSchema.recent_state: z.record(z.unknown()).optional()`
+//     (D-027 appendix; backend-only field turns contractual)
+//   `PlanSchema.replaces_plan_id: z.string().nullable().optional()` and
+//     `PlanSchema.replan_reason: z.string().nullable().optional()`
+//     (replan-suggestion shape; `.nullable()` is required — the backend
+//     serializes an explicit null on plans without a replacement, which
+//     `.optional()` alone would reject).
+//
 // The desktop client (Developer B) owns this contract. The Backend serves these
 // exact shapes under `/v1` (DECISIONS.md D-009) and the drift check in
 // `backend/scripts/check_contract_drift.py` reads this file so CI can report an
@@ -81,6 +94,7 @@ export const CurrentStateSchema = z.object({
   context: z.string().nullable(),
   tasks: z.array(TaskSchema),
   available_minutes: z.number().int().nonnegative().nullable(),
+  recent_state: z.record(z.unknown()).optional(),
 });
 
 export const PlanItemSchema = z.object({
@@ -89,6 +103,7 @@ export const PlanItemSchema = z.object({
   end_at: IsoDateTime,
   title: z.string(),
   reason: z.string(),
+  basis: z.record(z.unknown()).optional(),
 });
 
 export const PlanSchema = z.object({
@@ -97,6 +112,8 @@ export const PlanSchema = z.object({
   items: z.array(PlanItemSchema),
   confirmation_required: z.boolean(),
   status: z.enum(["draft", "confirmed", "active", "completed", "superseded"]),
+  replaces_plan_id: z.string().nullable().optional(),
+  replan_reason: z.string().nullable().optional(),
 });
 
 export const FocusSessionSchema = z.object({

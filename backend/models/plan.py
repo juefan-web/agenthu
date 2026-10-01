@@ -89,5 +89,10 @@ class PlanItem(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     actual_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     result: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Structured per-item explainability payload (D-031 §1): deadline, slack,
+    # estimate + estimate_source, slot_reason, score parts. The plan-level
+    # ``basis`` keeps global entries only (strategy tag, current-state version)
+    # so it does not grow with task count. Old rows keep NULL.
+    basis: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
     plan: Mapped[Plan] = relationship(back_populates="items")

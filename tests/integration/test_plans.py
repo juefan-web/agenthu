@@ -213,9 +213,59 @@ def test_replan_supersedes_previous_plan(client, auth_headers) -> None:
     assert replanned.status_code == 201, replanned.text
     new_plan = replanned.json()
     assert new_plan["replan_reason"] == "Finished earlier than expected"
+    # The replan suggestion shape is contractual (D-031 §2): the client reads
+    # replaces_plan_id to detect suggestions and render the diff.
+    assert new_plan["replaces_plan_id"] == plan["id"]
 
     original = client.get(f"/v1/plans/{plan['id']}", headers=auth_headers).json()
     assert original["status"] == "superseded"
+
+
+def test_plan_item_basis_round_trip(client, auth_headers) -> None:
+    task = _make_task(client, auth_headers, title="Linear algebra set", days=2)
+    basis = {
+        "deadline": "2026-10-03T15:59:00+08:00",
+        "slack_minutes": 600,
+        "estimate_minutes": 75,
+        "estimate_source": "learned:course",
+        "slot_reason": "longest gap between classes",
+        "score": {"urgency": 3, "goal": 0, "priority": 0},
+    }
+    created = client.post(
+        "/v1/plans",
+        json={
+            "title": "Tonight",
+            "items": [
+                {
+                    "title": "Linear algebra set",
+                    "task_id": task["id"],
+                    "planned_minutes": 75,
+                    "basis": basis,
+                }
+            ],
+        },
+        headers=auth_headers,
+    )
+    assert created.status_code == 201, created.text
+    plan = created.json()
+    assert plan["items"][0]["basis"] == basis
+
+    fetched = client.get(f"/v1/plans/{plan['id']}", headers=auth_headers).json()
+    assert fetched["items"][0]["basis"] == basis
+
+
+def test_plan_item_basis_serializes_empty_not_null(client, auth_headers) -> None:
+    # The frozen client Zod is `basis: z.record(z.unknown()).optional()` —
+    # optional does not accept null, so items without structured data must
+    # serialize an empty object (recent_state pattern, D-027 appendix), and
+    # ordinary plans must serialize replaces_plan_id/replan_reason as null
+    # only because those are declared `.nullable().optional()` (D-031 §2).
+    _make_task(client, auth_headers, title="Bare homework", days=1)
+    plan = client.get("/v1/plans/today", headers=auth_headers).json()
+    assert plan["replaces_plan_id"] is None
+    assert plan["replan_reason"] is None
+    for item in plan["items"]:
+        assert item["basis"] == {}
 
 
 def test_replan_rejects_terminal_plans(client, auth_headers) -> None:

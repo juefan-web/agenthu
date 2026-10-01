@@ -5716,6 +5716,18 @@
             "title": "Permission Level",
             "default": 2
           },
+          "replaces_plan_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replaces Plan Id"
+          },
           "replan_reason": {
             "anyOf": [
               {
@@ -5853,6 +5865,11 @@
               }
             ],
             "title": "Actual Minutes"
+          },
+          "basis": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Basis"
           }
         },
         "type": "object",
@@ -6048,6 +6065,52 @@
         "type": "object",
         "title": "CurrentStateUpdate",
         "description": "User-controlled overrides applied before the next projection."
+      },
+      "DocumentEvidence": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "document",
+            "title": "Type"
+          },
+          "file_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "File Id"
+          },
+          "checksum_sha256": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 8,
+            "title": "Checksum Sha256"
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Page"
+          },
+          "span_start": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Span Start"
+          },
+          "span_end": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Span End"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "file_id",
+          "checksum_sha256",
+          "page",
+          "span_start",
+          "span_end"
+        ],
+        "title": "DocumentEvidence",
+        "description": "A citation pinned to an exact document version (M3 grounding tuple)."
       },
       "ErrorBody": {
         "properties": {
@@ -6275,6 +6338,27 @@
           "provenance"
         ],
         "title": "EventEnvelope"
+      },
+      "EventEvidence": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "event",
+            "title": "Type"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "id"
+        ],
+        "title": "EventEvidence",
+        "description": "A citation of a stored Event by id."
       },
       "EventProvenance": {
         "properties": {
@@ -6900,6 +6984,78 @@
             },
             "type": "array",
             "title": "Source Event Ids"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemoryKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "subject_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject Key"
+          },
+          "evidence": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/EventEvidence"
+                },
+                {
+                  "$ref": "#/components/schemas/MemoryEvidence"
+                },
+                {
+                  "$ref": "#/components/schemas/DocumentEvidence"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "type",
+                "mapping": {
+                  "document": "#/components/schemas/DocumentEvidence",
+                  "event": "#/components/schemas/EventEvidence",
+                  "memory": "#/components/schemas/MemoryEvidence"
+                }
+              }
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Evidence"
+          },
+          "valid_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid From"
+          },
+          "valid_to": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid To"
           }
         },
         "type": "object",
@@ -6907,6 +7063,39 @@
           "content"
         ],
         "title": "MemoryCreate"
+      },
+      "MemoryEvidence": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "memory",
+            "title": "Type"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "id"
+        ],
+        "title": "MemoryEvidence",
+        "description": "A citation of another memory row (e.g. L2 facts citing their L1 base)."
+      },
+      "MemoryKind": {
+        "type": "string",
+        "enum": [
+          "episode",
+          "fact",
+          "habit",
+          "preference",
+          "model"
+        ],
+        "title": "MemoryKind",
+        "description": "Structural memory kind (D-031 §3), orthogonal to ``level``."
       },
       "MemoryRead": {
         "properties": {
@@ -6952,6 +7141,87 @@
           "correction_status": {
             "$ref": "#/components/schemas/MemoryCorrectionStatus"
           },
+          "evidence": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Evidence"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemoryKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "subject_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject Key"
+          },
+          "supersedes_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supersedes Id"
+          },
+          "valid_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid From"
+          },
+          "valid_to": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid To"
+          },
+          "use_count": {
+            "type": "integer",
+            "title": "Use Count"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -6974,6 +7244,14 @@
           "source_event_ids",
           "confidence",
           "correction_status",
+          "evidence",
+          "kind",
+          "subject_key",
+          "supersedes_id",
+          "valid_from",
+          "valid_to",
+          "use_count",
+          "last_used_at",
           "created_at",
           "updated_at"
         ],
@@ -7068,6 +7346,85 @@
               }
             ],
             "title": "Source Event Ids"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemoryKind"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "subject_key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject Key"
+          },
+          "evidence": {
+            "anyOf": [
+              {
+                "items": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/EventEvidence"
+                    },
+                    {
+                      "$ref": "#/components/schemas/MemoryEvidence"
+                    },
+                    {
+                      "$ref": "#/components/schemas/DocumentEvidence"
+                    }
+                  ],
+                  "discriminator": {
+                    "propertyName": "type",
+                    "mapping": {
+                      "document": "#/components/schemas/DocumentEvidence",
+                      "event": "#/components/schemas/EventEvidence",
+                      "memory": "#/components/schemas/MemoryEvidence"
+                    }
+                  }
+                },
+                "type": "array",
+                "maxItems": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence"
+          },
+          "valid_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid From"
+          },
+          "valid_to": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid To"
           }
         },
         "type": "object",
@@ -7670,6 +8027,18 @@
               }
             ],
             "title": "Notes"
+          },
+          "basis": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Basis"
           }
         },
         "type": "object",
