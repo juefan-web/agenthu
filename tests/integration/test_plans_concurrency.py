@@ -62,11 +62,13 @@ def test_concurrent_today_requests_return_one_plan(engine) -> None:
     from zoneinfo import ZoneInfo as _ZI
 
     from backend.config import get_settings as _gs
+
     _tz = _ZI(_gs().default_timezone)
     _now = _dt.now(_tz)
     _mid = (_now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
     if (_mid - _now).total_seconds() // 60 < 130:
         import pytest as _pytest
+
         _pytest.skip("late-night window: empty-draft churn breaks reuse")
     user_id = _seed_user(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
