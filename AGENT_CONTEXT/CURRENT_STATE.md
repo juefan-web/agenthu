@@ -453,5 +453,24 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   （含 D-030 修订要求的删除/依赖图设计）、`TASKS/m3-course-materials-privacy.md`
   （课程资料隐私/合规，待双人签署）；E4 场景草案与 fixture 冷启动注意见
   `TASKS/m2-phase0-contract-freeze.md`。
+- **A 第一批落地（2026-10-01，独立 worktree 作业）**：PR #16 已合并
+  （`129c2f4`，D-031 accepted 含 B 两处修订）。A 已正式 **approve PR #17**
+  （e2e 健壮性小修；根因核验：`App.tsx:260`「Backend 密码」标签致
+  getByLabel 子串双匹配）。闸门 **PR #18**（`feature/d031-migrations-
+  contract-sync` @ `5c2a05c`）开出：两条迁移（`d41c8f2a9b07`
+  `plan_items.basis` + `e52a9d3b1c48` memories M2 切片——六列+遥测两列+
+  版本感知部分唯一索引（B 修订版直建）+supersedes 反向链索引+evidence
+  GIN+kind 按 level 回填）+ D-031 §5 Backend 侧契约同步（**basis 线上永不为
+  null**，缺省 `{}` 走 recent_state 模式——冻结 Zod 行 optional-only 拒绝
+  null，与 B 给 replaces_plan_id 补 `.nullable()` 同源问题；`ClientPlan`
+  补 `replaces_plan_id` 映射；冻结快照按 title 先例预置四行待 B 镜像；
+  OpenAPI 刷新）。验证：**211 passed**（main 202）/ruff/pyright 0 errors/
+  迁移 up→down→up + `alembic check`/drift 双源全绿。PR 内 flag 了
+  **supersedes_id 链方向矛盾**（live=IS NULL+索引+FOR UPDATE 仅
+  superseded-by 方向自洽；§5 括注「新行指旧行」与之冲突）。**签认欠账已办**
+  （`feature/a-signoffs-d032-m3docs`）：D-032 A 签（待 B）、两份 M3 先决
+  文档 A 签；迁移方案 §8 提交两项待 B 会签裁定（supersedes_id 方向勘误
+  提案 = superseded-by、correction_status 语义端点化 A 立场倾向采纳）。
 - 流程规则不变：分支从 main 拉出；跨边界先冻结；PR 互审（A=rotcar07，
-  B=juefan-web）。
+  B=juefan-web）；**并行会话各用独立 worktree**（2026-10-01 混合提交事故
+  后的新规则）。

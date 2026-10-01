@@ -1,9 +1,11 @@
 # M3 先决文档 1：Memory schema 迁移方案（含删除/依赖图设计）
 
-状态：草案（A 产出 2026-09-30，随 M2 阶段 0 一并送 B 评审；D-031 §3 已冻结
-目标形状与切片，本文档是它的完整迁移与语义展开）。**D-030 修订要求「M3
-Memory schema 设计必须同步产出删除/依赖图设计」——见 §6，这是本文档不可
-省略的部分。**
+状态：**A 已签认**（2026-10-01，rotcar07；含 2026-10-01 协调人调和增量：遥测
+两列、FOR UPDATE 串行化、键型登记、实现易错点三条。§8 新增两项 A 的裁定
+提案待 B 会签）。**M2 切片已落地**（PR #18，迁移 `e52a9d3b1c48`：六列 +
+遥测 + 版本感知部分唯一索引 + supersedes 反向链索引 + evidence GIN）。
+**D-030 修订要求「M3 Memory schema 设计必须同步产出删除/依赖图设计」——
+见 §6，这是本文档不可省略的部分。**
 
 ## 目标 / 输入 / 输出 / 范围（AGENTS §5.2）
 
@@ -104,10 +106,12 @@ checksum 把引用钉在被读取的具体版本上（与 M3 引用元组同构�
 
 ## 5. 修正 / 拒绝 / 检索
 
-- **CORRECTED**：用户修正 = 新行（`supersedes_id` → 旧行，旧行
-  `correction_status=CORRECTED` 不变、补 `valid_to`），内容与置信度以用户
-  为准（`confidence` 上调、可附 `source={user_corrected:true}`）。原地
-  改写禁止——审计史是「可修正」验收句的底座。
+- **CORRECTED**：用户修正 = 新行（版本链接向旧行，旧行
+  `correction_status=CORRECTED` 不变、补 `valid_to`；**链方向的勘误提案见
+  §8——按索引与检索的自洽性，应为旧行被新行指向，非新行指旧行**），
+  内容与置信度以用户为准（`confidence` 上调、可附
+  `source={user_corrected:true}`）。原地改写禁止——审计史是「可修正」
+  验收句的底座。
 - **REJECTED**：live 行保留 REJECTED 状态占位 `subject_key`；**聚合器写前
   必查**：live 行为 REJECTED → 跳过本轮并写审计（无 audit 行情的用日志 +
   `source` 标记过渡），否则下一轮聚合悄悄重建用户刚删的事实。用户「解除
@@ -173,6 +177,23 @@ Event（事实层，删除入口之一）
   端点 `POST /memory/{id}/confirm|correct|reject`——理由是直填可绕过版本
   链（与 §5「服务端写入者一律走版本链」存在旁路面）。属破坏性契约变更，
   签认时连同 D-032 一并裁定；在此之前按 §5 现行语义实现。
+  **A 立场（2026-10-01 签认时提交，待 B 会签）**：倾向采纳。直填旁路与
+  版本链语义并存是真实的绕过面；Memory API 是 backend-only（客户端契约
+  零影响），破坏性只触及服务端 API 消费者；B 的 M2 Memory 页是引入
+  `confirm/correct/reject` 端点的自然时机（页面按钮本就需要语义动作而非
+  直填状态）。落地排 M2 Memory 页批次，correct/reject 端点内部走版本链。
+- **`supersedes_id` 链方向勘误提案（A，2026-10-01，待 B 会签后补 D-031
+  勘误注记）**：冻结文本内部存在矛盾。「live 行 = `supersedes_id IS NULL`」
+  （D-031 §3 表、本文 §3 不变式、§5 检索）、部分唯一索引谓词与 §3 的
+  FOR UPDATE 串行化说明，三者只有在 **supersedes_id 语义 = 「取代本行的
+  行」（superseded-by 方向：新行落库时同事务把旧行 `supersedes_id` 置为
+  新行 id）** 时自洽；而 D-031 §3 与本文 §5 原括注「新行 `supersedes_id`
+  指旧行」（supersedes 方向）与之冲突——supersedes 方向下部分唯一索引
+  无法表达 live 唯一（同一旧行可被多个新行指向，出现多个「当前行」且
+  索引不拦），且「只要 live 行」的检索会取到**最旧**版本。裁定提案：
+  **superseded-by 方向**，两处括注措辞勘误为「旧行 `supersedes_id` 同事务
+  被置为新行 id」，其余冻结文本零改动。已落地的列与索引对两种方向不偏
+  不倚（PR #18 只约束 NULL 行，方向由写入者批次实现）。
 
 ## 8a. 实现易错点（第一刀必防，2026-10-01 预研补强）
 

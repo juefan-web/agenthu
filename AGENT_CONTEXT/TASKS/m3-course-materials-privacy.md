@@ -1,10 +1,11 @@
-# M3 先决文档 2：课程资料的隐私 / 合规决策（草案，待双人签署）
+# M3 先决文档 2：课程资料的隐私 / 合规决策（A 已签署，待 B 签署）
 
-状态：**草案**（A 起草 2026-09-30，随 M2 阶段 0 送 B 评审）。课程资料是
-第三方版权内容，按 AGENTS §3「每类数据接入前明确四问」与大纲 M3「先决
-文档」，本决策是 M3 grounding 的**硬前置**——未冻结前不写任何资料摄取
-代码。涉隐私决策须 A/B 共同 review（TECH_STACK §4）；冻结后补 DECISIONS
-条目（编号届时取号）。
+状态：**A 已签署**（2026-10-01，rotcar07，`feature/a-signoffs-d032-m3docs`：
+六条决策清单含 2026-10-01 内容安全扫描补强全部 accept，无 modify）；待 B
+签署后本文件转 accepted 并转录 DECISIONS 条目。课程资料是第三方版权内容，
+按 AGENTS §3「每类数据接入前明确四问」与大纲 M3「先决文档」，本决策是
+M3 grounding 的**硬前置**——未冻结前不写任何资料摄取代码。涉隐私决策须
+A/B 共同 review（TECH_STACK §4）。
 
 ## 0. 决策清单（可逐条 accept/modify，签署即全部生效）
 
@@ -105,6 +106,8 @@ Backend worker：按页抽取文本 → material_chunks →（开启检索时）
 
 ## 7. 签署与修订
 
-- A：＿＿＿（日期）　B：＿＿＿（日期）——签署后转录为 DECISIONS 条目，
-  本文件转 accepted；修订走 DECISIONS 变更（同 D-027 口径）。
-- Provider 政策核对记录：＿＿＿（首次核对日期 + 链接）。
+- A：**rotcar07（2026-10-01，`feature/a-signoffs-d032-m3docs`）**
+  B：＿＿＿（日期）——双签后转录为 DECISIONS 条目，本文件转 accepted；
+  修订走 DECISIONS 变更（同 D-027 口径）。
+- Provider 政策核对记录：＿＿＿（首次核对日期 + 链接；M3 摄取开工前完成
+  首核，未核前决策清单第 4 条保持默认关闭）。

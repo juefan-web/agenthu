@@ -630,7 +630,11 @@ Context：`TASKS/m2-breakdown.md`「冻结先行」四项中的三项尚无裁�
 
 ## D-032 — 不基于 Hermes agent 构建，采设计不采底座
 
-Status: **draft**（2026-10-01 依预研报告提交；待 A/B 签认后转 accepted。
+Status: **A 已签认**（2026-10-01，rotcar07：六条不采依据与可迁移机制清单
+核验无异议，「采设计不采底座」与既有冻结边界一致；随签认在
+`TASKS/m3-memory-schema-migration.md` §8 提交两项待 B 会签裁定——
+supersedes_id 链方向勘误、correction_status 语义端点化）。待 B 签认后转
+accepted。
 
 Context：NousResearch/hermes-agent（MIT）作为成熟对话 Agent harness 被评估
 为潜在底座（预研全文与逐条技术事实见
