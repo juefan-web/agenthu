@@ -13,6 +13,8 @@ spec 已按验收反馈修订；**M2 起的验收以本套件为常规工具**�
 | E1 外壳渲染 | 侧栏导航/标题/登录表单可见 | 无凭据可跑 |
 | E2 主链 | 清会话重启 → 登录 → 2FA → 采集 → 同步归零 → 专注入口 | 校园凭据 + `AGENTHU_APP_EXE` |
 | E3 派生任务 | 「校园采集」徽标、标题非 UUID、`due_at` 时刻与作业事件 `data.deadline` 配对一致（时区无关）、UI 与数据一致 | Backend 凭据；依赖 E2 的采集状态（串行跑） |
+| E4-seed | 真实管线预置：事件 → 派生（课程前缀标题）→ Focus 实际用时（API 覆盖值，无需真实等待）→ 课表事件 | Backend 凭据；独立于 E2/E3 |
+| E4（门控） | M2 出口判据全链：避开课表的人话计划 → learned/default 双向估时断言 → 超时 Focus → 重排建议 → 接受即取代 → L1 记忆可修正（superseded-by 链）| `AGENTHU_E4_FULL=1`；依赖 A 侧 planner v2/估时学习/触发引擎/L1 写入者 |
 
 ## 前置
 
@@ -71,7 +73,8 @@ pnpm --filter @agenthu/desktop test:e2e
 | `AGENTHU_TEST_USERNAME` / `AGENTHU_TEST_PASSWORD` | 真实校园账号；缺失时主链用例 skip |
 | `AGENTHU_APP_EXE` | 构建包 exe 路径；设置后 E2 自动完成「退出进程 → 清 `campus.hold` → 带 CDP 重启」，缺失时 E2 失败并提示手动口径 |
 | `AGENTHU_CAMPUS_HOLD` | 覆盖 `campus.hold` 默认路径（`%LOCALAPPDATA%\dev.agenthu.desktop\campus.hold`） |
-| `AGENTHU_TEST_BACKEND_URL` / `AGENTHU_TEST_BACKEND_EMAIL` / `AGENTHU_TEST_BACKEND_PASSWORD` | Backend 测试账号（E3 数据级断言直连 API；应用内未登录 Backend 时也会用它在 UI 代填登录）；缺失时 E3 skip |
+| `AGENTHU_TEST_BACKEND_URL` / `AGENTHU_TEST_BACKEND_EMAIL` / `AGENTHU_TEST_BACKEND_PASSWORD` | Backend 测试账号（E3 数据级断言直连 API；应用内未登录 Backend 时也会用它在 UI 代填登录）；缺失时 E3/E4 skip |
+| `AGENTHU_E4_FULL` | 置 `1` 时运行 E4 出口判据全链用例（依赖 A 侧 M2 写入者批次：planner v2 basis、估时学习、触发引擎、L1 写入者）；未设时仅 E4-seed 常开 |
 
 ## 已知口径
 
