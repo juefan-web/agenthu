@@ -18,6 +18,9 @@ class PlanItemCreate(BaseModel):
     planned_end: UTCDatetime | None = None
     planned_minutes: int | None = Field(default=None, ge=0, le=60 * 24 * 30)
     notes: str | None = None
+    # Structured explainability payload (D-031 §1); the planner is the primary
+    # writer, manual input may carry it for parity.
+    basis: dict[str, Any] | None = None
 
 
 class PlanItemUpdate(BaseModel):
@@ -40,6 +43,7 @@ class PlanItemRead(ORMModel):
     actual_minutes: int | None
     result: dict[str, Any] | None
     notes: str | None
+    basis: dict[str, Any] | None = None
 
 
 class PlanCreate(BaseModel):

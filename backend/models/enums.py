@@ -70,6 +70,16 @@ class MemoryCorrectionStatus(StrEnum):
     REJECTED = "REJECTED"
 
 
+class MemoryKind(StrEnum):
+    """Structural memory kind (D-031 §3), orthogonal to ``level``."""
+
+    EPISODE = "episode"
+    FACT = "fact"
+    HABIT = "habit"
+    PREFERENCE = "preference"
+    MODEL = "model"
+
+
 class MemoryLevel(IntEnum):
     """L0 raw event -> L1 experience -> L2 stable fact -> L3 personal model."""
 

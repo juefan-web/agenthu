@@ -96,6 +96,7 @@ def plan_to_client(plan: PlanRead) -> ClientPlan:
             planned_minutes=item.planned_minutes,
             status=item.status.value,
             actual_minutes=item.actual_minutes,
+            basis=item.basis or {},
         )
         for item in plan.items
     ]
@@ -109,6 +110,7 @@ def plan_to_client(plan: PlanRead) -> ClientPlan:
         goal_id=plan.goal_id,
         basis=plan.basis,
         permission_level=plan.permission_level,
+        replaces_plan_id=plan.replaces_plan_id,
         replan_reason=plan.replan_reason,
         confirmed_at=plan.confirmed_at,
         cancelled_at=plan.cancelled_at,

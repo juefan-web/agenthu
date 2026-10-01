@@ -103,6 +103,17 @@ class ClientPlanItem(BaseModel):
     planned_minutes: int | None = None
     status: str
     actual_minutes: int | None = None
+    # Structured per-item explainability (D-031 §1). The client Zod contract
+    # adds `basis: z.record(z.unknown()).optional()`. Unlike
+    # replaces_plan_id there is no null on the wire: absent data serializes
+    # as an empty object (same pattern as recent_state, D-027 appendix),
+    # because the frozen Zod line is optional-only and would reject null.
+    basis: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("basis", mode="before")
+    @classmethod
+    def _absent_basis_is_empty_object(cls, value: object) -> object:
+        return {} if value is None else value
 
 
 class ClientPlan(BaseModel):
@@ -117,6 +128,11 @@ class ClientPlan(BaseModel):
     goal_id: uuid.UUID | None = None
     basis: dict[str, Any] = Field(default_factory=dict)
     permission_level: int = 2
+    # The plan this draft replaces (replan suggestion, D-031 §2). Serialized
+    # as null for ordinary plans — the client Zod declares
+    # `.nullable().optional()` (B review amendment 2026-10-01: optional alone
+    # would reject the explicit null on every plan without a replacement).
+    replaces_plan_id: uuid.UUID | None = None
     replan_reason: str | None = None
     confirmed_at: datetime | None = None
     cancelled_at: datetime | None = None
