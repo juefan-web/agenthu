@@ -15,8 +15,8 @@
 // payloads still parse.
 //
 // 2026-10-01 (D-031 §1/§2, M2 phase-0 freeze): three lines staged on the
-// Backend side, mirroring the 2026-09-28 `title` precedent — Developer B
-// must mirror them in `packages/contracts/src/index.ts`:
+// Backend side, mirroring the 2026-09-28 `title` precedent — mirrored in
+// `packages/contracts/src/index.ts` the same day (`feature/contracts-d031-mirror`):
 //   `PlanItemSchema.basis: z.record(z.unknown()).optional()`
 //     (structured per-item explainability; `reason` stays the human string)
 //   `CurrentStateSchema.recent_state: z.record(z.unknown()).optional()`
