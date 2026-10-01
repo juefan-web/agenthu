@@ -59,6 +59,9 @@ textarea { resize: vertical; }
 .basis-panel dt { color: #788686; flex: none; }
 .basis-panel dd { margin: 0; color: #617272; overflow-wrap: anywhere; }
 .basis-panel .basis-at-risk { color: #a03d38; font-weight: 600; }
+.replan-suggestion { border: 1px solid #c9a25c; border-radius: 6px; background: #fdf8ee; padding: 12px 14px; margin-bottom: 16px; }
+.replan-suggestion .replan-reason { color: #614a2c; font-size: 13px; margin: 0 0 8px; }
+.replan-suggestion .replan-diff { margin: 0 0 12px; padding-left: 18px; color: #617272; font-size: 13px; display: grid; gap: 3px; }
 .focus-workspace { max-width: 660px; }
 .focus-workspace p { color: #617272; font-size: 13px; }
 .note-label { margin: 18px 0; max-width: 520px; }
