@@ -313,6 +313,22 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
 
 ## Blockers / decisions needed
 
+- **M2 B 侧第一批（2026-10-01）**：
+  - **App.tsx 拆分已完成并在 main**——⚠ 落地方式异常：B 的暂存文件被同日
+    协调人的提交 `9ba07c1`（Hermes 预研归档 + D-032 草案）一并裹入并推送
+    main，**该提交信息未提及拆分**。内容即 B 验证过的树（87 测试/lint/
+    build 全绿），main CI 六项亦全 success，功能无损；查证谱系以本条为准。
+    拆分内容：应用级单例（backend/queue/focusDraft/sync）从 App.tsx 模块
+    常量改为 `app/services.tsx` Context 注入（`useServices()`，测试可替换），
+    视图拆入 `features/{plans,tasks,focus,backend}`，App.tsx 339→209 行纯壳；
+    M2 三个新 UI 面（basis 面板/重排建议/Memory 页）落点已就位。纯重构
+    零行为变化。
+  - **e2e 两处健壮性修订**（首跑报告）在 PR #17 等 review：E1 标题放宽为
+    任一主视图（旧实例可能停在任务/专注视图）、校园「密码」标签加
+    `exact`（Playwright getByLabel 默认子串匹配会命中「Backend 密码」）。
+  - **下一步依赖**：三个新 UI 面等 A 的 D-031 §5 契约同步（Zod 双源 +
+    OpenAPI 原子落地，否则 drift 必红）——A 迁移 PR 出来后 B 接；E4 spec
+    同期落地（含冷启动 seed 与 estimate_source 双向断言）。
 - **Round-5 E 组 spec 修订已落地**（`feature/e2e-round5-revision`，round5-followups
   B-1）：E2 前置态改为「退出包进程 → 清 `campus.hold` → 带 CDP 重启」
   （`appProcess.ts`，需 `AGENTHU_APP_EXE`；先杀进程再删文件，等旧实例 CDP
