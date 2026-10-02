@@ -471,6 +471,20 @@ B 的 review 抓到冻结设计的真实遗漏：`GET /v1/tasks` 是**裸数组*
 - 实现仍排 M2；OpenAPI 需为两端的 cursor 参数与响应头出文档（header 在
   OpenAPI 用 `Header` 参数对象描述）。
 
+## D-029 实现注记 — tasks 游标键以实际排序为准（2026-10-02，随实现批次落）
+
+冻结文本括注 tasks 键为 `(created_at, id)`；实现发现现有（也是客户端可见的）
+排序为 `deadline ASC NULLS LAST, created_at DESC`，括注与排序不符。按本决策
+自身的绑定原则「键序与现有排序一致」，tasks 游标键实现为
+`(deadline, created_at, id)`（nulls-last 语义编码进谓词：游标行带 deadline
+时，无 deadline 的行全部在其后）。游标对客户端 opaque，键内容变更无契约影
+响；events 键 `(timestamp, id)` 与冻结文本一致，并补上缺失的 `id` 排序
+tiebreak（同批事件时间戳并列，无 tiebreak 的 keyset 会丢行/重行）。
+`cursor + offset` 并存 → 422（含显式 `offset=0`，按冻结文本字面执行）；
+cursor 页 `total=null`、offset/首页路径保留 COUNT；tasks 裸数组形状不变，
+游标走 `X-Next-Cursor` 响应头（CORS `expose_headers` 已含；Tauri 代理白名单
+由 B 加一行，落地依赖见 D-029 附录）。
+
 ## D-028 附录补充 — 哨兵残留与空标题边角的处置（PR #13 review 备注 2/3）
 
 - **备注 2（哨兵 early-return 跳过更新）**：已派生任务随后续事件把 deadline

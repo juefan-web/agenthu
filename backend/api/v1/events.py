@@ -50,12 +50,17 @@ def list_all(
     user: CurrentUser,
     db: DBSession,
     pagination: PaginationDep,
+    # Presence detector for the D-029 "cursor + offset -> 422" rule.
+    offset_param: Annotated[int | None, Query(alias="offset", ge=0)] = None,
+    cursor: Annotated[str | None, Query()] = None,
     event_type: Annotated[str | None, Query(alias="type")] = None,
     source: Annotated[str | None, Query()] = None,
     since: Annotated[datetime | None, Query()] = None,
     until: Annotated[datetime | None, Query()] = None,
 ) -> Page[EventRead]:
-    events, total = list_events(
+    if cursor is not None and offset_param is not None:
+        raise ValidationError("cursor and offset are mutually exclusive (D-029)")
+    events, total, next_cursor = list_events(
         db,
         user_id=user.id,
         event_type=event_type,
@@ -65,13 +70,15 @@ def list_all(
         since=normalize_naive_utc(since) if since is not None else None,
         until=normalize_naive_utc(until) if until is not None else None,
         limit=pagination.limit,
-        offset=pagination.offset,
+        offset=offset_param if offset_param is not None else pagination.offset,
+        cursor=cursor,
     )
     return Page(
         items=[EventRead.model_validate(event) for event in events],
         total=total,
         limit=pagination.limit,
-        offset=pagination.offset,
+        offset=offset_param if offset_param is not None else pagination.offset,
+        next_cursor=next_cursor,
     )
 
 

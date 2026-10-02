@@ -78,6 +78,11 @@ def create_app() -> FastAPI:
         allow_credentials=allow_credentials,
         allow_methods=["*"],
         allow_headers=["*"],
+        # The tasks list carries its keyset cursor in a response header
+        # (D-029 appendix: bare-array shape) — browser dev-mode fetches need
+        # it exposed; the packaged client's IPC proxy whitelist is the Rust
+        # side's one-liner (B).
+        expose_headers=["X-Next-Cursor"],
     )
 
     register_exception_handlers(app)
