@@ -53,3 +53,33 @@ def drain_dirty_users(limit: int = 100) -> list[str]:
         logger.warning("Could not drain dirty users for trigger evaluation", exc_info=True)
         return []
     return [value.decode() if isinstance(value, bytes) else str(value) for value in popped]
+
+
+STORAGE_ORPHANS_KEY = "agenthu:storage:orphans"
+
+
+def mark_storage_orphan(key: str) -> bool:
+    """Record an object key whose DB row is gone but whose delete failed.
+
+    The deletion order contract (D-033 §5) deletes rows transactionally and
+    treats the object delete as best-effort; this marker is what makes
+    "best-effort" eventually-consistent instead of eventually-forgotten.
+    """
+
+    try:
+        _client().sadd(STORAGE_ORPHANS_KEY, key)
+        return True
+    except Exception:
+        logger.warning("Could not mark storage orphan %r", key, exc_info=True)
+        return False
+
+
+def pop_storage_orphans(limit: int = 100) -> list[str]:
+    """Pop up to ``limit`` object keys pending best-effort deletion."""
+
+    try:
+        popped = _client().spop(STORAGE_ORPHANS_KEY, count=limit) or []
+    except Exception:
+        logger.warning("Could not drain storage orphans", exc_info=True)
+        return []
+    return [value.decode() if isinstance(value, bytes) else str(value) for value in popped]

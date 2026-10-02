@@ -11,7 +11,14 @@ from arq import cron
 from arq.connections import RedisSettings
 
 from backend.config import get_settings
-from backend.worker.tasks import drain_trigger_evaluation, ping
+from backend.worker.tasks import (
+    drain_pending_extractions,
+    drain_storage_orphans,
+    drain_trigger_evaluation,
+    embed_course_backfill,
+    extract_material,
+    ping,
+)
 
 
 def _redis_settings() -> RedisSettings:
@@ -19,11 +26,22 @@ def _redis_settings() -> RedisSettings:
 
 
 class WorkerSettings:
-    functions = [ping, drain_trigger_evaluation]
+    functions = [
+        ping,
+        drain_trigger_evaluation,
+        extract_material,
+        embed_course_backfill,
+        drain_pending_extractions,
+        drain_storage_orphans,
+    ]
     cron_jobs = [
         # Debounce for the trigger engine (D-031 §2: ~30s per user): poll
         # granularity plus the engine's per-signature idempotence.
-        cron(drain_trigger_evaluation, second={0, 30}, unique=True, timeout=60)
+        cron(drain_trigger_evaluation, second={0, 30}, unique=True, timeout=60),
+        # Reliability nets for the materials pipeline (D-033): lost
+        # enqueues and best-effort object deletes both get retried.
+        cron(drain_pending_extractions, second={0, 30}, unique=True, timeout=120),
+        cron(drain_storage_orphans, minute=5, unique=True, timeout=60),
     ]
     redis_settings = _redis_settings()
     max_tries = 3

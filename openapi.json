@@ -4799,6 +4799,118 @@
         }
       }
     },
+    "/v1/files/{file_id}/chunks": {
+      "get": {
+        "tags": [
+          "files"
+        ],
+        "summary": "List Chunks",
+        "description": "Extracted chunks of one file (D-033), always user-scoped.",
+        "operationId": "list_chunks_v1_files__file_id__chunks_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "File Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_MaterialChunkRead_"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/permissions/policy": {
       "get": {
         "tags": [
@@ -5487,6 +5599,180 @@
         }
       }
     },
+    "/v1/grounding-consent": {
+      "get": {
+        "tags": [
+          "grounding-consent"
+        ],
+        "summary": "Get Consent",
+        "description": "Current consent state plus the exact text the client must render.",
+        "operationId": "get_consent_v1_grounding_consent_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "course_name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 300,
+              "title": "Course Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroundingConsentRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "grounding-consent"
+        ],
+        "summary": "Set Consent",
+        "operationId": "set_consent_v1_grounding_consent_put",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroundingConsentUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroundingConsentRead"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/": {
       "get": {
         "tags": [
@@ -5749,6 +6035,18 @@
             "type": "string",
             "contentMediaType": "application/octet-stream",
             "title": "File"
+          },
+          "course_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 300
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Course Name"
           }
         },
         "type": "object",
@@ -6876,6 +7174,17 @@
             "type": "string",
             "title": "Status"
           },
+          "course_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Course Name"
+          },
           "file_metadata": {
             "additionalProperties": true,
             "type": "object",
@@ -6903,6 +7212,7 @@
           "size_bytes",
           "checksum_sha256",
           "status",
+          "course_name",
           "file_metadata",
           "created_at",
           "updated_at"
@@ -7174,6 +7484,74 @@
         "type": "object",
         "title": "GoalUpdate"
       },
+      "GroundingConsentRead": {
+        "properties": {
+          "course_name": {
+            "type": "string",
+            "title": "Course Name"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "consent_text": {
+            "type": "string",
+            "title": "Consent Text"
+          },
+          "consent_text_version": {
+            "type": "string",
+            "title": "Consent Text Version"
+          },
+          "consented_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consented At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "course_name",
+          "enabled",
+          "consent_text",
+          "consent_text_version",
+          "consented_at"
+        ],
+        "title": "GroundingConsentRead"
+      },
+      "GroundingConsentUpdate": {
+        "properties": {
+          "course_name": {
+            "type": "string",
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Course Name"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "consent_text_version": {
+            "type": "string",
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Consent Text Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "course_name",
+          "enabled",
+          "consent_text_version"
+        ],
+        "title": "GroundingConsentUpdate"
+      },
       "JobAccepted": {
         "properties": {
           "job_id": {
@@ -7246,6 +7624,83 @@
           "password"
         ],
         "title": "LoginRequest"
+      },
+      "MaterialChunkRead": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "file_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "File Id"
+          },
+          "page": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page"
+          },
+          "chunk_index": {
+            "type": "integer",
+            "title": "Chunk Index"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "char_count": {
+            "type": "integer",
+            "title": "Char Count"
+          },
+          "scan_status": {
+            "type": "string",
+            "title": "Scan Status"
+          },
+          "scanner_version": {
+            "type": "string",
+            "title": "Scanner Version"
+          },
+          "scan_flags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Scan Flags"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "embedding_present": {
+            "type": "boolean",
+            "title": "Embedding Present",
+            "readOnly": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "file_id",
+          "page",
+          "chunk_index",
+          "content",
+          "char_count",
+          "scan_status",
+          "scanner_version",
+          "scan_flags",
+          "created_at",
+          "embedding_present"
+        ],
+        "title": "MaterialChunkRead"
       },
       "MemoryCorrectRequest": {
         "properties": {
@@ -8021,6 +8476,37 @@
           "offset"
         ],
         "title": "Page[GoalRead]"
+      },
+      "Page_MaterialChunkRead_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MaterialChunkRead"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[MaterialChunkRead]"
       },
       "Page_MemoryRead_": {
         "properties": {

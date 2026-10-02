@@ -74,6 +74,16 @@ class Settings(BaseSettings):
     signed_url_expire_seconds: int = 3600
     max_upload_bytes: int = 50 * 1024 * 1024
 
+    # --- Model provider (D-033; first implementation: OpenAI) --------------
+    # Empty key = fail-closed: embedding calls raise ModelProviderUnavailable
+    # instead of silently skipping (never report "embedded" without a call).
+    openai_api_key: str = ""
+    openai_base_url: str = "https://api.openai.com/v1"
+    embedding_model: str = "text-embedding-3-small"
+    embedding_batch_size: int = 64
+    embedding_timeout_seconds: float = 30.0
+    embedding_max_retries: int = 3
+
     # --- CORS --------------------------------------------------------------
     # Explicit origins, never "*" together with credentialed requests: browsers
     # reject `Access-Control-Allow-Origin: *` when credentials are included.
