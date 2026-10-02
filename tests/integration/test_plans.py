@@ -580,3 +580,53 @@ def test_confirming_unrelated_plan_leaves_replaced_plan_alone(
     row = db_session.get(Plan, uuid.UUID(first["id"]))
     assert row is not None
     assert row.status == PlanStatus.CANCELLED
+
+
+def _schedule_entry(client, headers, name: str, start: str, end: str) -> None:
+    now = datetime.now(UTC).isoformat()
+    client.post(
+        "/v1/events",
+        json={
+            "client_event_id": f"sched:{uuid.uuid4().hex}",
+            "type": "time.schedule.entry",
+            "occurred_at": now,
+            "source": "onethu",
+            "data": {
+                "course_name": name,
+                "date": datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d"),
+                "start_time": start,
+                "end_time": end,
+            },
+            "context": {},
+            "provenance": {
+                "connector": "onethu",
+                "connector_version": "test",
+                "upstream_id": f"sched:{uuid.uuid4().hex}",
+                "semantic_version": "v1",
+                "fetched_at": now,
+            },
+        },
+        headers=headers,
+    )
+
+
+def test_empty_draft_reused_when_nothing_placeable(client, auth_headers) -> None:
+    """The deep-night churn ruling (D-019 appendix, 2026-10-02).
+
+    When the day's remaining budget/slots cannot fit ANY pending task, the
+    honest plan is empty — and repeated today reads must REUSE that empty
+    draft instead of generating a fresh one per refresh (the churn the
+    late-night flaky class projected). Forced deterministically: two schedule
+    entries cover the whole working day, so nothing is placeable at any hour.
+    """
+
+    _make_task(client, auth_headers, title="HW", days=1)
+    _schedule_entry(client, auth_headers, "全天课A", "08:00", "16:00")
+    _schedule_entry(client, auth_headers, "全天课B", "16:00", "23:59")
+
+    first = client.get("/v1/plans/today", headers=auth_headers).json()
+    assert first["items"] == []  # the honest empty plan
+    second = client.get("/v1/plans/today", headers=auth_headers).json()
+    assert second["id"] == first["id"]  # reused, not churned
+    third = client.get("/v1/plans/today", headers=auth_headers).json()
+    assert third["id"] == first["id"]

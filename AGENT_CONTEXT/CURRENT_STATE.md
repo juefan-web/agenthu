@@ -544,9 +544,18 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   首跑逼出 **PR #29** 两个真缺陷：① memory_kind 枚举绑定漂移（create_all
   测试库按成员名渲染 CHECK 与迁移小写 CHECK 不一致，alembic check 盲区）
   → kind 列 values_callable 绑定值 + 纯迁移库回归测试；② 学习写入与任务
-  完成共生死 → 拆独立 handler（C1 各自 savepoint）。**深夜空草稿翻搅
-  产品裁定（A）**：复用条件扩展——当日剩余预算不足以放置任何待办时允许
-  复用当日空草稿（D-019/D7 第三分支），立项小 PR 后置实现。
+  完成共生死 → 拆独立 handler（C1 各自 savepoint）。
+- **深夜空草稿翻搅修复（2026-10-02 上午，A，`feature/empty-draft-reuse`，
+  PR #30）**：协调人移交的产品裁定落地为 **D-019 附录**——v2 预算上限引入
+  「有待办但放不下」新状态，复用条件精确化为「**无可摆放待办**时允许复用
+  当日空草稿」（`latest_open_plan` 空候选经 `_nothing_placeable` 判定，镜像
+  `_generate_v2_items` 摆放资格；备选「退休旧空草稿」不采）。全日课表
+  覆盖测试确定性触发看守；既有 D7 回归（可摆放时重新生成）继续绿。深夜
+  每刷新累积一条空草稿的翻搅自此消除。**B review 增补（PR #30）**：镜像
+  谓词的漂移定约 = 同 fixture 双跑钉子测试
+  （`test_nothing_placeable_mirrors_generate_v2_items`，三场景断言两谓词
+  一致）；`latest_open_plan` 空草稿可摆放时继续找更旧非空草稿的遍历语义
+  一并核验。
 - 流程规则不变：分支从 main 拉出；跨边界先冻结；PR 互审（A=rotcar07，
   B=juefan-web）；**并行会话各用独立 worktree**（2026-10-01 混合提交事故
   后的新规则）。
