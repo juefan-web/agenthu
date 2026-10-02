@@ -43,7 +43,8 @@ export function ReplanSuggestion({ currentPlan }: { currentPlan: Plan | undefine
   });
   const latest = (suggestions.data ?? [])
     .filter((plan) => plan.replaces_plan_id != null)
-    .sort((a, b) => b.generated_at.localeCompare(a.generated_at))[0];
+    // 绝对时刻比较而非 localeCompare——+08:00 与 Z 混合偏移的 ISO 串字典序不可靠（#22 审阅备注）
+    .sort((a, b) => Date.parse(b.generated_at) - Date.parse(a.generated_at))[0];
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ["plan"] });
