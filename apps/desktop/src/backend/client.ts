@@ -21,6 +21,12 @@ import { MemoryItemSchema, type MemoryItem } from "./memory";
 
 export type FocusSessionUpdate = Partial<Pick<FocusSession, "status" | "actual_minutes" | "deviation_note">>;
 
+/** D-029 拉全量口径：每页条数取服务端上限（PaginationDep le=200）；
+ *  MAX_PAGES 是防失控护栏（服务端持续铸游标/短页判停失效时中止并报错，
+ *  不静默截断）。 */
+const PAGE_SIZE = 200;
+const MAX_PAGES = 50;
+
 export class BackendAuthError extends Error {
   constructor(message = "Backend 登录已失效，请重新登录") {
     super(message);
@@ -85,10 +91,20 @@ export class BackendClient {
   }
 
   async getTasks(): Promise<Task[]> {
-    // limit=200 是 D-029 落地前的短期过渡（默认 50 会截断真实作业量）；
-    // keyset 分页上线后改为 next_cursor 循环拉全量
-    const data = await this.requestJson("/v1/tasks?limit=200");
-    return TaskSchema.array().parse(data);
+    // D-029：tasks 端点是裸数组 + X-Next-Cursor 响应头（头缺省 = 末页），
+    // 逐页跟随游标拉全量——`limit=200` 单页过渡口径就此退役。
+    const tasks: Task[] = [];
+    let cursor: string | null = null;
+    for (let page = 0; page < MAX_PAGES; page += 1) {
+      const query = cursor === null
+        ? `limit=${PAGE_SIZE}`
+        : `limit=${PAGE_SIZE}&cursor=${encodeURIComponent(cursor)}`;
+      const response = await this.requestRaw(`/v1/tasks?${query}`);
+      tasks.push(...TaskSchema.array().parse(await response.json()));
+      cursor = response.headers.get("x-next-cursor") || null;
+      if (cursor === null) return tasks;
+    }
+    throw new Error(`任务分页异常：连续 ${MAX_PAGES} 页未到末页，中止拉取`);
   }
 
   async getTodayPlan(): Promise<Plan> {
@@ -96,11 +112,17 @@ export class BackendClient {
   }
 
   async listPlans(status: Plan["status"]): Promise<Plan[]> {
-    // Page 包装（items/total/limit/offset）暂非客户端契约（D-029 落地后
-    // next_cursor 入契约）；此处本地解析只用 items。limit=200 为过渡口径。
-    const data = await this.requestJson(`/v1/plans?status=${encodeURIComponent(status)}&limit=200`);
-    const items = PlanSchema.array().parse((data as { items?: unknown }).items);
-    return items;
+    // Page 包装本地解析（D-032 §8：Page 不入客户端契约）。plans 端点仍是
+    // offset 版分页（不铸 next_cursor）——短页即末页，逐页 offset 拉全量。
+    const plans: Plan[] = [];
+    for (let page = 0; page < MAX_PAGES; page += 1) {
+      const query = `status=${encodeURIComponent(status)}&limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`;
+      const data = await this.requestJson(`/v1/plans?${query}`);
+      const items = PlanSchema.array().parse((data as { items?: unknown }).items);
+      plans.push(...items);
+      if (items.length < PAGE_SIZE) return plans;
+    }
+    throw new Error(`计划分页异常：连续 ${MAX_PAGES} 页未到末页，中止拉取`);
   }
 
   async cancelPlan(planId: string): Promise<Plan> {
@@ -110,9 +132,15 @@ export class BackendClient {
   }
 
   async listMemories(): Promise<MemoryItem[]> {
-    // Page 包装本地解析（同 listPlans 口径）；Memory API backend-only
-    const data = await this.requestJson("/v1/memory?limit=200");
-    return MemoryItemSchema.array().parse((data as { items?: unknown }).items);
+    // 同 listPlans 口径：offset 版 Page + 短页判停（Memory API backend-only）
+    const memories: MemoryItem[] = [];
+    for (let page = 0; page < MAX_PAGES; page += 1) {
+      const data = await this.requestJson(`/v1/memory?limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`);
+      const items = MemoryItemSchema.array().parse((data as { items?: unknown }).items);
+      memories.push(...items);
+      if (items.length < PAGE_SIZE) return memories;
+    }
+    throw new Error(`记忆分页异常：连续 ${MAX_PAGES} 页未到末页，中止拉取`);
   }
 
   async confirmMemory(memoryId: string): Promise<MemoryItem> {
@@ -168,7 +196,9 @@ export class BackendClient {
     });
   }
 
-  private async requestJson(path: string, init: RequestInit = {}, authenticated = true): Promise<unknown> {
+  /** 执行请求并做鉴权/错误语义处理，返回原始 Response（D-029：tasks 的
+   *  X-Next-Cursor 头在 Response 上，调用方按需读取；其余走 requestJson）。 */
+  private async requestRaw(path: string, init: RequestInit = {}, authenticated = true): Promise<Response> {
     const headers = new Headers(init.headers);
     let requestToken: string | null = null;
     if (authenticated) {
@@ -185,6 +215,11 @@ export class BackendClient {
       }
       throw new Error(message);
     }
+    return response;
+  }
+
+  private async requestJson(path: string, init: RequestInit = {}, authenticated = true): Promise<unknown> {
+    const response = await this.requestRaw(path, init, authenticated);
     if (response.status === 204) return null;
     return response.json();
   }
