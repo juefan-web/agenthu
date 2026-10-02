@@ -7,8 +7,11 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from backend.config import get_settings
+from backend.db.base import utcnow
 from backend.models.enums import PlanStatus
 from backend.models.plan import Plan, PlanItem
+from backend.services.current_state import pending_tasks
+from backend.services.planner import _generate_v2_items, _nothing_placeable
 from tests.fixtures.payloads import task_payload
 
 pytestmark = pytest.mark.integration
@@ -580,3 +583,89 @@ def test_confirming_unrelated_plan_leaves_replaced_plan_alone(
     row = db_session.get(Plan, uuid.UUID(first["id"]))
     assert row is not None
     assert row.status == PlanStatus.CANCELLED
+
+
+def _schedule_entry(client, headers, name: str, start: str, end: str) -> None:
+    now = datetime.now(UTC).isoformat()
+    client.post(
+        "/v1/events",
+        json={
+            "client_event_id": f"sched:{uuid.uuid4().hex}",
+            "type": "time.schedule.entry",
+            "occurred_at": now,
+            "source": "onethu",
+            "data": {
+                "course_name": name,
+                "date": datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d"),
+                "start_time": start,
+                "end_time": end,
+            },
+            "context": {},
+            "provenance": {
+                "connector": "onethu",
+                "connector_version": "test",
+                "upstream_id": f"sched:{uuid.uuid4().hex}",
+                "semantic_version": "v1",
+                "fetched_at": now,
+            },
+        },
+        headers=headers,
+    )
+
+
+def test_empty_draft_reused_when_nothing_placeable(client, auth_headers) -> None:
+    """The deep-night churn ruling (D-019 appendix, 2026-10-02).
+
+    When the day's remaining budget/slots cannot fit ANY pending task, the
+    honest plan is empty — and repeated today reads must REUSE that empty
+    draft instead of generating a fresh one per refresh (the churn the
+    late-night flaky class projected). Forced deterministically: two schedule
+    entries cover the whole working day, so nothing is placeable at any hour.
+    """
+
+    _make_task(client, auth_headers, title="HW", days=1)
+    _schedule_entry(client, auth_headers, "全天课A", "08:00", "16:00")
+    _schedule_entry(client, auth_headers, "全天课B", "16:00", "23:59")
+
+    first = client.get("/v1/plans/today", headers=auth_headers).json()
+    assert first["items"] == []  # the honest empty plan
+    second = client.get("/v1/plans/today", headers=auth_headers).json()
+    assert second["id"] == first["id"]  # reused, not churned
+    third = client.get("/v1/plans/today", headers=auth_headers).json()
+    assert third["id"] == first["id"]
+
+
+def test_nothing_placeable_mirrors_generate_v2_items(client, auth_headers, db_session) -> None:
+    """Drift pin (PR #30 review): `_nothing_placeable` must mirror the placement
+    eligibility of `_generate_v2_items` — both predicates over the same fixtures.
+    Divergence means an empty draft is reused while work IS placeable (hides
+    tasks from today) or churns one draft per read while nothing fits."""
+
+    user_id = uuid.UUID(client.get("/v1/auth/me", headers=auth_headers).json()["id"])
+
+    def assert_predicates_agree() -> None:
+        tasks = pending_tasks(db_session, user_id)
+        placed = _generate_v2_items(db_session, user_id=user_id, tasks=tasks, start=utcnow())
+        assert _nothing_placeable(db_session, user_id) == (len(placed) == 0)
+
+    # 1. Nothing pending: both empty-draft-eligible.
+    assert_predicates_agree()
+
+    # 2. A small task that fits today's room: both placeable.
+    client.post(
+        "/v1/tasks",
+        json={"title": "Fits", "estimated_duration_minutes": 30},
+        headers=auth_headers,
+    )
+    assert_predicates_agree()
+
+    # 3. Only an unplaceable task left (single block > any slot/budget): both
+    # empty-eligible. Estimated 600 minutes exceeds any day budget (D-027 cap).
+    first_task_id = client.get("/v1/tasks", headers=auth_headers).json()[0]["id"]
+    client.delete(f"/v1/tasks/{first_task_id}", headers=auth_headers)
+    client.post(
+        "/v1/tasks",
+        json={"title": "Too big", "estimated_duration_minutes": 600},
+        headers=auth_headers,
+    )
+    assert_predicates_agree()

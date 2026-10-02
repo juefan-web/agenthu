@@ -157,6 +157,22 @@ Concurrent first requests for the same user/day are serialized by a PostgreSQL t
 advisory lock keyed by (user, local day) (`planner.lock_today_proposal`), so two simultaneous
 `GET /v1/plans/today` calls cannot both observe "no proposal" and insert duplicates.
 
+## D-019 附录 — 空草稿复用第三分支（深夜翻搅裁定，2026-10-02 A）
+
+**背景**：planner v2 的 available-minutes 上限（D-027 口径）引入了 D7 决策时
+不存在的状态——**有待办但当日剩余预算/空闲槽放不下任何一个**。此状态下
+today 每次读取都会生成新空草稿（D7「空草稿+有待办→不复用」触发重生成），
+深夜窗口每刷新一次累积一条，无限翻搅（窗口类 flaky 的产品层投影，E4 首跑
+过程暴露）。
+
+**裁定**：复用条件精确化为「**无可摆放待办**时允许复用当日空草稿」——D7
+的原意是"不隐藏**可摆放**的任务"，v2 让"可摆放"不再等于"存在待办"。实现：
+`latest_open_plan` 的空候选经 `_nothing_placeable`（镜像 `_generate_v2_items`
+的摆放资格：预算/最大槽容量 ≥ 任一待办首块）判定；非空候选行为不变。
+**不采**备选「重生成时退休旧空草稿」：治标（新草稿仍每刷新一条）、且留
+CANCELLED 垃圾行。D7 语义（可摆放时重新生成并吸收）由既有回归测试继续
+看守；新状态由全日覆盖测试确定性触发看守（test_plans.py）。
+
 ## D-020 — CORS uses explicit client origins
 
 Defaults are the real client origins: Tauri `devUrl` `http://localhost:5173` (and `127.0.0.1:5173`)

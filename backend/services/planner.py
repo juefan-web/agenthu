@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.config import get_settings
@@ -340,7 +340,7 @@ def latest_open_plan(
     *,
     since: datetime | None = None,
 ) -> Plan | None:
-    """Return the most recent client-valid draft/pending plan created since ``since``.
+    """Return the most recent reusable draft/pending plan created since ``since``.
 
     Used by the client-facing ``/plans/today`` so repeated reads reuse the same
     proposal instead of generating a new plan on every request, while never
@@ -351,31 +351,58 @@ def latest_open_plan(
     of rows in Python: a fixed scan window could skip a valid plan sitting
     behind several invalid proposals and generate a duplicate.
 
-    An empty draft is only reusable while the user has no pending tasks
-    (merge-1 report D7): ``is_client_valid_plan`` treats empty items as valid,
-    so reusing an empty draft once tasks exist would hide those tasks from
-    today until the draft is manually cancelled.
+    An empty draft is only reusable while nothing is placeable (merge-1
+    report D7, plus the 2026-10-02 churn ruling): reusing it while tasks
+    COULD be placed would hide them from today, but regenerating a fresh
+    empty draft on every refresh just because the day's remaining budget
+    cannot fit anything churns one draft per read near midnight. Empty
+    candidates therefore pass through ``_nothing_placeable``, which mirrors
+    the placement eligibility of ``_generate_v2_items``.
     """
 
-    has_any_item = select(PlanItem.id).where(PlanItem.plan_id == Plan.id).exists()
-    has_pending_tasks = (
-        select(Task.id)
-        .where(
-            Task.user_id == user_id,
-            Task.status.in_((TaskStatus.TODO, TaskStatus.IN_PROGRESS)),
-        )
-        .exists()
-    )
     conditions = [
         Plan.user_id == user_id,
         Plan.status.in_([PlanStatus.DRAFT, PlanStatus.PENDING_CONFIRMATION]),
-        or_(has_any_item, ~has_pending_tasks),
         ~client_invalid_item_exists(),
     ]
     if since is not None:
         conditions.append(Plan.created_at >= since)
-    stmt = select(Plan).where(*conditions).order_by(Plan.created_at.desc()).limit(1)
-    return session.scalar(stmt)
+    stmt = select(Plan).where(*conditions).order_by(Plan.created_at.desc())
+    for plan in session.scalars(stmt):
+        if plan.items:
+            return plan
+        if _nothing_placeable(session, user_id):
+            return plan
+        # Empty draft with placeable work: keep looking — an older
+        # non-empty draft may still be the right proposal.
+    return None
+
+
+def _nothing_placeable(session: Session, user_id: uuid.UUID) -> bool:
+    """True when today's remaining budget/slots cannot fit ANY pending task's
+    first block — the honest-empty-plan condition under the v2 cap."""
+
+    tasks = pending_tasks(session, user_id)
+    if not tasks:
+        return True
+    now = utcnow()
+    schedule = _today_schedule_entries(session, user_id, now)
+    slots = _free_slots(now, schedule)
+    if not slots:
+        return True
+    current_id = _current_task_id(session, user_id)
+    current_task = session.get(Task, current_id) if current_id is not None else None
+    budget = _available_budget(schedule, current_task, now)
+    capacity = max(int((slot.end - max(slot.start, now)).total_seconds() // 60) for slot in slots)
+    room = min(budget, capacity)
+    for task in tasks:
+        estimate = estimate_for_task(session, user_id=user_id, task=task)
+        remaining = estimate.minutes - (task.actual_duration_minutes or 0)
+        if remaining <= 0:
+            continue
+        if min(remaining, _MAX_BLOCK_MINUTES) <= room:
+            return False
+    return True
 
 
 def resolve_today_plan(session: Session, user_id: uuid.UUID) -> Plan:
