@@ -8487,7 +8487,14 @@
             "title": "Items"
           },
           "total": {
-            "type": "integer",
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Total"
           },
           "limit": {
@@ -8497,6 +8504,17 @@
           "offset": {
             "type": "integer",
             "title": "Offset"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
           }
         },
         "type": "object",
