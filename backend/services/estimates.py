@@ -50,6 +50,10 @@ class Estimate:
     minutes: int
     source: str  # default | user | learned:course | learned:ratio
     sample_count: int = 0
+    # The L2 row backing a learned estimate, so the planner can record the
+    # decision-context telemetry once per generated plan (§8a.2). None for
+    # user/default estimates — nothing retrieved, nothing to attest.
+    memory_id: uuid.UUID | None = None
 
 
 def round_half_up(value: float) -> int:
@@ -83,7 +87,7 @@ def estimate_for_task(session: Session, *, user_id: uuid.UUID, task: Task) -> Es
         if row is not None:
             count = _sample_count(row)
             if count >= COURSE_MIN_SAMPLES and row.source.get("value") is not None:
-                return Estimate(int(row.source["value"]), "learned:course", count)
+                return Estimate(int(row.source["value"]), "learned:course", count, row.id)
 
     row = live_key_row(session, user_id=user_id, subject_key=RATIO_SUBJECT_KEY)
     if row is not None:
@@ -93,6 +97,7 @@ def estimate_for_task(session: Session, *, user_id: uuid.UUID, task: Task) -> Es
                 round_half_up(DEFAULT_TASK_MINUTES * float(row.source["value"])),
                 "learned:ratio",
                 count,
+                row.id,
             )
 
     return Estimate(DEFAULT_TASK_MINUTES, "default")

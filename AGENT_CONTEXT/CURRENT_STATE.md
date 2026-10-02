@@ -614,6 +614,23 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   记录落 `TASKS/m3-course-materials-privacy.md` §7；复核节奏 = 供应商
   政策变更或每里程碑一次。**B 双核完成（同日，两页独立重取，五项声明与残留事实逐
   一命中）——摄取批次正式解锁。**
+- **A M3 第二批 = Memory 检索下限接线（2026-10-02，A，
+  `feature/memory-retrieval-floor`）**：① `services/memory_retrieval.py`
+  ——D-031 §5 共享检索路径落地（`retrieve_memories`：live-only + 滤
+  REJECTED + 0.3 下限可提高不可绕过【clamp】+ kind/domain/level/
+  subject_key 过滤 + 确定性序 + 上限 200）；文档明示**估时阶梯刻意不走
+  此下限**（n=2 课程行 confidence=0.2，样本数门控独立，两路径只共享
+  live/REJECTED 语义）。② `use_count` 首个冻结写入点接线（任务文档
+  §8a.2）：`Estimate.memory_id` 回带支撑行 → `_generate_v2_items` 只收集
+  真正落进已生成计划 basis 的行 → `record_decision_use` 每计划每行
+  恰好 +1、`last_used_at` 盖章；批内去重（同课三任务读同一行 = 1 次决策
+  ——`estimate_for_task` 跑三遍也不多计）；候选检索与
+  `_nothing_placeable` 判定永不计数。事务内属性递增（非 bulk UPDATE），
+  与计划同生共死。③ `MemoryRead.use_count` 已透出（M2 迁移列），Memory
+  页可直接展示「参与过 N 次计划决策」。验证：**236 passed**（main 231，
+  +6 检索/遥测，含钉子：reject 后估时回落 default 且计数恒 0、重复 id
+  去重、下限 0.1 请求被 clamp 回 0.3）/pyright 0/ruff/drift 双源绿；
+  无 API 面变化（openapi 零漂移）。
 - 流程规则不变：分支从 main 拉出；跨边界先冻结；PR 互审（A=rotcar07，
   B=juefan-web）；**并行会话各用独立 worktree**（2026-10-01 混合提交事故
   后的新规则）。
