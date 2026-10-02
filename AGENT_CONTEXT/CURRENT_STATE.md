@@ -692,6 +692,35 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   openapi 重导 + drift 双源绿。测试：**239 passed**（+9：确定性种子含
   deadline 并列/id 并列/nulls-last 的精确翻页、422 两态、末页无头、
   CORS expose、offset 兼容）。
+- **M3 五批审毕合并（2026-10-02，B 执行，协调人核验）**：#35-#41 七个
+  PR 全部 review + 合并（`3daf140`/`881a65b`/`4481955`/`663914d`/
+  `32dd5fb`/`52282cc`/`061c145`，均已在 main 验证可达）；交叉审方向正确
+  （七 PR 均 A=rotcar07 authored、B=juefan-web APPROVED，时间戳先于合并）。
+  **#40 B 侧原子件核销**：白名单行（`978efe8`）在 #40 合并 `52282cc`
+  内原子落地——main `backend_proxy.rs` response_headers 已含
+  `x-next-cursor` + 直测（游标透传 / Set-Cookie 仍拦），D-029 附录
+  「落地依赖」关闭，未隔夜。**#41 会签义务核验**（协调人直读 main
+  代码）：`store=False` 硬编码于 provider 请求体；同意门调用时重查
+  （worker `tasks.py` 与 ingestion 双点）；`scanner_version` NOT NULL +
+  中英注入对抗 fixture；全树无 `downloadUrl`；`storage_key` 用户前缀
+  （`{user_id}/uuid`）；删除顺序按 D-033 §5（行先删、对象 best-effort +
+  orphan 重试）。#41 的两类评审修订（rebase 后 openapi 重导 `f76eb43`、
+  pyright typing 修复 `715517b`）随合并落地，review 正文有标注。
+  main head `061c145` 双 CI 绿（CI + Client checks）；评审队列零在途。
+- **B 本地 pgvector 阻塞（裁定记录）**：B 便携 PG 为 stock 16.9 无
+  vector 二进制（删 pgdata 无解；WSL sudo 阻塞、无 docker），且 ORM 已
+  引用 embedding 列、停旧迁移版会炸 Memory 查询——B 本地无法跑全栈。
+  **裁定：E4 / 联调一律指向 A 的 compose 栈**（pgvector 镜像已切
+  `pg16`）；B 本地以单测/类型检查/客户端构建为口径，不因环境阻塞
+  客户端工作。
+- **下一队列（2026-10-02 指派）**：A = M3 检索/grounding 切片（新任务
+  文件 `TASKS/m3-grounded-answers.md`：混合检索 + 机械引用校验 + 回答
+  落库 + Learning Memory 接入；HNSW 暂缓至规模实测）；B = ① 客户端
+  游标循环（`getTasks`/`listPlans` 读 `X-Next-Cursor`/`Page.next_cursor`
+  `while` 拉全量，退役 `limit=200` 过渡口径——验收：多页 fixtures +
+  pnpm test/build 绿）→ ② Memory 页展示 `use_count`（#37 已透出，
+  「这条事实参与过 N 次计划决策」）→ ③ 讲解页/引用跳转 UI，待 A 的
+  `m3-grounded-answers.md` §6 接口冻结后并行。
 - 流程规则不变：分支从 main 拉出；跨边界先冻结；PR 互审（A=rotcar07，
   B=juefan-web）；**并行会话各用独立 worktree**（2026-10-01 混合提交事故
   后的新规则）。

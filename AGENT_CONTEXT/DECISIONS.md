@@ -485,6 +485,12 @@ cursor 页 `total=null`、offset/首页路径保留 COUNT；tasks 裸数组形�
 游标走 `X-Next-Cursor` 响应头（CORS `expose_headers` 已含；Tauri 代理白名单
 由 B 加一行，落地依赖见 D-029 附录）。
 
+**落地核销（2026-10-02，B，#40 合并 `52282cc`）**：B 侧白名单行
+（`backend_proxy.rs` response_headers 增 `x-next-cursor`，commit
+`978efe8`）随 #40 分支并入、与合并原子落地，附直测（游标透传 /
+Set-Cookie 仍拦）；协调人核验 main 代码与 Client checks 绿。附录
+「落地依赖」关闭。
+
 ## D-028 附录补充 — 哨兵残留与空标题边角的处置（PR #13 review 备注 2/3）
 
 - **备注 2（哨兵 early-return 跳过更新）**：已派生任务随后续事件把 deadline
