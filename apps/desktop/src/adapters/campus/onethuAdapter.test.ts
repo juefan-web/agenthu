@@ -169,6 +169,55 @@ describe("OneThuCampusAdapter", () => {
     await expect(adapter.collectSnapshot()).rejects.toThrow("XSRF-TOKEN 缺失（wengine dance 后仍无）");
   });
 
+  it("maps course files verbatim from the vendor shape (downloadUrl stays session-state)", async () => {
+    const session = fakeSession();
+    session.learn.getFileList = async (courseId: string) => [{
+      id: "wjid-1",
+      courseId,
+      title: "第3讲 傅里叶变换.pdf",
+      uploadTime: "2026-09-26 10:00",
+      downloadUrl: "https://learn.tsinghua.edu.cn/b/download?wjid=wjid-1",
+      fileType: "pdf",
+      size: "2.3MB",
+      description: "课件",
+      important: true,
+    }];
+    const files = await new OneThuCampusAdapter({ session, auth }).getCourseFiles("course-1");
+    expect(files).toEqual([{
+      id: "wjid-1",
+      courseId: "course-1",
+      title: "第3讲 傅里叶变换.pdf",
+      uploadTime: "2026-09-26 10:00",
+      downloadUrl: "https://learn.tsinghua.edu.cn/b/download?wjid=wjid-1",
+      fileType: "pdf",
+      size: "2.3MB",
+      description: "课件",
+      important: true,
+    }]);
+  });
+
+  it("recovers a stale learn session once while listing course files (D8 path)", async () => {
+    const session = fakeSession();
+    let calls = 0;
+    session.learn.getFileList = async () => {
+      calls += 1;
+      if (calls === 1) throw new AuthRequiredError("learn 会话过期");
+      return [];
+    };
+    const files = await new OneThuCampusAdapter({ session, auth }).getCourseFiles("course-1");
+    expect(files).toEqual([]);
+    expect(calls).toBe(2); // read() 恢复路径重试了一次
+  });
+
+  it("propagates a non-auth listing failure untouched (no silent empty list)", async () => {
+    const session = fakeSession();
+    session.learn.getFileList = async () => {
+      throw new Error("learn 文件列表接口 500");
+    };
+    await expect(new OneThuCampusAdapter({ session, auth }).getCourseFiles("course-1"))
+      .rejects.toThrow("learn 文件列表接口 500");
+  });
+
   it("uses stable schedule identities and changes assignment version when status changes", () => {
     const fetchedAt = "2026-09-26T10:00:00+08:00";
     const schedule = { courseName: "线性代数", date: "2026-09-28", startSection: 1, endSection: 2, location: "六教" };

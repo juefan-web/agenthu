@@ -2,6 +2,7 @@ import { Fragment, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { MaterialAnswer } from "../../backend/grounding";
 import { BackendHttpError } from "../../backend/client";
+import { MaterialsPanel } from "./MaterialsPanel";
 import { errorText } from "../../lib/errors";
 import { useServices } from "../../app/services";
 
@@ -186,7 +187,13 @@ export function GroundedAnswersView() {
     <datalist id="grounding-course-options">
       {courses.map((name) => <option key={name} value={name} />)}
     </datalist>
-    {files.data && courses.length === 0 && <p className="empty-state">尚无带课程的已上传课件——讲解按课程检索片段，先上传课件（上传入口是后续切片，可经 API /v1/files）。</p>}
+    {files.data && courses.length === 0 && <p className="empty-state">尚无带课程的已上传课件；也可以从下方课件面板直接上传（需校园账号）。</p>}
+
+    {course !== "" && <MaterialsPanel
+      courseName={course}
+      consentEnabled={consent.data?.enabled ?? null}
+      backendFiles={files.data ?? []}
+    />}
 
     {course !== "" && consent.isPending && <p className="empty-state">正在读取授权状态…</p>}
     {course !== "" && consent.error && <p className="error-text">授权状态读取失败：{errorText(consent.error)}</p>}

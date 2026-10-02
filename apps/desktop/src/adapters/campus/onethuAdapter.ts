@@ -2,6 +2,7 @@ import {
   AuthRequiredError,
   CampusSession,
   type CalendarData,
+  type CourseFile,
   type CourseInfo,
   type Homework,
   type ScheduleEntry,
@@ -12,6 +13,7 @@ import type {
   CampusAuthGateway,
   CampusCalendar,
   CampusCourse,
+  CampusCourseFile,
   CampusScheduleEntry,
   CampusSnapshot,
   DateRange,
@@ -47,6 +49,22 @@ function mapCourse(course: CourseInfo): CampusCourse {
     teacherName: course.teacherName,
     timeAndLocation: course.timeAndLocation,
     url: course.url,
+  };
+}
+
+/** vendor CourseFile 原样映射（§5.1：字段口径以 vendor 实测归一化为准，
+ *  此处不发明第二套形状）；downloadUrl 保持会话态（见 types.ts 注记）。 */
+function mapCourseFile(file: CourseFile): CampusCourseFile {
+  return {
+    id: file.id,
+    courseId: file.courseId,
+    title: file.title,
+    uploadTime: file.uploadTime,
+    downloadUrl: file.downloadUrl,
+    fileType: file.fileType,
+    size: file.size,
+    description: file.description,
+    important: file.important,
   };
 }
 
@@ -149,6 +167,17 @@ export class OneThuCampusAdapter implements CampusAdapter {
     await requireLearnSession(session);
     const semester = await session.learn.getCurrentSemester();
     return (await session.learn.getCourseList(semester.id)).map(mapCourse);
+    });
+  }
+
+  /** 课程文件列表（讲解页按需拉取，§2 裁定：不进采集循环）。XSRF 失效
+   *  经 read() 的既有重登恢复路径兜底（D8 同源）。 */
+  async getCourseFiles(courseId: string): Promise<CampusCourseFile[]> {
+    return this.read(async () => {
+      const { session } = this.options;
+      requireReady(session);
+      await requireLearnSession(session);
+      return (await session.learn.getFileList(courseId)).map(mapCourseFile);
     });
   }
 
