@@ -18,6 +18,14 @@ import {
   type User,
 } from "@agenthu/contracts";
 import { MemoryItemSchema, type MemoryItem } from "./memory";
+import {
+  FileInfoSchema,
+  GroundingConsentSchema,
+  MaterialAnswerSchema,
+  type FileInfo,
+  type GroundingConsent,
+  type MaterialAnswer,
+} from "./grounding";
 
 export type FocusSessionUpdate = Partial<Pick<FocusSession, "status" | "actual_minutes" | "deviation_note">>;
 
@@ -31,6 +39,15 @@ export class BackendAuthError extends Error {
   constructor(message = "Backend 登录已失效，请重新登录") {
     super(message);
     this.name = "BackendAuthError";
+  }
+}
+
+/** 非 2xx（且非会话失效）的 HTTP 错误，携带状态码——讲解页等需要
+ *  区分 403（同意门 fail-closed）与 503（provider 不可用，不降级）。 */
+export class BackendHttpError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = "BackendHttpError";
   }
 }
 
@@ -159,6 +176,62 @@ export class BackendClient {
     return this.requestValidated(`/v1/memory/${encodeURIComponent(memoryId)}/reject`, MemoryItemSchema, { method: "POST" });
   }
 
+  // ---- 讲解页（grounding / material-answers，§6 冻结形状；backend-only）----
+
+  async getGroundingConsent(courseName: string): Promise<GroundingConsent> {
+    const query = `course_name=${encodeURIComponent(courseName)}`;
+    return this.requestValidated(`/v1/grounding-consent?${query}`, GroundingConsentSchema);
+  }
+
+  /** 开启/关闭都用当前 consent_text_version——「开启」必须基于用户实际
+   *  读到的措辞（stale-version 422 的另一半语义在 UI 层）。 */
+  async setGroundingConsent(courseName: string, enabled: boolean, textVersion: string): Promise<GroundingConsent> {
+    return this.requestValidated("/v1/grounding-consent", GroundingConsentSchema, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ course_name: courseName, enabled, consent_text_version: textVersion }),
+    });
+  }
+
+  /** 403（同意门 fail-closed）与 503（provider 故障，绝不降级）都以
+   *  BackendHttpError 携带状态码抛出，由视图分流。 */
+  async askGroundedQuestion(courseName: string, question: string): Promise<MaterialAnswer> {
+    return this.requestValidated("/v1/material/answers", MaterialAnswerSchema, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ course_name: courseName, question }),
+    });
+  }
+
+  async listGroundedAnswers(courseName: string): Promise<MaterialAnswer[]> {
+    // 同 listPlans 口径：offset 版 Page + 短页判停（量级 = 回答数）
+    const answers: MaterialAnswer[] = [];
+    for (let page = 0; page < MAX_PAGES; page += 1) {
+      const query = `course_name=${encodeURIComponent(courseName)}&limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`;
+      const data = await this.requestJson(`/v1/material/answers?${query}`);
+      const items = MaterialAnswerSchema.array().parse((data as { items?: unknown }).items);
+      answers.push(...items);
+      if (items.length < PAGE_SIZE) return answers;
+    }
+    throw new Error(`回答分页异常：连续 ${MAX_PAGES} 页未到末页，中止拉取`);
+  }
+
+  async deleteGroundedAnswer(answerId: string): Promise<void> {
+    await this.requestJson(`/v1/material/answers/${encodeURIComponent(answerId)}`, { method: "DELETE" });
+  }
+
+  async listFiles(): Promise<FileInfo[]> {
+    // 讲解页数据源：课程下拉（distinct course_name）与引用文件名映射
+    const files: FileInfo[] = [];
+    for (let page = 0; page < MAX_PAGES; page += 1) {
+      const data = await this.requestJson(`/v1/files?limit=${PAGE_SIZE}&offset=${page * PAGE_SIZE}`);
+      const items = FileInfoSchema.array().parse((data as { items?: unknown }).items);
+      files.push(...items);
+      if (items.length < PAGE_SIZE) return files;
+    }
+    throw new Error(`文件分页异常：连续 ${MAX_PAGES} 页未到末页，中止拉取`);
+  }
+
   /** D1 快速失败：无鉴权的 /health 探测，超时/非 2xx/异常一律 false（不抛）。
    *  Promise.race 计时——Tauri 代理路径的 invoke 无法中止，让它在后台自行
    *  结束即可；浏览器路径的 fetch 同样只需竞速。 */
@@ -213,7 +286,7 @@ export class BackendClient {
         this.options.onUnauthorized?.(requestToken!);
         throw new BackendAuthError(message);
       }
-      throw new Error(message);
+      throw new BackendHttpError(message, response.status);
     }
     return response;
   }
