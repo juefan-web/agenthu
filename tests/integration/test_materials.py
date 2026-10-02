@@ -46,23 +46,11 @@ class SpyProvider:
             model="spy-embed",
         )
 
+    async def generate(self, input_text: str, instructions: str | None = None) -> str:
+        raise AssertionError("SpyProvider must not generate in ingestion tests")
+
     def build_responses_request(self, model, input_text, instructions=None):
         return {"model": model, "input": input_text, "store": False}
-
-
-@pytest.fixture
-def no_arq(monkeypatch):
-    """Upload/consent endpoints enqueue best-effort; tests must not hit Redis."""
-
-    class _Boom:
-        async def enqueue_job(self, *a, **k):
-            raise RuntimeError("no redis in tests")
-
-    async def _fake_pool():
-        return _Boom()
-
-    monkeypatch.setattr("backend.api.v1.files.get_arq_pool", _fake_pool)
-    monkeypatch.setattr("backend.api.v1.material.get_arq_pool", _fake_pool)
 
 
 def _upload(client, headers, content: bytes, filename: str, content_type: str, course: str | None):

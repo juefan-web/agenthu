@@ -1,10 +1,36 @@
 # M3 任务：课程资料检索与带引用的回答（A 负责）
 
-Status: open（2026-10-02 立项，协调人）。前置已合 main（`061c145`）：
-#41 摄取切片（chunks/scanner/consent/接口 §8）、#35 embedding 列、
-#37 memory 共享检索路径。依据：路线大纲 M3（D-030）、
+Status: **delivered，待 B review**（A @ `feature/m3-grounded-answers`，2026-10-02）。
+前置已合 main（`061c145`）：#41 摄取切片（chunks/scanner/consent/接口 §8）、
+#35 embedding 列、#37 memory 共享检索路径。依据：路线大纲 M3（D-030）、
 `TASKS/m3-course-materials-privacy.md` §1/§3（已双签生效）、
 `TASKS/m3-materials-ingestion.md` §8（接口冻结）。
+
+**实现与验收记录（2026-10-02）**：迁移 `e3a7c59f21b8`（material_answers 表，
+citations 为快照元组、无 FK——删文件软失效不毁回答史）；混合检索
+（`services/grounded_answers.py`：pgvector cosine + 关键词（ASCII 词 +
+CJK bigram ILIKE）两路各 top8 → RRF(k=60) 融合取 6；**检索资格 =
+clean only**——blocked 未入库（#41 语义）、flagged 入库但两路皆排除，
+兑现「flagged 永不外送」）；机械校验与 scanner 共用 `normalize_text`
+（模块单测含零宽变体引用——同一文本宇宙）；Learning Memory 经
+`retrieve_memories`（level 1/2 各 5 条，floor 语义复用不另立）；
+provider `generate()` 复用 `store=False` builder（Responses wire 解析
+`output[].content[].output_text` 聚合）；HNSW 未建，每次检索 log
+vector/keyword 候选数 + 延迟（决策数据）。**验收 §7 六条全过**：
+297 tests（对抗样本：伪造 quote 删引用剥标记、越界 [n]、全伪造 →
+grounded=false；Memory 删除后同问不再体现；未同意 403 + spy 零调用；
+503 不降级）、ruff/pyright/drift 全绿、迁移 up→down→up + alembic check。
+**§7.6 联调（A 的 compose 栈，录制回放口径）**：真实 OpenAI key 401
+（fail-closed 正确暴露错误，key 本身在 `.env` 非本批引入、未入库）；
+按任务允许的「录制回放二选一」起本地 OpenAI wire-format 回放端点
+（`/embeddings` 确定性向量、`/responses` 从上下文摘录真实原文构造带
+「quote」[n] 的回答），OPENAI_BASE_URL 指回放——上传→worker 抽取→
+consent 回填嵌 2/2→POST answers 201（grounded=true，citation
+page=2/span 校验通过）→历史列表，全链一次通过。联调数据留在本地
+dev 库（e2e-grounded-\* 用户）可复查。**环境教训**：Windows 上
+TaskStop 杀不掉后台命令的子 python——uvicorn/worker 残留多实例混跑
+会造成 job「凭空消失 + updated_at 被重试计数刷新」的假象，排障先
+`Get-CimInstance Win32_Process` 清点进程。
 
 ## 1. 目标
 
@@ -67,15 +93,25 @@ Status: open（2026-10-02 立项，协调人）。前置已合 main（`061c145`�
 - 回答与 chunk 的读取应在同一事务快照内取 checksum（防止校验期间文件
   被删/重传导致引用锚点漂移）。
 
-## 6. 接口冻结（B 侧并行依据；实现前先冻结本节再动工）
+## 6. 接口冻结（B 侧并行依据；2026-10-02 A 定稿，含 §3.5 删除入口）
 
 - `POST /v1/material/answers`：`{course_name, question}` →
-  `{answer, grounded, citations: [{file_id, checksum, page, span, quote}],
-  memory_ids, model_version, prompt_version}`。
+  `MaterialAnswerRead {id, course_name, question, answer, grounded,
+  citations: [{file_id, checksum, page, span_start, span_end, quote}],
+  chunk_ids, memory_ids, model_version, prompt_version, created_at}`。
+  语义：课程未开 grounding → **403**（fail-closed，provider 零调用）；
+  provider 故障 → **503** `service_unavailable`（错误透出，绝不降级为无
+  引用平滑回答；repo 既有错误类语义即上游不可用）；
+  `grounded=false` = 无机械校验存活的引用（回答文本保留、失效标记剥离）。
+  `span_*` 为 chunk **归一化文本**内字符偏移（与引用校验同一坐标系，
+  B 侧跳转用 quote + page 呈现即可，不依赖 span 精确渲染）。
 - `GET /v1/material/answers?course_name=`：历史列表（offset 分页，
   Page 契约；量级=回答数，无需 keyset）。
+- `DELETE /v1/material/answers/{answer_id}`：**204**（§3.5 回答删除入口；
+  引用是快照元组，不复活已删文件——文件删除后旧回答里的引用指向
+  失效锚点属预期，由 UI 标注）。
 - OpenAPI + 客户端 Zod（如进客户端契约）+ drift 双源绿为准；形状调整
-  在冻结时一次定稿。
+  在冻结时一次定稿（本节即定稿版）。
 
 ## 7. 验收标准
 

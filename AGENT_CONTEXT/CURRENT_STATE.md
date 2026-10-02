@@ -480,6 +480,24 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   覆盖）。**语义注记**：关闭 opt-in 不删已有 embedding（本地数据，删除是
   Level 2 独立动作）；flagged chunk 入库但永不嵌入/外送；blocked 不入库仅
   文件元数据计数。
+- **检索/grounding 切片开出（2026-10-02 深夜，A @ `feature/m3-grounded-answers`，
+  待 B review）**：按协调人新立的 `TASKS/m3-grounded-answers.md` 执行——
+  §6 接口**已冻结**（POST/GET/DELETE `/v1/material/answers`；403 fail-closed、
+  503 不降级、citations 快照元组），B 的讲解页可并行。迁移 `e3a7c59f21b8`
+  （material_answers：内容 + citations + chunk_ids + memory_ids + 模型/prompt
+  版本，引用无 FK——删文件软失效不毁回答史）；混合检索（pgvector cosine +
+  关键词 CJK-bigram/ASCII 词，RRF 融合；**检索资格 clean-only**，flagged
+  两路皆排除）；**机械引用校验与 scanner 共用 `normalize_text`**（伪造
+  quote/越界编号删引用剥标记，全伪造 → grounded=false）；Learning Memory
+  经 `retrieve_memories` 共享路径接入（level 1/2），删除后同问不再体现
+  （M3 出口句后端半边达成）；provider `generate()` 复用 `store=False`
+  builder。HNSW 未建，检索延迟/候选数入日志（规模实测后单独决策）。
+  验证：**297 tests**（对抗 fixture + 隔离 + 级联 + fail-closed spy）、
+  ruff/pyright/drift 全绿、迁移 up→down→up；**§7.6 联调在 A 的 compose
+  栈通过（录制回放口径**——真实 key 401 由 fail-closed 正确暴露，本地
+  wire-format 回放端点跑通 上传→抽取→consent 回填嵌→问答 grounded=true
+  （page/span 校验过）→历史 全链；详见任务文件当日记录）。**A 队列余项**：
+  HNSW 决策（攒规模数据）、prompt 调优迭代、多课程混问（M3 末再议）。
 
 ## Next（2026-09-29 更新：**M1-1 验收通过，正式收口**）
 

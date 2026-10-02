@@ -63,3 +63,37 @@ class GroundingConsentUpdate(BaseModel):
     # Version of the text the user read and agreed to; must match the current
     # CONSENT_TEXT_VERSION or the opt-in is rejected (422).
     consent_text_version: str = Field(min_length=1, max_length=32)
+
+
+class MaterialCitationRead(BaseModel):
+    """Snapshot tuple (D-031 evidence shape, B-facing per §6 freeze).
+
+    ``checksum`` pins the file version that was read; spans are offsets into
+    the chunk's normalized text (same coordinate system as verification).
+    """
+
+    file_id: uuid.UUID
+    checksum: str | None
+    page: int | None
+    span_start: int
+    span_end: int
+    quote: str
+
+
+class MaterialAnswerCreate(BaseModel):
+    course_name: str = Field(min_length=1, max_length=300)
+    question: str = Field(min_length=1, max_length=2000)
+
+
+class MaterialAnswerRead(ORMModel):
+    id: uuid.UUID
+    course_name: str
+    question: str
+    answer: str
+    grounded: bool
+    citations: list[MaterialCitationRead]
+    chunk_ids: list[uuid.UUID]
+    memory_ids: list[uuid.UUID]
+    model_version: str
+    prompt_version: str
+    created_at: datetime

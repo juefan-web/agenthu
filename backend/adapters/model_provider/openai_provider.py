@@ -33,6 +33,22 @@ logger = logging.getLogger(__name__)
 EMBEDDING_DIMENSIONS = 1536
 
 
+def _aggregate_output_text(payload: dict) -> str:
+    """Concatenate an item's output_text parts (Responses API wire format).
+
+    The convenience ``output_text`` field exists on SDK objects, not on the
+    raw HTTP payload; the structure is output[].content[] with type
+    ``output_text`` entries.
+    """
+
+    parts: list[str] = []
+    for item in payload.get("output", []):
+        for block in item.get("content", []):
+            if block.get("type") == "output_text":
+                parts.append(block.get("text", ""))
+    return "".join(parts)
+
+
 class OpenAIProvider:
     name = "openai"
 
@@ -47,6 +63,7 @@ class OpenAIProvider:
         self._embedding_model = settings.embedding_model
         self._batch_size = settings.embedding_batch_size
         self._timeout = settings.embedding_timeout_seconds
+        self._generation_timeout = settings.responses_timeout_seconds
         self._max_retries = settings.embedding_max_retries
         # Test seam only: inject a MockTransport instead of hitting the wire.
         self._transport = transport
@@ -64,6 +81,57 @@ class OpenAIProvider:
         if instructions is not None:
             body["instructions"] = instructions
         return body
+
+    async def generate(self, input_text: str, instructions: str | None = None) -> str:
+        """One Responses API call; returns the aggregated output text.
+
+        Fails closed like embed_texts: no key -> unavailable, transport/5xx
+        exhausted -> error. Callers surface failures as errors (never a
+        smooth ungrounded answer — TASKS/m3-grounded-answers.md §5).
+        """
+
+        if not self._api_key:
+            raise ModelProviderUnavailable(
+                "OpenAI API key is not configured; generation requires provider"
+                " consent + configuration (fail-closed, D-033)"
+            )
+        body = self.build_responses_request(
+            get_settings().responses_model, input_text, instructions
+        )
+        url = f"{self._base_url}/responses"
+        last_error: Exception | None = None
+        for attempt in range(self._max_retries + 1):
+            if attempt:
+                await asyncio.sleep(min(2**attempt, 8))
+            try:
+                async with httpx.AsyncClient(
+                    timeout=self._generation_timeout, transport=self._transport
+                ) as client:
+                    response = await client.post(
+                        url,
+                        headers={"Authorization": f"Bearer {self._api_key}"},
+                        json=body,
+                    )
+                if response.status_code == 200:
+                    return _aggregate_output_text(response.json())
+                if response.status_code == 429 or response.status_code >= 500:
+                    last_error = ModelProviderError(
+                        f"Responses call failed: HTTP {response.status_code}"
+                    )
+                    continue
+                raise ModelProviderError(
+                    f"Responses call rejected: HTTP {response.status_code} {response.text[:200]}"
+                )
+            except (httpx.TimeoutException, httpx.TransportError) as exc:
+                last_error = exc
+                continue
+        raise ModelProviderError(
+            f"Generation failed after {self._max_retries + 1} attempts"
+        ) from last_error
+
+    @property
+    def model_name(self) -> str:
+        return get_settings().responses_model
 
     async def embed_texts(self, texts: list[str]) -> EmbeddingResult:
         if not texts:
