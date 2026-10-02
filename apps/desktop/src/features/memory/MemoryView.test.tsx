@@ -41,6 +41,16 @@ const fixtures: MemoryItem[] = [
   makeMemory({ id: "mem-unreviewed", correction_status: "UNREVIEWED", content: "模型总结：该生偏好在晚间做题" }),
   makeMemory({ id: "mem-rejected", correction_status: "REJECTED", content: "被拒绝的记忆" }),
   makeMemory({ id: "mem-history", supersedes_id: "mem-live", correction_status: "CORRECTED", content: "旧版本：平均 60 分钟" }),
+  makeMemory({
+    id: "mem-telemetry",
+    content: "带遥测与文档证据的记忆",
+    use_count: 3,
+    last_used_at: "2026-10-02T09:00:00+08:00",
+    evidence: [
+      { type: "event", id: "019a2b3c-aaaa-7000-8000-000000000009" },
+      { type: "document", file_id: "file-1", checksum_sha256: "abc", page: 3, span_start: 10, span_end: 40 },
+    ],
+  }),
 ];
 
 function renderView() {
@@ -57,7 +67,7 @@ describe("MemoryView（「可修正」验收句的落点）", () => {
   it("主列表只显示 live 行，历史版本折叠且有计数", async () => {
     renderView();
     expect(await screen.findByText("线性代数作业平均用时 75 分钟")).toBeTruthy();
-    expect(screen.getByText(/live 3 条 · 历史 1 条/)).toBeTruthy();
+    expect(screen.getByText(/live 4 条 · 历史 1 条/)).toBeTruthy();
     expect(screen.queryByText("旧版本：平均 60 分钟")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /展开历史版本/ }));
     expect(screen.getByText("旧版本：平均 60 分钟")).toBeTruthy();
@@ -65,7 +75,7 @@ describe("MemoryView（「可修正」验收句的落点）", () => {
 
   it("状态徽标、层级/种类与证据计数可见", async () => {
     renderView();
-    expect(await screen.findByText("已确认")).toBeTruthy();
+    expect((await screen.findAllByText("已确认")).length).toBeGreaterThan(0);
     expect(screen.getByText("未确认")).toBeTruthy();
     expect(screen.getByText("已拒绝")).toBeTruthy();
     expect(screen.getAllByText(/L1 · 经历 · study/).length).toBeGreaterThan(0);
@@ -97,6 +107,22 @@ describe("MemoryView（「可修正」验收句的落点）", () => {
     fireEvent.click((await screen.findAllByRole("button", { name: "拒绝" }))[0]!);
     await waitFor(() => expect(rejectMemory).toHaveBeenCalled());
     vi.mocked(window.confirm).mockRestore();
+  });
+
+  it("证据明细可展开核对：事件 id 截断、文档锚点带页码；遥测只在非零时显示", async () => {
+    renderView();
+    // 遥测行（use_count/last_used_at）
+    expect(await screen.findByText(/参与决策 3 次/)).toBeTruthy();
+    expect(screen.getByText(/最近使用/)).toBeTruthy();
+    // 证据计数行 + 展开明细
+    expect(screen.getByText(/证据：事件 1 · 文档 1/)).toBeTruthy();
+    fireEvent.click(screen.getAllByText("证据明细")[0]!);
+    const truncated = screen.getAllByText(/019a2b3c…/)[0];
+    expect(truncated).toBeTruthy();
+    expect(screen.getByText("p.3–10–40")).toBeTruthy();
+    // 无遥测的行不显示「参与决策」
+    const liveRow = screen.getByText("线性代数作业平均用时 75 分钟").closest(".memory-row")!;
+    expect(liveRow.textContent).not.toContain("参与决策");
   });
 
   it("空列表给出引导文案", async () => {
