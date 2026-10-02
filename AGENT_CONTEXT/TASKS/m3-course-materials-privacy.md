@@ -131,3 +131,11 @@ Backend worker：按页抽取文本 → material_chunks →（开启检索时）
   **结论：与决策清单第 4 条兼容**——第 4 条「默认关闭」继续成立，
   资料摄取批次可开工。复核节奏：供应商政策页变更或每里程碑一次
   （下一复核 = M3 摄取合入前，B 会签本记录即完成双核）。
+  **B 双核（2026-10-02，juefan-web，PR #36 review）**：两页独立重取核对
+  （当日有效）——① enterprise-privacy 页首 "Updated: January 8, 2026" 与
+  「By default, we do not use your business data for training our models」
+  原句、输入输出所有权原句、30 天滥用保留与 ZDR 资格口径（qualifying
+  use-case）逐一命中；② Data controls 端点表 `/v1/responses` 与
+  `/v1/embeddings` 训练列均为 No、embeddings 行 ZDR-eligible 为 Yes、
+  滥用监控日志默认保留至多 30 天。**双核完成，资料摄取批次解锁**；
+  \`store: false\` 实现约束与同意文案披露口径随摄取批次验收。
