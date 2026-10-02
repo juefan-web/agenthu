@@ -17,6 +17,7 @@ import pytest
 from sqlalchemy import select
 
 from backend.config import get_settings
+from tests.conftest import skip_late_night
 from tests.fixtures.payloads import assignment_envelope, task_payload
 
 pytestmark = pytest.mark.integration
@@ -24,20 +25,8 @@ pytestmark = pytest.mark.integration
 _LOCAL_TZ = ZoneInfo(get_settings().default_timezone)
 
 
-def _skip_late_night(minutes_needed: int) -> None:
-    """Planner v2 caps placement by the day's remaining minutes (D-027
-    formula), so near local midnight an honest plan may place only part of
-    the fixture's tasks. Same guard as test_plans (hotfix e70f01d) — this
-    test asserts BOTH tasks land in today's plan (60 + 60 minutes)."""
-
-    now = datetime.now(_LOCAL_TZ)
-    midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-    if (midnight - now).total_seconds() // 60 < minutes_needed:
-        pytest.skip(f"late-night window: less than {minutes_needed} minutes left today")
-
-
 def test_event_batch_to_focus_main_chain(client, auth_headers, db_session) -> None:
-    _skip_late_night(130)
+    skip_late_night(130)
     upstream_id = f"hw-{uuid.uuid4().hex[:10]}"
     client_event_id = f"client-{upstream_id}"
     batch_request = {

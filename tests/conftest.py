@@ -24,7 +24,8 @@ os.environ.setdefault("AUTH_RATE_LIMIT_MAX", "0")
 import socket  # noqa: E402
 import uuid  # noqa: E402
 from collections.abc import Callable, Iterator  # noqa: E402
-from datetime import timedelta  # noqa: E402
+from datetime import datetime, timedelta  # noqa: E402
+from zoneinfo import ZoneInfo  # noqa: E402
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
@@ -37,11 +38,31 @@ from sqlalchemy.orm import Session, sessionmaker  # noqa: E402
 from sqlalchemy.pool import NullPool  # noqa: E402
 
 import backend.models  # noqa: E402,F401  (register models)
+from backend.config import get_settings  # noqa: E402
 from backend.core.security import create_access_token  # noqa: E402
 from backend.db.base import Base  # noqa: E402
 from backend.services.storage import InMemoryStorage  # noqa: E402
 
 TEST_DATABASE_URL = os.environ["TEST_DATABASE_URL"]
+
+_LOCAL_TZ = ZoneInfo(get_settings().default_timezone)
+
+
+def skip_late_night(minutes_needed: int) -> None:
+    """The single grep-able late-night guard for clock-sensitive tests.
+
+    Planner v2 caps placement by the day's remaining minutes (D-027
+    formula), so near local midnight an honest plan may be empty or only
+    partially placed; tests that need real same-day placement call this
+    instead of reimplementing the window check. One definition plus N call
+    sites is the point: ``grep skip_late_night`` IS the audit — no second
+    "midnight/skip pattern" sweep needed (the M3 first-day lesson).
+    """
+
+    now = datetime.now(_LOCAL_TZ)
+    midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    if (midnight - now).total_seconds() // 60 < minutes_needed:
+        pytest.skip(f"late-night window: less than {minutes_needed} minutes left today")
 
 
 def tcp_available(host: str, port: int, timeout: float = 1.0) -> bool:
