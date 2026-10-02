@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { BackendAuthError, BackendClient } from "./client";
+import { BackendAuthError, BackendClient, BackendHttpError } from "./client";
 
 function json(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), {
@@ -203,5 +203,95 @@ describe("BackendClient list pagination (D-029 拉全量)", () => {
     const memories = await client.listMemories();
     expect(memories).toHaveLength(202);
     expect(memories.at(-1)?.id).toBe("mem-tail-1");
+  });
+});
+
+describe("BackendClient grounding endpoints (M3 §6)", () => {
+  const consent = {
+    course_name: "信号与系统",
+    enabled: true,
+    consent_text: "开启后，当你在此课程中提问，系统会把与问题最相关的课程资料片段……",
+    consent_text_version: "v1",
+    consented_at: "2026-10-02T09:00:00+08:00",
+  };
+  const answer = {
+    id: "ans-1",
+    course_name: "信号与系统",
+    question: "什么是采样定理",
+    answer: "约束：「采样率至少为最高频率的两倍」[2]。",
+    grounded: true,
+    citations: [{
+      file_id: "file-1",
+      checksum: "chk-1",
+      page: 2,
+      span_start: 0,
+      span_end: 13,
+      quote: "采样率至少为最高频率的两倍",
+    }],
+    chunk_ids: ["chunk-1"],
+    memory_ids: [],
+    model_version: "fake-model",
+    prompt_version: "v1",
+    created_at: "2026-10-02T10:00:00+08:00",
+  };
+  const file = { id: "file-1", filename: "lecture1.pdf", checksum_sha256: "chk-1", course_name: "信号与系统", status: "ready" };
+
+  it("asks a grounded question via POST with course and question body", async () => {
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => json(answer));
+    const client = new BackendClient({ baseUrl: "http://backend", fetcher, getToken: () => "jwt" });
+    const result = await client.askGroundedQuestion("信号与系统", "什么是采样定理");
+    expect(result.grounded).toBe(true);
+    expect(result.citations[0]?.quote).toBe("采样率至少为最高频率的两倍");
+    expect(String(fetcher.mock.calls[0][0])).toContain("/v1/material/answers");
+    const init = fetcher.mock.calls[0][1] as RequestInit;
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual({ course_name: "信号与系统", question: "什么是采样定理" });
+  });
+
+  it("carries 403/503 status on BackendHttpError for the view to branch on", async () => {
+    const denied = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => json({ error: { code: "permission_denied", message: "not enabled" } }, 403));
+    const unavailable = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => json({ error: { code: "service_unavailable", message: "provider down" } }, 503));
+    const statuses = await Promise.all([
+      new BackendClient({ baseUrl: "http://backend", fetcher: denied, getToken: () => "jwt" })
+        .askGroundedQuestion("c", "q").catch((error) => error),
+      new BackendClient({ baseUrl: "http://backend", fetcher: unavailable, getToken: () => "jwt" })
+        .askGroundedQuestion("c", "q").catch((error) => error),
+    ]);
+    expect(statuses[0]).toBeInstanceOf(BackendHttpError);
+    expect((statuses[0] as BackendHttpError).status).toBe(403);
+    expect((statuses[1] as BackendHttpError).status).toBe(503);
+  });
+
+  it("enables consent echoing the served consent_text_version", async () => {
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => json({ ...consent, enabled: true }));
+    const client = new BackendClient({ baseUrl: "http://backend", fetcher, getToken: () => "jwt" });
+    await client.setGroundingConsent("信号与系统", true, "v1");
+    const init = fetcher.mock.calls[0][1] as RequestInit;
+    expect(String(fetcher.mock.calls[0][0])).toContain("/v1/grounding-consent");
+    expect(init.method).toBe("PUT");
+    expect(JSON.parse(String(init.body))).toEqual({ course_name: "信号与系统", enabled: true, consent_text_version: "v1" });
+  });
+
+  it("reads consent state and deletes answers (204)", async () => {
+    const reader = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => json(consent));
+    await new BackendClient({ baseUrl: "http://backend", fetcher: reader, getToken: () => "jwt" }).getGroundingConsent("信号与系统");
+    expect(String(reader.mock.calls[0][0])).toContain("/v1/grounding-consent?course_name=");
+
+    const deleter = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(null, { status: 204 }));
+    await new BackendClient({ baseUrl: "http://backend", fetcher: deleter, getToken: () => "jwt" }).deleteGroundedAnswer("ans-1");
+    expect(String(deleter.mock.calls[0][0])).toContain("/v1/material/answers/ans-1");
+    expect((deleter.mock.calls[0][1] as RequestInit).method).toBe("DELETE");
+  });
+
+  it("drains grounded answers and files by offset until short pages", async () => {
+    const answerPages = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => json({ items: [answer, { ...answer, id: "ans-2" }], total: 2, limit: 200, offset: 0 }));
+    const answers = await new BackendClient({ baseUrl: "http://backend", fetcher: answerPages, getToken: () => "jwt" }).listGroundedAnswers("信号与系统");
+    expect(answers.map((item) => item.id)).toEqual(["ans-1", "ans-2"]);
+    expect(answerPages).toHaveBeenCalledTimes(1); // 短页即停
+
+    const filePages = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => json({ items: [file], total: 1, limit: 200, offset: 0 }));
+    const files = await new BackendClient({ baseUrl: "http://backend", fetcher: filePages, getToken: () => "jwt" }).listFiles();
+    expect(files[0]?.filename).toBe("lecture1.pdf");
+    expect(String(filePages.mock.calls[0][0])).toContain("/v1/files?limit=200&offset=0");
   });
 });

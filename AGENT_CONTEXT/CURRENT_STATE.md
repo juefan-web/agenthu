@@ -758,6 +758,17 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   落地**：`memory.ts` schema 含 `use_count`/`last_used_at`，
   `MemoryView` telemetryText 渲染「参与决策 N 次 · 最近使用 …」且
   MemoryView.test 已断言（零遥测行不显示）——无需新增改动。
+- **B ③ 讲解页落地（2026-10-02，PR #44，待 A review）**：§6 冻结形状的
+  客户端半边——新增「讲解」主视图（导航第 5 项）。课程选择（文件列表
+  distinct course_name + 手输 datalist）；同意门展示后端下发的
+  consent_text 并以「同意并开启」回显 `consent_text_version`（PUT）；
+  提问走 POST `/v1/material/answers`，403/503 经 `BackendHttpError`
+  （新增错误类携带状态码）分流提示（503 明示「不会降级为无引用回答」）；
+  回答正文把存活 「quote」[n] 标记渲染为可点击引用点，与引用卡
+  （quote + page + 文件名，§6 口径不依赖 span）双向跳转高亮；文件
+  已删/已换版本（checksum 不匹配）→ 失效锚点标注；历史（offset 拉全量
+  + 删除入口）。课件上传 UI 不在本切片（后续项）。127 测试（+11）/
+  build 绿；E1 主视图正则扩入「讲解」。
 - **#41 交付细节与竞态记录（2026-10-02，A 侧汇报，协调人核验；该汇报的
   「当前局面」一节已过期——七个 PR 实际已全部合并，A 报告时读的是合并前
   状态）**：增量声明逐项坐实——迁移 `c8f2a14d6b93`（material_chunks +

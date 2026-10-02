@@ -86,3 +86,23 @@ textarea { resize: vertical; }
 .note-label { margin: 18px 0; max-width: 520px; }
 @media (max-width: 860px) { .workspace-grid { grid-template-columns: 1fr; } .workspace-section.wide { grid-column: auto; } }
 @media (max-width: 650px) { .shell { grid-template-columns: 1fr; } .sidebar { padding: 14px 16px; } .brand { padding: 0 0 10px; } nav { display: flex; } .nav-item { text-align: center; flex: 1; } .sidebar-footer { display: none; } .content { padding: 20px 16px 48px; } .inline-form { grid-template-columns: 1fr; } }
+/* 讲解页（grounding）：同意门、提问、回答与引用卡（§6：quote+page 呈现） */
+.grounding-workspace { max-width: 720px; display: grid; gap: 10px; }
+.grounding-workspace .field-label { color: #677879; font-size: 12px; margin-top: 4px; }
+.consent-panel { display: grid; gap: 6px; background: #f7f9f8; border: 1px solid #e0e6e4; border-radius: 8px; padding: 10px 12px; }
+.consent-panel summary { cursor: pointer; color: #677879; font-size: 12px; user-select: none; }
+.consent-text { color: #42504f; font-size: 13px; white-space: pre-line; }
+.ask-form { display: grid; gap: 6px; }
+.answer-card { display: grid; gap: 8px; border: 1px solid #e0e6e4; border-radius: 8px; padding: 12px 14px; background: #fff; }
+.answer-card .task-title-line { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.answer-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.65; }
+.citation-marker { all: unset; cursor: pointer; font: inherit; }
+.citation-marker sup { color: #2f6b3c; font-size: 11px; font-weight: 600; }
+.citation-marker.highlighted, .citation-card.highlighted { background: #fdf3d7; border-radius: 4px; }
+.citation-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.citation-card { border-left: 3px solid #cfe0d4; padding: 4px 10px; display: grid; gap: 4px; }
+.citation-source { all: unset; cursor: pointer; color: #2f6b3c; font-size: 13px; font-weight: 600; }
+.citation-card blockquote { margin: 0; padding: 0; color: #42504f; font-size: 13px; border-left: 2px solid #e0e6e4; padding-left: 8px; }
+.citation-note { color: #a03d38; font-size: 12px; }
+.answer-history summary { cursor: pointer; color: #677879; font-size: 12px; user-select: none; }
+.answer-list { display: grid; gap: 10px; margin-top: 8px; }
