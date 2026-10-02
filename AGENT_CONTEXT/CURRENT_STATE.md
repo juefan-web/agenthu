@@ -1,6 +1,6 @@
 # CURRENT_STATE
 
-Updated: 2026-09-30 · Milestone: **M2（让闭环"学会"：planner v2 + 重规划建议 + 学习记忆）**。M0/M1 已合并（PR #1-#15，round-5 数据闭环验收通过 + e2e 首跑解锁）；对概念基线的完整差距评估见 `HANDOFF/2026-09-30-implementation-evaluation.md`（§8 七子句：4 达成 + 1 部分 + 2 缺失），M2 出口判据即该报告末节的场景化 §8 全句。路线大纲（M2–M8）已经 A/B 确认采纳（**D-030 accepted**，含三处修订：M3 同步产出删除/依赖图设计、TECH_STACK 依赖方已注取代、m2-breakdown 已对齐大纲口径）。
+Updated: 2026-10-02 · Milestone: **M3（让回答有据可依：资料摄取 + Memory 检索/grounding + 引用）**。M2 已关闭（main `e2a80e6`，出口判据「四绿三窗口双人」达成，见 2026-10-02 条目）。M0/M1 已合并（PR #1-#15，round-5 数据闭环验收通过 + e2e 首跑解锁）；对概念基线的完整差距评估见 `HANDOFF/2026-09-30-implementation-evaluation.md`（§8 七子句：4 达成 + 1 部分 + 2 缺失），M2 出口判据即该报告末节的场景化 §8 全句。路线大纲（M2–M8）已经 A/B 确认采纳（**D-030 accepted**，含三处修订：M3 同步产出删除/依赖图设计、TECH_STACK 依赖方已注取代、m2-breakdown 已对齐大纲口径）。
 · 集成分支 `integration/study-time-m0` 已合并 Backend（`61fcf82`）与客户端
 （`a2693e9`），冲突已解决，双侧 CI 与联合 drift check 全绿（draft PR #1）。
 · **Merge-1 Windows 构建包人工测试结论：不建议转正合并**（见
@@ -569,6 +569,28 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   （`test_nothing_placeable_mirrors_generate_v2_items`，三场景断言两谓词
   一致）；`latest_open_plan` 空草稿可摆放时继续找更旧非空草稿的遍历语义
   一并核验。
+- **M2 关闭 / M3 开闸（2026-10-02，main `e2a80e6`）**：出口判据「四绿三
+  窗口双人」达成（A 02:00 热修分支 / A 10:04 / A 11:26 主干 / B 11:37
+  主干独立栈复跑）；33 条决策、32 个 PR 全双审。M3 首日教训动作
+  「全量排查墙钟类断言」已完成：剩余 `datetime.now` 调用点均为已加守卫、
+  now 相对差值（无午夜边界）或跨午夜退化通过型，无需改动。
+- **A M3 首批 = pgvector 切片（2026-10-02，A，`feature/m3-pgvector-embedding`）
+  ——`memories.embedding vector(1536)` 落库**：① compose `db` 镜像
+  `postgres:16-alpine` → `pgvector/pgvector:pg16`（**tag 勘误**：冻结文本
+  的 `pgvector/pgvector:16` 在 Docker Hub 不存在——09-30 拉取失败的真实
+  原因，非网络封锁；正确滚动 tag 为 `pg16`，实证 = pgvector 0.8.7 /
+  PG 16.15；带 `POSTGRES_IMAGE` 覆盖变量沿 MINIO/S3MOCK 先例；CI 跑
+  compose 即验证可拉取，workflow 零改动）。② 迁移 `b7e4d0a95c13`
+  （CREATE EXTENSION vector + 列；down 对称删列+删扩展，文档 §7.3）。
+  ③ 模型 `Vector(1536)` 列（pgvector 包入依赖；反射经 `ischema_names`
+  注册，`alembic check` 无漂移）；`MemoryRead` 只读透出（backend-only，
+  客户端契约零影响，openapi 重导）。④ conftest 测试库预装扩展
+  （create_all 路径需要）。验证：**231 passed**（main 230，+1 embedding
+  往返）/pyright 0/ruff/drift 双源绿；本地重建演练完成（pgdata 清空 →
+  新镜像 → up→down→up，extension 0.8.7 实证）。**wire 精度发现**：
+  pgvector 文本输出是最短 float32 往返表示，float64 精确值出库带 ~1e-7
+  表示误差（存储本身精确）——embedding 断言必须 `pytest.approx`，已记入
+  任务文档 §7 供检索切片复用。
 - 流程规则不变：分支从 main 拉出；跨边界先冻结；PR 互审（A=rotcar07，
   B=juefan-web）；**并行会话各用独立 worktree**（2026-10-01 混合提交事故
   后的新规则）。

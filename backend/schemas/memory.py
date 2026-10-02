@@ -111,5 +111,9 @@ class MemoryRead(ORMModel):
     valid_to: datetime | None
     use_count: int
     last_used_at: datetime | None
+    # Read-only (M3 pgvector slice): embeddings are produced by server writers;
+    # MemoryCreate/Update never accept one. None until the retrieval slice
+    # backfills it.
+    embedding: list[float] | None
     created_at: datetime
     updated_at: datetime

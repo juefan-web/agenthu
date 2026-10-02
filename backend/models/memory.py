@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import JSONB
@@ -119,3 +120,7 @@ class Memory(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         Integer, nullable=False, default=0, server_default=text("0")
     )
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # M3 slice: 1536-dim embedding for vector recall. Nullable because rows
+    # exist before embedding backfill and non-text rows never get one; the
+    # writers that fill it arrive with the retrieval slice, not here.
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
