@@ -728,3 +728,15 @@ Decision 要点：① 文件元数据随采集自动入库（`downloadUrl` 不�
 记录链接，未核前第 ④ 条保持默认关闭。
 
 Revisit：供应商政策变更、跨课程混问（M3 末）、Android 端资料访问（M6）。
+
+## D-033 §1 实现注记 — 文件元数据「按需拉取」口径修正（2026-10-02，协调人裁定）
+
+§1 表把文件元数据事件（`study.material.discovered`）记为「随采集自动」。
+实现口径修正为**按需拉取、不进采集循环**：讲解页用户选择课程时经
+Tauri/OneTHU learn 域现拉文件列表（会话态，不落 Event、不缓存全局），
+文件本体仍仅显式单文件动作上传。依据：① 最小化采集（AGENTS §3）——
+只用一门课的 grounding 不该全量采集所有课的文件元数据；② 采集循环
+因 learn 域 XSRF（D8）脆弱，不应与 grounding 功能耦合；③ 不采集比
+采集更保守，与 §1 表精神同向。`downloadUrl` 不进 Event 约束不变。
+实现载体 = `TASKS/m3-materials-upload-ui.md`；A/B 异议在该任务 review
+时提出，未异议即生效。

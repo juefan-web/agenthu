@@ -772,6 +772,28 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   CI drift 根因 = ci.yml 双触发（push + pull_request）的 merge 预览把两侧
   openapi.json 自动合并成任何一侧都不会导出的混合体（A 以 Docker
   Python 3.12 干净树复现，排除版本因素）。两条教训入下方流程规则。
+- **#43 grounding 切片审毕合并（2026-10-02，B 评审 + 合并 `872c8b3`，
+  协调人核验）**：B 四个重点全过（纯机械校验、同意门单源 import
+  `consent_enabled` 且测试钉死零调用、503 重试上限 4 次/退避 2/4/8s/
+  单次 60s 超时、迁移纯 DDL 可逆）；**评审修订 `669f53a` + format
+  `00c6c28` 已核**——haystack 侧补过共享 `normalize_text`（原实现只
+  归一化 quote 侧，PDF 分解重音序列会误杀真引用；修复与 §6「span 索引
+  归一化文本」文档语义对齐），分解重音回归用例在库
+  （`test_decomposed_accent_chunk_matches_composed_quote`）；A 的交叉
+  核验评论在案（13:10Z，含 rebase 核验/299 passed 补测/让位说明）。
+  合并后 main 双 CI 绿。第三次推送竞争按既定协议让位，无冗余提交。
+- **B ③ 讲解页 PR #44 核验（2026-10-02，`6b9416c`，待 A review，
+  协调人代码核验通过）**：六项声明坐实——`BackendHttpError` 携带状态
+  码、403/503 分流；consent PUT 回显 `consent_text_version`（测试断言
+  请求体）；失效锚点两态（文件已删 / checksum 不匹配）；历史 offset
+  拉全 + 删除；E1 正则扩入「讲解」；12/12 检查绿。
+- **下一队列（2026-10-02 指派，第二轮）**：A = ① review #44（小 PR，
+  就近批）→ ② 起草 **E5（M3 出口 e2e 场景）**：讲解页全链——上传 →
+  同意 → 提问 → 引用机械校验成立 → 删除 Learning Memory 后回答不再
+  体现（M2 的 E4 模式沿用；B 上传 UI 合并前可先以 API 造数路径写后端
+  半边）；HNSW 继续等检索延迟数据。B = #44 合并后开工 **④ 课件上传
+  入口**（新任务文件 `TASKS/m3-materials-upload-ui.md`，含文件列表
+  来源裁定：按需拉取、不进采集循环——见 DECISIONS D-033 §1 实现注记）。
 - 流程规则不变：分支从 main 拉出；跨边界先冻结；PR 互审（A=rotcar07，
   B=juefan-web）；**并行会话各用独立 worktree**（2026-10-01 混合提交事故
   后的新规则）；**openapi.json 冲突一律 rebase 后 `--write` 重导**——CI
