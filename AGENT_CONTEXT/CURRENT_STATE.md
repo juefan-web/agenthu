@@ -437,6 +437,17 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
 
 ## Next（2026-10-02 更新：**M2 正式关闭，M3 双侧开闸**）
 
+- **M3 首日教训遗留清偿（B，`fix/clock-sensitive-plan-assertions`）**：
+  ① **墙钟类断言全量排查完成——该类已全部有守卫，无新增缺口**。守卫三形态：
+  共享 helper `_skip_late_night`（test_plans 4 处 + test_client_main_chain
+  1 处）、内联守卫（test_focus_loop <65 分钟、test_plans_concurrency
+  首测 <130——注意 git grep \"_skip_late_night\" 搜不到内联形态，盘点须按
+  \"midnight/skip\" 模式二次排查）、固定晨间 `start_at`（orders 测试与
+  test_planner_v2 整类——从设计上脱离墙钟，优于跳过）。其余 `plans/today`
+  调用者（contract/cors/复用类/并发隔离）断言的是 ID/复用不变量或空列表下
+  空洞的 per-item 检查，与时钟无关。② diffPlans 5s flake：desktop vitest
+  `testTimeout` 上调至 10s（两次复现均在默认 5s；只影响失败反馈延迟）。
+
 - **M2 关闭（收口报告：`HANDOFF/2026-10-02-m2-closure.md`）**：AGENTS §8
   验收句在自动化 E4 出口判据全链走通——**四绿三窗口双人**（A 02:00/10:04/
   11:26，B 11:37 于 main `6bd1839` 全新栈+新账号，2 passed 27.3s）。
