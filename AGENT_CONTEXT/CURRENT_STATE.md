@@ -721,6 +721,24 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   pnpm test/build 绿）→ ② Memory 页展示 `use_count`（#37 已透出，
   「这条事实参与过 N 次计划决策」）→ ③ 讲解页/引用跳转 UI，待 A 的
   `m3-grounded-answers.md` §6 接口冻结后并行。
+- **#41 交付细节与竞态记录（2026-10-02，A 侧汇报，协调人核验；该汇报的
+  「当前局面」一节已过期——七个 PR 实际已全部合并，A 报告时读的是合并前
+  状态）**：增量声明逐项坐实——迁移 `c8f2a14d6b93`（material_chunks +
+  grounding_consents + file_objects.course_name）；30s cron
+  `drain_pending_extractions` 兜底丢失的 enqueue；**flagged chunk 永不
+  嵌入外送**（`embed_pending_chunks` 查询仅取 `scan_status == "clean"`，
+  flag 行留本地可检索、不进 provider）；同意门在 worker 与 embed 函数
+  内双重调用时点复查（撤销对已入队的回填 job 同样关门）。**过程竞态
+  （流程教训）**：B 合并队列期间对 #41 分支 rebase force-push，竞态丢失
+  A 后推的两个修复 commit；A 对齐远端、验证 B 修复等价后让位、未推冗余
+  提交——处置正确（合并树最终 3 commit：`8f888ce`/`f76eb43`/`715517b`）。
+  CI drift 根因 = ci.yml 双触发（push + pull_request）的 merge 预览把两侧
+  openapi.json 自动合并成任何一侧都不会导出的混合体（A 以 Docker
+  Python 3.12 干净树复现，排除版本因素）。两条教训入下方流程规则。
 - 流程规则不变：分支从 main 拉出；跨边界先冻结；PR 互审（A=rotcar07，
   B=juefan-web）；**并行会话各用独立 worktree**（2026-10-01 混合提交事故
-  后的新规则）。
+  后的新规则）；**openapi.json 冲突一律 rebase 后 `--write` 重导**——CI
+  双触发的 merge 预览可能自动合并出任何一侧都不会导出的混合体，勿信
+  自动合并结果（#41 竞态教训）；**共享 PR 分支被 rebase force-push 后，
+  author 先对齐远端并验证等价性，再决定补推或让位**（#41 竞态教训，
+  A 的处置即为范本）。
