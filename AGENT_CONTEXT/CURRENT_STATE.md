@@ -631,6 +631,27 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   +6 检索/遥测，含钉子：reject 后估时回落 default 且计数恒 0、重复 id
   去重、下限 0.1 请求被 clamp 回 0.3）/pyright 0/ruff/drift 双源绿；
   无 API 面变化（openapi 零漂移）。
+- **A M3 第三批 = 批末重算 + 版本语义修订（2026-10-02，A，
+  `feature/batch-end-state-recompute`）——评估报告 #4 尾巴清偿**：
+  ① **批末重算**：event handler 不再内联 `recompute_current_state`（4 处
+  调用点改 `mark_state_dirty`，登记在 `session.info`）；单事件路径在
+  `create_event` 末尾 flush，批量路径 `ingest_event_batch` 用
+  `defer_state_recompute` 抑制 + 循环后 flush 一次——103 条事件同步从
+  ~103 次全量重算（90 天课表重扫）降到 1 次。登记随会话回滚自然消失，
+  零 schema。② **version 语义修订（重要）**：`version` 从「重算计数器」
+  改为「投影内容修订号」——签名 =（current_task_id, current_plan_id,
+  pending 集合, last_event_at/type, recent_event_types 排序元组），不变
+  则不跳版；`version==0`（未计算）强制首跳；墙钟易变字段（current_time、
+  24h 计数、breakdown）排除在签名外（跨分钟必漂，计入即回归逐次跳版）。
+  `update_overrides` 对用户自有字段（context/available_minutes 覆盖）
+  显式跳版。**钉子测试重写**：`test_current_state_reflects_pending_tasks`
+  原断言「连读两次必跳版」改为「建任务跳、无变化读不跳」。③ **实现发现
+  （due_at 教训同类）**：`last_event_at` 写入时统一 `astimezone(UTC)`——
+  同一事件从线上的 Python 对象（原偏移）与从 UTC 库会话（+00:00）读回
+  的 isoformat 不同，不规范化会让版本门控把「表示翻转」误判为「内容
+  变化」。验证：**242 passed**（main 236：+6 批处理/版本语义，重写 1）/
+  pyright 0/ruff/drift 双源绿；无 API 面变化（version 字段仍在客户端
+  契约，语义注释入模块 docstring）。
 - 流程规则不变：分支从 main 拉出；跨边界先冻结；PR 互审（A=rotcar07，
   B=juefan-web）；**并行会话各用独立 worktree**（2026-10-01 混合提交事故
   后的新规则）。
