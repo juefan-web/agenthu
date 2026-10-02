@@ -721,6 +721,15 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   pnpm test/build 绿）→ ② Memory 页展示 `use_count`（#37 已透出，
   「这条事实参与过 N 次计划决策」）→ ③ 讲解页/引用跳转 UI，待 A 的
   `m3-grounded-answers.md` §6 接口冻结后并行。
+- **B ①② 落地（2026-10-02，PR #42）**：游标循环已实现——`getTasks`
+  走 X-Next-Cursor 头跟随（keyset 路径）；`listPlans`/`listMemories`
+  所在端点仍是 offset 版 Page（不铸 `next_cursor`），按短页/空尾页
+  判停逐页 offset 拉全量（两端点迁移 keyset 后改为跟随 `next_cursor`
+  即可）。MAX_PAGES=50 防失控护栏（中止并报错，不静默截断）。多页
+  fixtures 4 例 + 全量 116 测试 / build 绿。② 经核**已由 M2 Memory 页
+  落地**：`memory.ts` schema 含 `use_count`/`last_used_at`，
+  `MemoryView` telemetryText 渲染「参与决策 N 次 · 最近使用 …」且
+  MemoryView.test 已断言（零遥测行不显示）——无需新增改动。
 - **#41 交付细节与竞态记录（2026-10-02，A 侧汇报，协调人核验；该汇报的
   「当前局面」一节已过期——七个 PR 实际已全部合并，A 报告时读的是合并前
   状态）**：增量声明逐项坐实——迁移 `c8f2a14d6b93`（material_chunks +
