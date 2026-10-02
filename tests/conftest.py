@@ -64,6 +64,11 @@ def engine() -> Iterator[Engine]:
         pytest.skip("PostgreSQL is not available for integration tests")
 
     Base.metadata.drop_all(test_engine)
+    # The memories.embedding column uses pgvector's VECTOR type, so create_all
+    # needs the extension present in the test database (per-database object;
+    # migrations create it in their own databases via op.execute).
+    with test_engine.connect().execution_options(isolation_level="AUTOCOMMIT") as c:
+        c.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
     Base.metadata.create_all(test_engine)
     yield test_engine
     Base.metadata.drop_all(test_engine)

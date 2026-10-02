@@ -23,6 +23,9 @@ dependencies = [
     # Explicit IANA database: `python:*-slim` images have no system zoneinfo and
     # psycopg only pulls tzdata on Windows, but Settings validates DEFAULT_TIMEZONE.
     "tzdata>=2024.1",
+    # SQLAlchemy type for the memories.embedding vector column (M3 slice,
+    # TASKS/m3-memory-schema-migration.md §2); pure Python, no native deps.
+    "pgvector>=0.4,<0.6",
 ]
 
 [project.optional-dependencies]

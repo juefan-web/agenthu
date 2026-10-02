@@ -2,7 +2,13 @@ name: agenthu
 
 services:
   db:
-    image: postgres:16-alpine
+    # pgvector build of PostgreSQL 16 (M3: memories.embedding vector(1536) needs
+    # the `vector` extension, which stock postgres images lack). The rolling
+    # `pg16` tag only tracks pgvector minor releases (VECTOR type is ABI-stable
+    # within 0.x); verified digest sha256:7b822b0a... = pgvector 0.8.7 on
+    # PostgreSQL 16.15. Override POSTGRES_IMAGE if your registry mirrors it
+    # elsewhere (same pattern as MINIO_IMAGE/S3MOCK_IMAGE).
+    image: ${POSTGRES_IMAGE:-pgvector/pgvector:pg16}
     environment:
       POSTGRES_USER: agenthu
       POSTGRES_PASSWORD: agenthu

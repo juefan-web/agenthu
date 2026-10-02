@@ -166,9 +166,19 @@ Event（事实层，删除入口之一）
 
 1. **M2 切片**（随 D-031 落地）：§2 第一段迁移；模型/schema/API 增列；
    GIN 索引；fixtures 更新；`alembic check` 无漂移。无基础设施变化。
-2. **M3 切片**：`docker-compose.yml` 与 CI 镜像 `postgres:16-alpine` →
-   `pgvector/pgvector:16`（先验证 CI 可拉取）；§2 第二段迁移（扩展 +
-   列；唯一索引已在 M2 为最终形态，无换装）；本地/CI 数据库重建演练一次。
+2. **M3 切片**（**已落地**，2026-10-01，迁移 `b7e4d0a95c13`）：compose
+   `db` 镜像 → `pgvector/pgvector:pg16`。**tag 勘误**：冻结文本写作
+   `pgvector/pgvector:16`——该 tag 在 Docker Hub 不存在（09-30 首次拉取
+   "not found" 的真实原因，非网络封锁；正确滚动 tag 为 `pg16`，已实证
+   拉取 = pgvector 0.8.7 / PostgreSQL 16.15，digest
+   `sha256:7b822b0a…`）。镜像带 `POSTGRES_IMAGE` 覆盖变量（沿
+   `MINIO_IMAGE`/`S3MOCK_IMAGE` 先例）。CI 无需改动（跑 compose 即拉新
+   镜像，PR 流水线即「CI 可拉取」验证）。§2 第二段迁移（扩展 + 列）；
+   本地重建演练已完成（pgdata 卷清空 → 新镜像 → up→down→up 全绿，
+   extension 0.8.7 + `vector(1536)` 列实证）。
+   **wire 精度注记（测试写法依据）**：pgvector 文本输出是最短
+   float32 往返表示（9 位有效数字），float64 精确值出库后有 ~1e-7 表示
+   误差——存储本身精确；断言一律 `pytest.approx(abs=1e-6)`。
 3. 每条迁移 up/down 完整并跑 up→down→up；down 删列/索引/扩展均可逆
    （`DROP EXTENSION` 仅 M3 迁移 down 中执行）。
 

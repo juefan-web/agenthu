@@ -126,6 +126,7 @@ def test_memory_extension_fields_round_trip(client, auth_headers) -> None:
     assert memory["supersedes_id"] is None
     assert memory["use_count"] == 0
     assert memory["last_used_at"] is None
+    assert memory["embedding"] is None
     # Compare validity bounds as absolute instants: the echoed offset follows
     # the flushed (not re-read) ORM value, which is the input offset here —
     # the same serialization behavior round-5 pinned down for task due_at.
@@ -135,6 +136,40 @@ def test_memory_extension_fields_round_trip(client, auth_headers) -> None:
     assert datetime.fromisoformat(memory["valid_to"]) == datetime.fromisoformat(
         "2027-01-31T23:59:00+08:00"
     )
+
+
+def test_memory_embedding_round_trip_and_not_client_writable(
+    client, auth_headers, db_session
+) -> None:
+    """M3 pgvector slice: a 1536-dim vector persists and surfaces read-only.
+
+    ``embedding`` is not a MemoryCreate field (server writers own it — they
+    arrive with the M3 retrieval slice), so a client-supplied value is ignored
+    like any unknown key. Equality needs an epsilon: pgvector's wire text is
+    the shortest decimal that round-trips the column's float4 elements, so a
+    float64-exact input can come back with up to ~1e-7 of representation
+    error even though the stored float4 is exact.
+    """
+    created = client.post(
+        "/v1/memory",
+        json={**memory_payload(), "embedding": [0.1, 0.2]},
+        headers=auth_headers,
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["embedding"] is None
+
+    memory_id = uuid.UUID(created.json()["id"])
+    embedding = [i / 1024 for i in range(1536)]
+    stored = db_session.get(Memory, memory_id)
+    assert stored is not None
+    stored.embedding = embedding
+    db_session.flush()
+    db_session.refresh(stored)
+    assert stored.embedding == pytest.approx(embedding, abs=1e-6)
+
+    fetched = client.get(f"/v1/memory/{memory_id}", headers=auth_headers)
+    assert fetched.status_code == 200
+    assert fetched.json()["embedding"] == pytest.approx(embedding, abs=1e-6)
 
 
 def test_memory_live_subject_key_is_unique_per_user(client, auth_factory) -> None:

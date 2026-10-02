@@ -7524,6 +7524,20 @@
             ],
             "title": "Last Used At"
           },
+          "embedding": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -7554,6 +7568,7 @@
           "valid_to",
           "use_count",
           "last_used_at",
+          "embedding",
           "created_at",
           "updated_at"
         ],
