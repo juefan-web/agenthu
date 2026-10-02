@@ -7,11 +7,10 @@ POST /focus-sessions -> PATCH complete -> actual duration -> current state -> re
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from zoneinfo import ZoneInfo
 
 import pytest
 
-from backend.config import get_settings
+from tests.conftest import skip_late_night
 from tests.fixtures.payloads import assignment_event, goal_payload, task_payload
 
 pytestmark = pytest.mark.integration
@@ -19,13 +18,8 @@ pytestmark = pytest.mark.integration
 
 def test_full_study_time_loop(client, auth_headers) -> None:
     # Planner v2 caps today's placement by the day's remaining minutes; near
-    # local midnight a 60-minute task honestly no longer fits and the items
-    # assertion below would flake (same class as the test_plans guards).
-    _tz = ZoneInfo(get_settings().default_timezone)
-    _now = datetime.now(_tz)
-    _midnight = (_now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-    if (_midnight - _now).total_seconds() // 60 < 65:
-        pytest.skip("late-night window: a 60-minute task no longer fits today")
+    # local midnight a 60-minute task honestly no longer fits (shared guard).
+    skip_late_night(65)
 
     goal = client.post("/v1/goals", json=goal_payload(), headers=auth_headers).json()
 

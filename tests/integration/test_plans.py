@@ -12,6 +12,7 @@ from backend.models.enums import PlanStatus
 from backend.models.plan import Plan, PlanItem
 from backend.services.current_state import pending_tasks
 from backend.services.planner import _generate_v2_items, _nothing_placeable
+from tests.conftest import skip_late_night
 from tests.fixtures.payloads import task_payload
 
 pytestmark = pytest.mark.integration
@@ -26,17 +27,6 @@ def _make_task(client, headers, *, title: str, days: int) -> dict:
 
 
 _LOCAL_TZ = ZoneInfo(get_settings().default_timezone)
-
-
-def _skip_late_night(minutes_needed: int) -> None:
-    """Planner v2 caps placement by the day's remaining minutes (D-027
-    formula), so near local midnight an honest plan may be empty. Tests that
-    need real placement skip in that window instead of flaking."""
-
-    now = datetime.now(_LOCAL_TZ)
-    midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-    if (midnight - now).total_seconds() // 60 < minutes_needed:
-        pytest.skip(f"late-night window: less than {minutes_needed} minutes left today")
 
 
 def test_manual_plan_create_read_confirm_cancel(client, auth_headers) -> None:
@@ -128,7 +118,7 @@ def test_generate_plan_orders_by_deadline(client, auth_headers) -> None:
 
 
 def test_today_plan_generates_when_missing(client, auth_headers) -> None:
-    _skip_late_night(130)
+    skip_late_night(130)
     _make_task(client, auth_headers, title="HW2", days=1)
     today = client.get("/v1/plans/today", headers=auth_headers)
     assert today.status_code == 200, today.text
@@ -146,7 +136,7 @@ def test_today_plan_is_idempotent(client, auth_headers) -> None:
     # budget, the first GET generates an *empty* draft, and D7 (empty draft +
     # pending task => not reusable) makes the second GET regenerate — the ids
     # legitimately differ near midnight.
-    _skip_late_night(130)
+    skip_late_night(130)
     _make_task(client, auth_headers, title="HW2", days=1)
     first = client.get("/v1/plans/today", headers=auth_headers).json()
     second = client.get("/v1/plans/today", headers=auth_headers).json()
@@ -291,7 +281,7 @@ def test_plan_item_basis_round_trip(client, auth_headers) -> None:
 
 
 def test_plan_item_basis_serializes_object_not_null(client, auth_headers) -> None:
-    _skip_late_night(130)
+    skip_late_night(130)
     # The frozen client Zod is `basis: z.record(z.unknown()).optional()` —
     # optional does not accept null, so basis must always serialize an object:
     # an empty one for manual/legacy items (recent_state pattern, D-027
@@ -455,7 +445,7 @@ def test_current_state_never_serves_client_invalid_current_plan(
 
 
 def test_today_regenerates_when_tasks_added_after_empty_draft(client, auth_headers) -> None:
-    _skip_late_night(130)
+    skip_late_night(130)
     """An empty same-day draft must not hide newly created tasks (D7).
 
     ``is_client_valid_plan`` treats empty items as valid, so without the
