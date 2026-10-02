@@ -12,6 +12,7 @@ from backend.api.v1 import (
     goals,
     jobs,
     material,
+    material_answers,
     memory,
     permissions,
     plans,
@@ -32,5 +33,6 @@ api_router.include_router(permissions.router)
 api_router.include_router(audit.router)
 api_router.include_router(jobs.router)
 api_router.include_router(material.router)
+api_router.include_router(material_answers.router)
 
 __all__ = ["api_router"]

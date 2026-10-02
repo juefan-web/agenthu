@@ -88,3 +88,47 @@ class GroundingConsent(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     consent_text_version: Mapped[str] = mapped_column(String(32), nullable=False)
     consented_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class MaterialAnswer(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """One grounded Q&A record (TASKS/m3-grounded-answers.md §3.5/§6).
+
+    Citations are snapshot tuples: ``file_id`` + ``checksum`` pin the file
+    version that was read — deliberately NOT an FK, so deleting a file
+    invalidates old citations softly (UI marks them stale) instead of
+    destroying answer history. ``chunk_ids``/``memory_ids`` record what fed
+    the context; model/prompt versions make citation accuracy measurable
+    straight from the data.
+    """
+
+    __tablename__ = "material_answers"
+    __table_args__ = (
+        Index(
+            "ix_material_answers_user_course_created",
+            "user_id",
+            "course_name",
+            "created_at",
+        ),
+    )
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    course_name: Mapped[str] = mapped_column(String(300), nullable=False)
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    answer: Mapped[str] = mapped_column(Text, nullable=False)
+    grounded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # [{file_id, checksum, page, span_start, span_end, quote}] — spans are
+    # offsets into the chunk's NORMALIZED text (same coordinate system as
+    # the mechanical citation check).
+    citations: Mapped[list[Any]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
+    chunk_ids: Mapped[list[Any]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
+    memory_ids: Mapped[list[Any]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]"
+    )
+    model_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    prompt_version: Mapped[str] = mapped_column(String(32), nullable=False)

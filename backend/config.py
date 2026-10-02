@@ -80,6 +80,8 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_base_url: str = "https://api.openai.com/v1"
     embedding_model: str = "text-embedding-3-small"
+    responses_model: str = "gpt-4o-mini"
+    responses_timeout_seconds: float = 60.0
     embedding_batch_size: int = 64
     embedding_timeout_seconds: float = 30.0
     embedding_max_retries: int = 3

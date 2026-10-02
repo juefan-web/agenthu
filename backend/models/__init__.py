@@ -20,7 +20,7 @@ from backend.models.event import Event
 from backend.models.file import FileObject
 from backend.models.focus_session import FocusSession
 from backend.models.goal import Goal
-from backend.models.material import GroundingConsent, MaterialChunk
+from backend.models.material import GroundingConsent, MaterialAnswer, MaterialChunk
 from backend.models.memory import Memory
 from backend.models.permission import PermissionGrant
 from backend.models.plan import Plan, PlanItem
@@ -39,6 +39,7 @@ __all__ = [
     "Goal",
     "GoalStatus",
     "GroundingConsent",
+    "MaterialAnswer",
     "MaterialChunk",
     "Memory",
     "MemoryCorrectionStatus",
