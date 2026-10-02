@@ -498,6 +498,16 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   wire-format 回放端点跑通 上传→抽取→consent 回填嵌→问答 grounded=true
   （page/span 校验过）→历史 全链；详见任务文件当日记录）。**A 队列余项**：
   HNSW 决策（攒规模数据）、prompt 调优迭代、多课程混问（M3 末再议）。
+  **B review（2026-10-02，PR #43）**：四个重点核过——校验纯机械
+  （regex+子串查找，无模型判真）、同意门单源（import
+  `material_ingestion.consent_enabled`，`provider.calls == []` 断言坐实
+  零调用）、503 重试有界（≤4 次、退避 2/4/8s、60s/次超时、非 429 4xx
+  不重试）、迁移纯 DDL 降级逆序。**一处评审修订（B 落于分支）**：
+  `verify_citations` 原只归一化引文侧，块侧未过共享 `normalize_text`，
+  与冻结 §3.4/§6「被引 chunk 的归一化文本」坐标系不符——分解式重音
+  （PDF 抽取常见）会把真引用误杀；已改为块侧同样归一化（span 落归一化
+  坐标系，§6 本就不依赖 span 精确渲染），补分解重音回归用例。分支
+  rebase 上 #42 合并后的 main（CURRENT_STATE 两侧条目不同段，自然并存）。
 
 ## Next（2026-09-29 更新：**M1-1 验收通过，正式收口**）
 

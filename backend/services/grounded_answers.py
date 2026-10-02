@@ -218,13 +218,23 @@ def verify_citations(
 
     citations: list[dict] = []
     failed_spans: list[tuple[int, int]] = []
+    # §3.4/§6: the haystack is the chunk's NORMALIZED text. Clean chunks are
+    # stored raw (the scanner only normalizes when it flags — and flagged
+    # chunks never reach retrieval), so an NFC-composition difference, e.g. a
+    # decomposed accent sequence from PDF extraction, would otherwise drop a
+    # genuine verbatim quote. Normalization is identity on stored text
+    # without such sequences, so spans keep indexing the stored content in
+    # the common case (§6 already de-scopes exact span rendering).
+    haystacks = [normalize_text(chunk.content) for chunk in chunks]
     for match in _CITATION_RE.finditer(answer_text):
         ref = int(match.group("ref"))
         quote = match.group("quote")
         chunk = chunks[ref - 1] if 1 <= ref <= len(chunks) else None
         if chunk is not None:
             normalized_quote = normalize_text(quote)
-            span_start = chunk.content.find(normalized_quote) if normalized_quote else -1
+            span_start = (
+                haystacks[ref - 1].find(normalized_quote) if normalized_quote else -1
+            )
             if span_start >= 0:
                 citations.append(
                     {

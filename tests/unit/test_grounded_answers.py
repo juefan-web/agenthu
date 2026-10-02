@@ -88,6 +88,18 @@ def test_zero_width_in_model_quote_survives_shared_normalization() -> None:
     assert citations[0]["quote"] == "分解为频率分量"
 
 
+def test_decomposed_accent_chunk_matches_composed_quote() -> None:
+    # PDF extraction often yields decomposed accent sequences while the
+    # model's excerpt is composed. §3.4's haystack is the chunk's NORMALIZED
+    # text, so this genuine verbatim quote must survive — before the chunk
+    # side went through the shared normalizer it was a false drop.
+    chunk = _chunk("cafe\u0301 变换将时域信号分解为频率分量。")
+    answer = "定义「café 变换将时域信号分解为频率分量」[1] 如上。"
+    _cleaned, grounded, citations = verify_citations(answer, [chunk])
+    assert grounded is True
+    assert citations[0]["quote"] == "café 变换将时域信号分解为频率分量"
+
+
 def test_keyword_tokens_split_words_and_cjk_bigrams() -> None:
     tokens = _keyword_tokens("What is the Fourier 变换 sampling 定理?")
     assert "fourier" in tokens and "sampling" in tokens
