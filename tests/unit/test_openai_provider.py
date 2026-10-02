@@ -18,7 +18,17 @@ from backend.adapters.model_provider import (
 )
 
 
-def _handler(responses: list[httpx.Response]) -> httpx.MockTransport:
+class _RecordingTransport(httpx.MockTransport):
+    """MockTransport 没有可记录面；子类声明显式属性让 pyright 可见。"""
+
+    calls: list[dict]
+
+    def __init__(self, handle, recorded: list[dict]) -> None:
+        super().__init__(handle)
+        self.calls = recorded
+
+
+def _handler(responses: list[httpx.Response]) -> _RecordingTransport:
     calls: list[dict] = []
 
     def _transport(request: httpx.Request) -> httpx.Response:
@@ -31,9 +41,7 @@ def _handler(responses: list[httpx.Response]) -> httpx.MockTransport:
         )
         return responses[len(calls) - 1]
 
-    transport = httpx.MockTransport(_transport)
-    transport.calls = calls  # type: ignore[attr-defined]
-    return transport
+    return _RecordingTransport(_transport, calls)
 
 
 def _embedding_response(vectors: list[list[float]]) -> httpx.Response:

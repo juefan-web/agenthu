@@ -71,14 +71,19 @@ def _extract_pptx(data: bytes) -> list[ExtractedPage]:
     for i, slide in enumerate(presentation.slides):
         parts: list[str] = []
         for shape in slide.shapes:
-            if not shape.has_text_frame:
+            # pptx 的 BaseShape 没有全量文本属性；has_text_frame 是运行时
+            # 判别式，pyright 不可见——用 getattr 窄化再取。
+            text_frame = getattr(shape, "text_frame", None)
+            if text_frame is None or not shape.has_text_frame:
                 continue
-            text = shape.text_frame.text
+            text = text_frame.text
             if text.strip():
                 parts.append(text)
         # Speaker notes are part of the material the lecturer prepared; keep
         # them on the slide's page so citations stay page-granular.
-        notes = slide.notes_slide.notes_text_frame.text if slide.has_notes_slide else ""
+        notes_slide = slide.notes_slide if slide.has_notes_slide else None
+        notes_frame = notes_slide.notes_text_frame if notes_slide is not None else None
+        notes = notes_frame.text if notes_frame is not None else ""
         if notes.strip():
             parts.append(notes)
         pages.append(ExtractedPage(page=i + 1, text="\n\n".join(parts)))

@@ -67,9 +67,8 @@ def no_arq(monkeypatch):
 
 def _upload(client, headers, content: bytes, filename: str, content_type: str, course: str | None):
     data = {"file": (filename, content, content_type)}
-    if course is not None:
-        data["course_name"] = (None, course)
-    response = client.post("/v1/files", files=data, headers=headers)
+    extra = {"course_name": course} if course is not None else None
+    response = client.post("/v1/files", files=data, data=extra, headers=headers)
     assert response.status_code == 201, response.text
     return response.json()
 

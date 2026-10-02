@@ -103,13 +103,16 @@ def make_pdf(pages: list[str]) -> bytes:
 
 
 def make_pptx(slide_texts: list[str]) -> bytes:
+    import pptx.util
     from pptx import Presentation
 
     presentation = Presentation()
     blank = presentation.slide_layouts[6]
     for text in slide_texts:
         slide = presentation.slides.add_slide(blank)
-        box = slide.shapes.add_textbox(0, 0, 914400, 914400)
+        box = slide.shapes.add_textbox(
+            pptx.util.Emu(0), pptx.util.Emu(0), pptx.util.Emu(914400), pptx.util.Emu(914400)
+        )
         box.text_frame.text = text
     buffer = io.BytesIO()
     presentation.save(buffer)
