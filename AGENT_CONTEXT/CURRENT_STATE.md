@@ -458,6 +458,28 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   政策首核为摄取硬前置）、Memory 检索接线、批末重算尾巴、D-029 分页
   （含 B-4 代理 `x-next-cursor` 白名单一行）。B = 讲解页/引用跳转（等 A
   后端切片）。
+- **D-033 资料摄取批次开出（2026-10-02 晚，A @ `feature/m3-materials-ingestion`）**：
+  前置全达成（#36 会签/双核完成 → 摄取解锁；#35 pgvector 已合 main）。范围 =
+  后端摄取管线全链 + 供应商边界第一刀，规格与接口冻结见
+  `TASKS/m3-materials-ingestion.md`（§8 为 B 侧并行依据）：迁移
+  `c8f2a14d6b93`（material_chunks + grounding_consents 两表 +
+  file_objects.course_name）；内容安全扫描器（`core/scanner_rules.py` 版本化，
+  指令形态 hard block 不入库、不可见 Unicode flag+归一化重扫、对抗 fixture
+  回归）；抽取器（PDF 文本层 / PPTX / txt，按页分块 ≤2000 字符）；
+  `adapters/model_provider/`（OpenAI embeddings，fail-closed 无 key 即拒；
+  Responses 构造 `store=False` 钉死 + 断言测试）；per-course opt-in
+  （`GET/PUT /v1/grounding-consent`，同意文案 v1 版本化，旧版本 opt-in 422，
+  文案含「≤30 天滥用监控保留」披露）；worker `extract_material` /
+  `embed_course_backfill` + 两个兜底 cron（lost-enqueue 扫描 60s 宽限 +
+  对象孤儿重试）；上传带 `course_name` 表单字段才进管线（非课程文件零影响）；
+  **删除顺序修正**（行事务先删 chunks 级联，对象 best-effort + Redis orphan
+  集，D-033 §5）；`GET /v1/files/{id}/chunks`。验证：单测+集成 262 passed、
+  ruff/format 干净、迁移 up→down→up + alembic check 无漂移、契约 drift 零
+  （客户端 Zod 无改动）。**未做（后续批次）**：向量召回（等 #37）、grounded
+  回答/引用校验、HNSW、worker 任务函数的 Redis 端到端专测（编排逻辑已服务层
+  覆盖）。**语义注记**：关闭 opt-in 不删已有 embedding（本地数据，删除是
+  Level 2 独立动作）；flagged chunk 入库但永不嵌入/外送；blocked 不入库仅
+  文件元数据计数。
 
 ## Next（2026-09-29 更新：**M1-1 验收通过，正式收口**）
 

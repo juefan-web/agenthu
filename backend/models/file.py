@@ -31,6 +31,9 @@ class FileObject(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     checksum_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="active")
+    # Bare course name (same key as task.extra["course_name"]); only files
+    # uploaded with a course enter the grounding ingestion pipeline.
+    course_name: Mapped[str | None] = mapped_column(String(300), nullable=True)
     file_metadata: Mapped[dict[str, Any]] = mapped_column(
         "metadata", JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
     )

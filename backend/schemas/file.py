@@ -19,6 +19,7 @@ class FileRead(ORMModel):
     size_bytes: int
     checksum_sha256: str | None
     status: str
+    course_name: str | None
     file_metadata: dict[str, Any]
     created_at: datetime
     updated_at: datetime
