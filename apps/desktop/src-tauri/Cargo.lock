@@ -54,6 +54,7 @@ name = "agenthu"
 version = "0.1.0"
 dependencies = [
  "cookie_store 0.21.1",
+ "http",
  "keyring",
  "rand 0.8.8",
  "reqwest 0.12.28",

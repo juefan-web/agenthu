@@ -652,6 +652,24 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   变化」。验证：**242 passed**（main 236：+6 批处理/版本语义，重写 1）/
   pyright 0/ruff/drift 双源绿；无 API 面变化（version 字段仍在客户端
   契约，语义注释入模块 docstring）。
+- **A M3 第四批 = D-029 keyset 分页（2026-10-02，A，
+  `feature/d029-keyset-pagination`）**：tasks 与 events 列表统一游标契约
+  落地。① opaque cursor（base64url(JSON 键数组)），畸形 → 422；键 =
+  **实际 ORDER BY**（tasks `(deadline nulls-last, created_at desc,
+  id desc)`——冻结括注 `(created_at, id)` 与实际排序不符，按绑定原则
+  「键序与排序一致」实现，注记入 DECISIONS；events `(timestamp desc,
+  id desc)`，补 id tiebreak 防同批时间戳并列丢行/重行）。② tasks 裸数组
+  形状不变，游标经 `X-Next-Cursor` 响应头（末页无头）；events 走
+  `Page.next_cursor`；`Page.total` 改 `int | null`（cursor 页不 COUNT，
+  D-029 冻结口径），`next_cursor` 增列。③ `cursor + offset` 并存 → 422
+  （含显式 0）；offset 标记 deprecated 保留兼容。④ CORS
+  `expose_headers=["X-Next-Cursor"]`（浏览器 dev 直连需要；打包客户端走
+  IPC 代理，**B 侧依赖：`backend_proxy.rs` response_headers 白名单加一行
+  `x-next-cursor`**——D-029 附录落地依赖，协调人已两提）。⑤ 客户端 Zod
+  契约零改动（tasks 仍 `TaskSchema.array()`；events 列表不在客户端契约），
+  openapi 重导 + drift 双源绿。测试：**239 passed**（+9：确定性种子含
+  deadline 并列/id 并列/nulls-last 的精确翻页、422 两态、末页无头、
+  CORS expose、offset 兼容）。
 - 流程规则不变：分支从 main 拉出；跨边界先冻结；PR 互审（A=rotcar07，
   B=juefan-web）；**并行会话各用独立 worktree**（2026-10-01 混合提交事故
   后的新规则）。

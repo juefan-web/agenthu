@@ -45,9 +45,14 @@ class ORMModel(BaseModel):
 
 class Page[T](BaseModel):
     items: list[T]
-    total: int
+    # D-029: cursor requests skip the COUNT and return total=None; the
+    # offset (deprecated) path keeps the real count. next_cursor is null
+    # when there is no further page (and on the deprecated offset path,
+    # which cannot mint a consistent keyset cursor).
+    total: int | None
     limit: int
     offset: int
+    next_cursor: str | None = None
 
 
 class ErrorBody(BaseModel):

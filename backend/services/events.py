@@ -7,10 +7,11 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from backend.core.errors import ValidationError
 from backend.core.sensitive import validate_json_payload
 from backend.models.event import Event
 from backend.models.task import Task
@@ -18,6 +19,7 @@ from backend.schemas.client_contract import EventEnvelope
 from backend.schemas.event import EventCreate
 from backend.services.current_state import defer_state_recompute, flush_state_recompute
 from backend.services.event_handlers import process_event
+from backend.services.pagination import count_total, decode_cursor, keyset_page
 from backend.worker.enqueue import mark_user_dirty
 
 _ASSIGNMENT_PREFIX = "study.assignment."
@@ -172,7 +174,19 @@ def list_events(
     limit: int = 50,
     offset: int = 0,
     descending: bool = True,
-) -> tuple[list[Event], int]:
+    cursor: str | None = None,
+) -> tuple[list[Event], int | None, str | None]:
+    """Events page under the D-029 keyset contract.
+
+    Returns ``(items, total, next_cursor)``. Cursor pages skip the COUNT
+    (``total is None``); the offset/first-page paths keep it. The keyset
+    order is ``(timestamp desc, id desc)`` — the id tiebreak is required
+    because timestamps collide within a sync batch, and a cursor over a
+    non-unique key would drop or duplicate rows across pages. Ascending
+    order (no current caller) stays offset-only: a cursor encodes one
+    direction.
+    """
+
     conditions = [Event.user_id == user_id]
     if event_type:
         conditions.append(Event.type == event_type)
@@ -183,10 +197,42 @@ def list_events(
     if until:
         conditions.append(Event.timestamp <= until)
 
+    if cursor is not None or offset == 0:
+        stmt = select(Event).where(*conditions).order_by(Event.timestamp.desc(), Event.id.desc())
+        if cursor is not None:
+            timestamp_raw, id_raw = decode_cursor(cursor, 2)
+            try:
+                if timestamp_raw is None or id_raw is None:
+                    raise ValueError("timestamp/id must be present")
+                cursor_timestamp = datetime.fromisoformat(timestamp_raw)
+                cursor_id = uuid.UUID(id_raw)
+            except ValueError as exc:
+                raise ValidationError("Invalid pagination cursor") from exc
+            stmt = stmt.where(
+                or_(
+                    Event.timestamp < cursor_timestamp,
+                    and_(Event.timestamp == cursor_timestamp, Event.id < cursor_id),
+                )
+            )
+        page, next_cursor = keyset_page(
+            session,
+            stmt,
+            limit=limit,
+            after=True,
+            key_of=lambda event: (event.timestamp.isoformat(), str(event.id)),
+        )
+        # D-029: cursor requests do not pay for a COUNT; the first page
+        # keeps today's semantics (total included, cursor minted).
+        total = (
+            None if cursor is not None else count_total(session, select(Event).where(*conditions))
+        )
+        return page, total, next_cursor
+
     total = session.scalar(select(func.count()).select_from(Event).where(*conditions)) or 0
     order = Event.timestamp.desc() if descending else Event.timestamp.asc()
-    stmt = select(Event).where(*conditions).order_by(order).limit(limit).offset(offset)
-    return list(session.scalars(stmt)), int(total)
+    tie = Event.id.desc() if descending else Event.id.asc()
+    stmt = select(Event).where(*conditions).order_by(order, tie).limit(limit).offset(offset)
+    return list(session.scalars(stmt)), int(total), None
 
 
 def list_events_for_task(session: Session, task: Task) -> list[Event]:

@@ -132,10 +132,11 @@ fn forward_headers(values: std::collections::HashMap<String, String>) -> reqwest
     headers
 }
 
-/// 响应头白名单：正文类型与限流提示；Set-Cookie 一律不进 WebView。
+/// 响应头白名单：正文类型、限流提示与 D-029 分页游标（tasks 列表经
+/// `X-Next-Cursor` 携带下一页；缺省头 = 末页）；Set-Cookie 一律不进 WebView。
 fn response_headers(response: &reqwest::Response) -> std::collections::HashMap<String, String> {
     response.headers().iter()
-        .filter(|(name, _)| matches!(name.as_str(), "content-type" | "retry-after" | "location"))
+        .filter(|(name, _)| matches!(name.as_str(), "content-type" | "retry-after" | "location" | "x-next-cursor"))
         .filter_map(|(name, value)| value.to_str().ok().map(|v| (name.to_string(), v.to_owned())))
         .collect()
 }
@@ -224,6 +225,21 @@ mod tests {
         for rejected in ["http://api.example.com", "ftp://api.example.com", "not a url", "https://u:p@x.example.com"] {
             assert!(acceptable_added_origin(rejected).is_err(), "{rejected} should be rejected");
         }
+    }
+
+    #[test]
+    fn response_headers_pass_the_keyset_cursor_but_never_cookies() {
+        // D-029：tasks 列表经 X-Next-Cursor 携带下一页（缺省 = 末页），
+        // 打包客户端的 IPC 代理必须透传；Set-Cookie 仍然一律拦截。
+        let mut inner = http::Response::builder().status(200).body(Vec::new()).unwrap();
+        inner.headers_mut().insert("X-Next-Cursor", "Y3Vyc29y".parse().unwrap());
+        inner.headers_mut().insert("Set-Cookie", "session=secret".parse().unwrap());
+        inner.headers_mut().insert("X-Dropped", "noise".parse().unwrap());
+        let response = reqwest::Response::from(inner);
+        let headers = response_headers(&response);
+        assert_eq!(headers.get("x-next-cursor").map(String::as_str), Some("Y3Vyc29y"));
+        assert!(!headers.contains_key("set-cookie"));
+        assert!(!headers.contains_key("x-dropped"));
     }
 
     #[test]

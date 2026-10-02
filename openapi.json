@@ -470,6 +470,33 @@
         ],
         "parameters": [
           {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
             "name": "type",
             "in": "query",
             "required": false,
@@ -545,17 +572,6 @@
               "minimum": 1,
               "default": 50,
               "title": "Limit"
-            }
-          },
-          {
-            "name": "offset",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 0,
-              "default": 0,
-              "title": "Offset"
             }
           }
         ],
@@ -975,6 +991,33 @@
         ],
         "parameters": [
           {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
             "name": "status",
             "in": "query",
             "required": false,
@@ -1035,17 +1078,6 @@
               "default": 50,
               "title": "Limit"
             }
-          },
-          {
-            "name": "offset",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 0,
-              "default": 0,
-              "title": "Offset"
-            }
           }
         ],
         "responses": {
@@ -1059,6 +1091,14 @@
                     "$ref": "#/components/schemas/ClientTask"
                   },
                   "title": "Response List All V1 Tasks Get"
+                }
+              }
+            },
+            "headers": {
+              "X-Next-Cursor": {
+                "description": "Opaque keyset cursor (D-029) for the next page; absent when this is the last page. Present only on the keyset path (no offset parameter).",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -7747,7 +7787,14 @@
             "title": "Items"
           },
           "total": {
-            "type": "integer",
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Total"
           },
           "limit": {
@@ -7757,6 +7804,17 @@
           "offset": {
             "type": "integer",
             "title": "Offset"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
           }
         },
         "type": "object",
@@ -7778,7 +7836,14 @@
             "title": "Items"
           },
           "total": {
-            "type": "integer",
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Total"
           },
           "limit": {
@@ -7788,6 +7853,17 @@
           "offset": {
             "type": "integer",
             "title": "Offset"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
           }
         },
         "type": "object",
@@ -7809,7 +7885,14 @@
             "title": "Items"
           },
           "total": {
-            "type": "integer",
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Total"
           },
           "limit": {
@@ -7819,6 +7902,17 @@
           "offset": {
             "type": "integer",
             "title": "Offset"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
           }
         },
         "type": "object",
@@ -7840,7 +7934,14 @@
             "title": "Items"
           },
           "total": {
-            "type": "integer",
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Total"
           },
           "limit": {
@@ -7850,6 +7951,17 @@
           "offset": {
             "type": "integer",
             "title": "Offset"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
           }
         },
         "type": "object",
@@ -7871,7 +7983,14 @@
             "title": "Items"
           },
           "total": {
-            "type": "integer",
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Total"
           },
           "limit": {
@@ -7881,6 +8000,17 @@
           "offset": {
             "type": "integer",
             "title": "Offset"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
           }
         },
         "type": "object",
@@ -7902,7 +8032,14 @@
             "title": "Items"
           },
           "total": {
-            "type": "integer",
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Total"
           },
           "limit": {
@@ -7912,6 +8049,17 @@
           "offset": {
             "type": "integer",
             "title": "Offset"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
           }
         },
         "type": "object",
