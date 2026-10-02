@@ -232,9 +232,7 @@ def verify_citations(
         chunk = chunks[ref - 1] if 1 <= ref <= len(chunks) else None
         if chunk is not None:
             normalized_quote = normalize_text(quote)
-            span_start = (
-                haystacks[ref - 1].find(normalized_quote) if normalized_quote else -1
-            )
+            span_start = haystacks[ref - 1].find(normalized_quote) if normalized_quote else -1
             if span_start >= 0:
                 citations.append(
                     {
