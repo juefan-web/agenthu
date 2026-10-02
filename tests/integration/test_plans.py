@@ -645,7 +645,7 @@ def test_nothing_placeable_mirrors_generate_v2_items(client, auth_headers, db_se
 
     def assert_predicates_agree() -> None:
         tasks = pending_tasks(db_session, user_id)
-        placed = _generate_v2_items(db_session, user_id=user_id, tasks=tasks, start=utcnow())
+        placed, _ = _generate_v2_items(db_session, user_id=user_id, tasks=tasks, start=utcnow())
         assert _nothing_placeable(db_session, user_id) == (len(placed) == 0)
 
     # 1. Nothing pending: both empty-draft-eligible.

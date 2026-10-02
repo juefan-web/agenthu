@@ -38,6 +38,7 @@ from backend.services.current_state import (
     recompute_current_state,
 )
 from backend.services.estimates import DEFAULT_TASK_MINUTES, Estimate, estimate_for_task
+from backend.services.memory_retrieval import record_decision_use
 from backend.services.plan_validity import client_invalid_item_exists, is_client_valid_plan
 
 # Legacy strategy tag (v1 plans in the wild); kept for fixture comparison.
@@ -121,7 +122,12 @@ def generate_plan(
     # never exceeding the CurrentState available-minutes budget. Each item
     # carries its structured basis; the human reason is rendered from it in
     # client_view (the basis is the record, the reason is a view).
-    plan.items.extend(_generate_v2_items(session, user_id=user_id, tasks=tasks, start=start))
+    items, used_memory_ids = _generate_v2_items(session, user_id=user_id, tasks=tasks, start=start)
+    plan.items.extend(items)
+    # Decision telemetry (task doc §8a.2): the rows whose estimates landed in
+    # this plan's basis entered a decision context — once per row per plan,
+    # committed atomically with it.
+    record_decision_use(session, used_memory_ids)
 
     session.add(plan)
     session.flush()
@@ -255,7 +261,15 @@ def _generate_v2_items(
     user_id: uuid.UUID,
     tasks: list[Task],
     start: datetime,
-) -> list[PlanItem]:
+) -> tuple[list[PlanItem], list[uuid.UUID]]:
+    """Build the placed items and the memory rows their estimates came from.
+
+    The second element feeds ``record_decision_use``: only rows backing
+    items that actually got placed have "entered a decision context" —
+    estimates read for ranking or for ``_nothing_placeable`` without a
+    persisted plan attest nothing (§8a.2).
+    """
+
     now = start
     schedule = _today_schedule_entries(session, user_id, now)
     slots = _free_slots(now, schedule)
@@ -271,6 +285,7 @@ def _generate_v2_items(
     ranked.sort(key=lambda entry: (-entry[0]["total"], entry[1]))
 
     items: list[PlanItem] = []
+    used_memory_ids: list[uuid.UUID] = []
     slot_index = 0
     slot_cursor = slots[0].start if slots else now
     placed_total = 0
@@ -289,7 +304,7 @@ def _generate_v2_items(
                     slot_index += 1
                     continue
                 if placed_total + block_minutes > budget:
-                    return items  # the available-minutes budget is spent
+                    return items, used_memory_ids  # the available-minutes budget is spent
                 block_end = slot_cursor + timedelta(minutes=block_minutes)
                 if block_end > slot.end:
                     fit = int((slot.end - slot_cursor).total_seconds() // 60)
@@ -324,14 +339,16 @@ def _generate_v2_items(
                 )
                 placed_total += minutes
                 slot_cursor = block_end
+                if estimate.memory_id is not None:
+                    used_memory_ids.append(estimate.memory_id)
                 if placed_total >= budget:
-                    return items
+                    return items, used_memory_ids
             if not placed and slot_index >= len(slots):
                 # No honest room left today for the remaining blocks: the
                 # task is not silently forgotten — it stays pending and the
                 # next generation (or a replan trigger) retries it.
                 break
-    return items
+    return items, used_memory_ids
 
 
 def latest_open_plan(

@@ -126,7 +126,15 @@ checksum 把引用钉在被读取的具体版本上（与 M3 引用元组同构�
 - **检索**（planner 与未来 Agent 共用同一路径）：默认过滤
   `correction_status = REJECTED` 且 `supersedes_id IS NULL`（只要 live 行），
   置信度下限默认 0.3（调用方可提高不可绕过）；M3 增加向量召回（下限过滤
-  之后应用）。
+  之后应用）。**落地补记（2026-10-02，`services/memory_retrieval.py`）**：
+  `retrieve_memories` 实现本语义（live-only + 滤 REJECTED + 下限
+  clamp 不可绕过 + kind/domain/level/subject_key 过滤，`updated_at desc,
+  id desc` 确定性序）；**估时阶梯刻意不走此下限**（n=2 课程行
+  confidence=0.2 会被 0.3 误杀，样本数门控是独立口径，见
+  `estimates.live_key_row` 注释）——两条路径共享 live/REJECTED 语义、
+  不共享下限。`use_count` 首个冻结写入点随本切片接线：planner 生成的
+  计划 basis 引用了某 L2 估时行 → `record_decision_use` 每计划每行
+  恰好 +1（批内去重；候选检索与 `_nothing_placeable` 判定不计数）。
 - API 面：`MemoryRead` 增列全量透出（backend-only，无客户端契约影响）；
   `MemoryCreate/Update` 增列可选；`MemoryUpdate` 保留原地字段更新的能力
   （手动条目），但服务端写入者一律走版本链。
