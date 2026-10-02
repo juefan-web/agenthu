@@ -131,6 +131,21 @@ export class BackendClient {
     return this.requestValidated(`/v1/memory/${encodeURIComponent(memoryId)}/reject`, MemoryItemSchema, { method: "POST" });
   }
 
+  /** D1 快速失败：无鉴权的 /health 探测，超时/非 2xx/异常一律 false（不抛）。
+   *  Promise.race 计时——Tauri 代理路径的 invoke 无法中止，让它在后台自行
+   *  结束即可；浏览器路径的 fetch 同样只需竞速。 */
+  async probeHealth(timeoutMs = 2_000): Promise<boolean> {
+    try {
+      const response = await Promise.race([
+        this.fetcher(`${this.options.baseUrl}/health`, { method: "GET", credentials: "omit" }),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs)),
+      ]);
+      return response !== null && response.ok;
+    } catch {
+      return false;
+    }
+  }
+
   async confirmPlan(planId: string): Promise<Plan> {
     return this.requestValidated(`/v1/plans/${encodeURIComponent(planId)}/confirm`, PlanSchema, {
       method: "POST",

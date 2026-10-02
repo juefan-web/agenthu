@@ -17,11 +17,15 @@ export interface CoordinatorOptions {
   retryBaseDelayMs?: number;
   /** 单批最大尝试次数，超限后停发并把原因抛给 UI。 */
   maxBatchAttempts?: number;
+  /** 批失败后 /health 探测的预算（毫秒）；探测失败 = 不可达，跳过重试梯
+   *  （round-5 D1：断网 flush 从 ~13s 压到 ≤5s——首攻快速失败 + 探测 ≤2s）。 */
+  healthProbeTimeoutMs?: number;
 }
 
 const DEFAULT_BATCH_SIZE = 500;
 const DEFAULT_MAX_BATCH_ATTEMPTS = 3;
 const DEFAULT_RETRY_BASE_DELAY_MS = 1_000;
+const DEFAULT_HEALTH_PROBE_TIMEOUT_MS = 2_000;
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -32,6 +36,7 @@ export class EventSyncCoordinator {
   private readonly batchSize: number;
   private readonly maxBatchAttempts: number;
   private readonly retryBaseDelayMs: number;
+  private readonly healthProbeTimeoutMs: number;
 
   constructor(
     private readonly backend: BackendClient,
@@ -41,6 +46,7 @@ export class EventSyncCoordinator {
     this.batchSize = Math.max(1, options.batchSize ?? DEFAULT_BATCH_SIZE);
     this.maxBatchAttempts = Math.max(1, options.maxBatchAttempts ?? DEFAULT_MAX_BATCH_ATTEMPTS);
     this.retryBaseDelayMs = options.retryBaseDelayMs ?? DEFAULT_RETRY_BASE_DELAY_MS;
+    this.healthProbeTimeoutMs = options.healthProbeTimeoutMs ?? DEFAULT_HEALTH_PROBE_TIMEOUT_MS;
   }
 
   async enqueue(events: EventEnvelope[]): Promise<void> {
@@ -100,7 +106,16 @@ export class EventSyncCoordinator {
       } catch (error) {
         lastError = error;
         if (error instanceof BackendAuthError) throw error;
-        if (attempt < this.maxBatchAttempts) await delay(this.retryBaseDelayMs * 2 ** (attempt - 1));
+        if (attempt < this.maxBatchAttempts) {
+          // D1 快速失败（惰性探测，快乐路径零开销）：首攻失败先问 /health，
+          // 不可达（含探测超时）立即放弃重试梯——断网语义从「重试梯+退避
+          // ~13s」变为「首攻快速失败 + ≤2s 探测」；可达则按原退避重试
+          // （瞬时故障路径不变）。
+          if (!(await this.backend.probeHealth(this.healthProbeTimeoutMs))) {
+            throw new Error("Backend 不可达（健康探测失败）；事件保留在待同步队列，恢复连接后可重试");
+          }
+          await delay(this.retryBaseDelayMs * 2 ** (attempt - 1));
+        }
       }
     }
     const reason = lastError instanceof Error ? lastError.message : String(lastError);

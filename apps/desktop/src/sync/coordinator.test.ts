@@ -37,6 +37,7 @@ describe("EventSyncCoordinator", () => {
   it("removes accepted, duplicate, and rejected events and returns rejection details", async () => {
     const q = queue();
     const backend = {
+      probeHealth: async () => true,
       pushEvents: async () => ({
         accepted_event_ids: [],
         duplicate_event_ids: [],
@@ -62,6 +63,7 @@ describe("EventSyncCoordinator", () => {
     await q.add(events);
     const sizes: number[] = [];
     const backend = {
+      probeHealth: async () => true,
       pushEvents: async (request: { events: EventEnvelope[] }) => {
         sizes.push(request.events.length);
         return {
@@ -84,6 +86,7 @@ describe("EventSyncCoordinator", () => {
       { ...event, client_event_id: "rejected" },
     ]);
     const backend = {
+      probeHealth: async () => true,
       pushEvents: async () => ({
         accepted_event_ids: ["accepted"],
         duplicate_event_ids: ["duplicate"],
@@ -116,6 +119,7 @@ describe("EventSyncCoordinator", () => {
     const release: Promise<void> = new Promise((resolve) => { setTimeout(resolve, 10); });
     let calls = 0;
     const backend = {
+      probeHealth: async () => true,
       pushEvents: async (request: { events: EventEnvelope[] }) => {
         calls += 1;
         await release;
@@ -140,6 +144,7 @@ describe("EventSyncCoordinator", () => {
     const q = queue();
     let calls = 0;
     const backend = {
+      probeHealth: async () => true,
       pushEvents: async () => {
         calls += 1;
         throw new Error("connection refused");
@@ -157,6 +162,7 @@ describe("EventSyncCoordinator", () => {
     const delays: number[] = [];
     let calls = 0;
     const backend = {
+      probeHealth: async () => true,
       pushEvents: async () => {
         calls += 1;
         if (calls < 3) throw new Error("temporarily unavailable");
@@ -183,6 +189,7 @@ describe("EventSyncCoordinator", () => {
     const q = queue();
     let calls = 0;
     const backend = {
+      probeHealth: async () => true,
       pushEvents: async () => {
         calls += 1;
         throw new BackendAuthError();
@@ -203,6 +210,7 @@ describe("EventSyncCoordinator", () => {
     let failing = true;
     const sent: string[][] = [];
     const backend = {
+      probeHealth: async () => true,
       pushEvents: async (request: { events: EventEnvelope[] }) => {
         const ids = request.events.map((item) => item.client_event_id);
         sent.push(ids);
@@ -220,5 +228,55 @@ describe("EventSyncCoordinator", () => {
     expect(result.sent).toBe(1);
     expect(sent).toEqual([["first-batch"], ["second-batch"], ["second-batch"], ["second-batch"]]);
     expect(await q.list()).toHaveLength(0);
+  });
+
+  it("fails fast without the retry ladder when the health probe says unreachable (D1)", async () => {
+    const q = queue();
+    let attempts = 0;
+    const backend = {
+      probeHealth: async () => false,
+      pushEvents: async () => {
+        attempts += 1;
+        throw new Error("connection refused");
+      },
+    } as never;
+    const coordinator = new EventSyncCoordinator(backend, q, { maxBatchAttempts: 3, retryBaseDelayMs: 1 });
+    await expect(coordinator.flush()).rejects.toThrow("Backend 不可达（健康探测失败）");
+    // 首攻快速失败后探测即放弃：不再进入重试梯（1 次尝试而非 3 次）
+    expect(attempts).toBe(1);
+    // 事件保留待同步
+    expect(await q.list()).toHaveLength(1);
+  });
+
+  it("treats a probe timeout as unreachable", async () => {
+    const q = queue();
+    const backend = {
+      probeHealth: async (timeoutMs: number) => {
+        await new Promise((resolve) => setTimeout(resolve, timeoutMs + 5));
+        return false;
+      },
+      pushEvents: async () => { throw new Error("connection refused"); },
+    } as never;
+    const coordinator = new EventSyncCoordinator(backend, q, { healthProbeTimeoutMs: 10 });
+    const startedAt = Date.now();
+    await expect(coordinator.flush()).rejects.toThrow("Backend 不可达");
+    expect(Date.now() - startedAt).toBeLessThan(1_000);
+  });
+
+  it("still retries a healthy backend on transient failures (probe gates only reachability)", async () => {
+    const q = queue();
+    let attempts = 0;
+    const backend = {
+      probeHealth: async () => true,
+      pushEvents: async () => {
+        attempts += 1;
+        if (attempts < 2) throw new Error("upstream 503");
+        return { accepted_event_ids: [event.client_event_id], duplicate_event_ids: [], rejected: [], next_cursor: null };
+      },
+    } as never;
+    const coordinator = new EventSyncCoordinator(backend, q, { retryBaseDelayMs: 1 });
+    const result = await coordinator.flush();
+    expect(result.sent).toBe(1);
+    expect(attempts).toBe(2);
   });
 });

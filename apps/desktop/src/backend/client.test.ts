@@ -80,4 +80,22 @@ describe("BackendClient authentication", () => {
       deviation_note: "Interrupted by a meeting",
     });
   });
+
+  it("probes health without auth and reports false on timeout or error (D1)", async () => {
+    const ok = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => json({ status: "ok" }, 200));
+    const unhealthy = vi.fn(async () => json({ error: {} }, 503));
+    const refusing = vi.fn(async () => { throw new TypeError("fetch failed"); });
+    expect(await new BackendClient({ baseUrl: "http://backend", fetcher: ok }).probeHealth(500)).toBe(true);
+    expect(await new BackendClient({ baseUrl: "http://backend", fetcher: unhealthy }).probeHealth(500)).toBe(false);
+    expect(await new BackendClient({ baseUrl: "http://backend", fetcher: refusing }).probeHealth(500)).toBe(false);
+
+    // 探测超时 = 不可达：fetcher 挂起，race 由计时器胜出
+    const hanging = vi.fn((_input: RequestInfo | URL, _init?: RequestInit) => new Promise<Response>(() => undefined));
+    const startedAt = Date.now();
+    expect(await new BackendClient({ baseUrl: "http://backend", fetcher: hanging }).probeHealth(20)).toBe(false);
+    expect(Date.now() - startedAt).toBeLessThan(500);
+    // 无鉴权：探测请求不携带 Authorization（健康检查不消耗会话语义）
+    const init = ok.mock.calls[0]?.[1] as RequestInit | undefined;
+    expect(new Headers(init?.headers ?? {}).get("Authorization")).toBeNull();
+  });
 });
