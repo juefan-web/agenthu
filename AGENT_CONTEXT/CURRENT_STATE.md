@@ -538,6 +538,15 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   start_at 求确定性）。**E4 全链服务端依赖至此齐备**，剩
   `AGENTHU_E4_FULL=1` 联合首跑。批末重算/哈希去重优化（评估 #4）显式
   后置小尾巴 PR。
+- **E4 全链首跑通过（2026-10-02，A，PR #29 分支上验证）——M2 出口判据
+  达成**：`AGENTHU_E4_FULL=1` **2 passed**（seed 1.9s + 全链 28.5s），AGENTS
+  §8 七要素首次全链断言走通（记录：`HANDOFF/2026-10-02-e4-full-first-run.md`）。
+  首跑逼出 **PR #29** 两个真缺陷：① memory_kind 枚举绑定漂移（create_all
+  测试库按成员名渲染 CHECK 与迁移小写 CHECK 不一致，alembic check 盲区）
+  → kind 列 values_callable 绑定值 + 纯迁移库回归测试；② 学习写入与任务
+  完成共生死 → 拆独立 handler（C1 各自 savepoint）。**深夜空草稿翻搅
+  产品裁定（A）**：复用条件扩展——当日剩余预算不足以放置任何待办时允许
+  复用当日空草稿（D-019/D7 第三分支），立项小 PR 后置实现。
 - 流程规则不变：分支从 main 拉出；跨边界先冻结；PR 互审（A=rotcar07，
   B=juefan-web）；**并行会话各用独立 worktree**（2026-10-01 混合提交事故
   后的新规则）。

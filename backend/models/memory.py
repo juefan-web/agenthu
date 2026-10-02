@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -77,8 +78,24 @@ class Memory(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     # Stable aggregation key for keyed writers (L2 facts such as
     # "estimate:course:<course>"); append-only rows (L1 episodes) keep NULL.
     subject_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Unlike the other enums, MemoryKind's member NAMES are uppercase while
+    # the migration's CHECK constraint (and the client-facing values) are
+    # lowercase. SQLAlchemy binds member names unless values_callable says
+    # otherwise — without it, create_all-built test databases accept what the
+    # migrated ones reject (the E4 first-run failure). Only this enum opts in:
+    # the shared helper must stay name-bound for legacy tables whose stored
+    # values are the uppercase names (e.g. focus session status).
     kind: Mapped[MemoryKind | None] = mapped_column(
-        sa_enum(MemoryKind, "memory_kind"), nullable=True
+        SAEnum(
+            MemoryKind,
+            name="memory_kind",
+            native_enum=False,
+            length=32,
+            create_constraint=True,
+            validate_strings=True,
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
+        nullable=True,
     )
     # Canonical evidence list: {type:"event", id} | {type:"memory", id} |
     # {type:"document", file_id, checksum_sha256, page, span_start, span_end}.

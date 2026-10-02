@@ -137,13 +137,25 @@ def handle_focus_completed(session: Session, event: Event) -> None:
             else:
                 task.status = TaskStatus.IN_PROGRESS
         _mark_confirmed_plan_items(session, task.id, actual)
-        # The learn step (D-031 §4, migration plan §4): the L1 episode is the
-        # experience itself; the L2 rows are the planner's lesson from it.
-        # Synchronous on purpose — the next plan must already see this
-        # completion (the E4 spec generates immediately after seeding).
-        if task.status == TaskStatus.COMPLETED:
-            _write_learning_memory(session, event, task)
     _recompute(session, event.user_id)
+
+
+@register("focus.completed")
+def handle_focus_learning(session: Session, event: Event) -> None:
+    """The learn step (D-031 §4, migration plan §4) as its OWN handler.
+
+    process_event runs every handler in its own SAVEPOINT: keeping the
+    memory writes here means a learning-write failure (schema drift, bad
+    payload) rolls back only the memory rows — the task completion from
+    ``handle_focus_completed`` survives, exactly the failure shape the E4
+    first run exposed. Still synchronous on purpose — the next plan must
+    already see this completion (the E4 spec generates right after
+    seeding).
+    """
+
+    task = _get_task(session, event.user_id, event.data.get("task_id"))
+    if task is not None and task.status == TaskStatus.COMPLETED:
+        _write_learning_memory(session, event, task)
 
 
 _EPISODE_EVIDENCE_LIMIT = 20
