@@ -32,6 +32,36 @@ function evidenceText(memory: MemoryItem): string {
   return parts.length > 0 ? `证据：${parts.join(" · ")}` : "暂无证据";
 }
 
+/** 「带证据」验收句的 UI 实质：证据条目可展开核对（事件 id / 文档锚点），
+ *  未知类型（契约演进）原样显示 type。id 截断显示——完整值在 title 提示。 */
+function EvidenceDetail({ memory }: { memory: MemoryItem }) {
+  if (memory.evidence.length === 0) return null;
+  return <details className="evidence-detail">
+    <summary>证据明细</summary>
+    <ul>{memory.evidence.map((entry, index) => {
+      const type = typeof entry["type"] === "string" ? entry["type"] : "unknown";
+      const id = entry["id"] ?? entry["file_id"];
+      const anchor = type === "document"
+        ? [entry["page"], entry["span_start"], entry["span_end"]].filter((part) => part !== undefined && part !== null).join("–")
+        : null;
+      const idText = typeof id === "string" ? id : "";
+      return <li key={index}>{type === "document" ? "文档" : type === "event" ? "事件" : type}
+        {idText && <code title={idText}>{idText.length > 10 ? `${idText.slice(0, 8)}…` : idText}</code>}
+        {anchor && <span>p.{anchor}</span>}
+      </li>;
+    })}</ul>
+  </details>;
+}
+
+/** 决策遥测（D-031 §3 use_count/last_used_at）：可解释性数据，只在非零时
+ *  显示——L2 行被 planner 检索命中才有值。 */
+function telemetryText(memory: MemoryItem): string | null {
+  const parts: string[] = [];
+  if (memory.use_count > 0) parts.push(`参与决策 ${memory.use_count} 次`);
+  if (memory.last_used_at) parts.push(`最近使用 ${new Date(memory.last_used_at).toLocaleDateString()}`);
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
 function MemoryRow({ memory }: { memory: MemoryItem }) {
   const { backend } = useServices();
   const queryClient = useQueryClient();
@@ -57,6 +87,8 @@ function MemoryRow({ memory }: { memory: MemoryItem }) {
         L{memory.level}{memory.kind ? ` · ${KIND_LABELS[memory.kind] ?? memory.kind}` : ""} · {memory.domain} · 置信 {Math.round(memory.confidence * 100)}% · {evidenceText(memory)}
       </span>
       {memory.subject_key && <span>聚合键 {memory.subject_key}</span>}
+      {telemetryText(memory) && <span>{telemetryText(memory)}</span>}
+      <EvidenceDetail memory={memory} />
     </div>
     {editing
       ? <div className="memory-edit">

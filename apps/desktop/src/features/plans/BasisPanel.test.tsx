@@ -41,6 +41,13 @@ describe("BasisPanel（D-031 §1「为什么」面板）", () => {
     expect(screen.getByText("考前周")).toBeTruthy();
   });
 
+  it("learned 估时带样本数（与 reason 同口径），user/default 不带", () => {
+    render(<BasisPanel basis={{ estimate_source: "learned:course", sample_count: 4 } as Record<string, unknown>} />);
+    expect(screen.getByText("同课程历史实际用时（中位数），近 4 次")).toBeTruthy();
+    const { container } = render(<BasisPanel basis={{ estimate_source: "user" } as Record<string, unknown>} />);
+    expect(container.textContent).not.toContain("近");
+  });
+
   it("score 分量展开为打分行", () => {
     render(<BasisPanel basis={{ score: { urgency: 12, goal_weight: 3 } }} />);
     expect(screen.getByText("打分 · urgency")).toBeTruthy();

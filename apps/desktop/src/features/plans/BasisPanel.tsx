@@ -36,7 +36,14 @@ function basisRows(basis: Record<string, unknown>): Array<{ label: string; value
   const estimate = asNumber(basis["estimate_minutes"]);
   if (estimate !== null) rows.push({ label: "预计用时", value: `${estimate} 分钟` });
   const estimateSource = asString(basis["estimate_source"]);
-  if (estimateSource) rows.push({ label: "估时来源", value: ESTIMATE_SOURCE_LABELS[estimateSource] ?? estimateSource });
+  if (estimateSource) {
+    const sampleCount = asNumber(basis["sample_count"]);
+    const label = ESTIMATE_SOURCE_LABELS[estimateSource] ?? estimateSource;
+    // 服务端 reason 已带样本数（plan_reason）；basis 面板对齐呈现（planner
+    // 写入 sample_count，缺失不显示——user/default 来源无样本概念）
+    const suffix = estimateSource.startsWith("learned:") && sampleCount !== null ? `，近 ${sampleCount} 次` : "";
+    rows.push({ label: "估时来源", value: `${label}${suffix}` });
+  }
   const slotReason = asString(basis["slot_reason"]);
   if (slotReason) rows.push({ label: "时段理由", value: slotReason });
   const goalId = asString(basis["goal_id"]);
@@ -48,7 +55,7 @@ function basisRows(basis: Record<string, unknown>): Array<{ label: string; value
       rows.push({ label: `打分 · ${key}`, value: formatValue(value) });
     }
   }
-  const known = new Set(["deadline", "slack_minutes", "estimate_minutes", "estimate_source", "slot_reason", "goal_id", "at_risk", "score"]);
+  const known = new Set(["deadline", "slack_minutes", "estimate_minutes", "estimate_source", "sample_count", "slot_reason", "goal_id", "at_risk", "score"]);
   for (const [key, value] of Object.entries(basis)) {
     if (!known.has(key) && value !== null && value !== undefined) rows.push({ label: key, value: formatValue(value) });
   }
