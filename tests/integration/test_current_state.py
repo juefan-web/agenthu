@@ -24,16 +24,21 @@ def test_current_state_matches_client_contract(client, auth_headers) -> None:
 
 
 def test_current_state_reflects_pending_tasks(client, auth_headers) -> None:
-    client.post("/v1/tasks", json=task_payload(title="HW2"), headers=auth_headers)
     first = client.get("/v1/current-state", headers=auth_headers).json()
-    assert len(first["tasks"]) == 1
-    assert first["tasks"][0]["status"] == "todo"
-
+    client.post("/v1/tasks", json=task_payload(title="HW2"), headers=auth_headers)
     second = client.get("/v1/current-state", headers=auth_headers).json()
+    assert len(second["tasks"]) == 1
+    assert second["tasks"][0]["status"] == "todo"
+
+    # The version tracks projection CONTENT (evaluation §4): creating the task
+    # changed the pending set and bumped it; a no-change read does not.
     assert second["version"] > first["version"]
+    third = client.get("/v1/current-state", headers=auth_headers).json()
+    assert third["version"] == second["version"]
 
 
 def test_current_state_overrides(client, auth_headers) -> None:
+    before = client.get("/v1/current-state", headers=auth_headers).json()
     response = client.patch(
         "/v1/current-state",
         json={"available_minutes": 120, "current_context": {"label": "library"}},
@@ -44,6 +49,9 @@ def test_current_state_overrides(client, auth_headers) -> None:
     assert body["available_minutes"] == 120
     assert body["context"] == "library"
     assert body["current_context"]["label"] == "library"
+    # User-owned overrides are not derived fields, so update_overrides moves
+    # the version itself — other clients must resync the override.
+    assert body["version"] > before["version"]
 
 
 def test_completed_tasks_leave_pending_list(client, auth_headers) -> None:

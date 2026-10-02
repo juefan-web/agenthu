@@ -3,11 +3,22 @@
 CurrentState answers "what is the user's present?" It is recomputed from Tasks,
 Plans and recent Events; it is not a copy of the Event stream. The projection is
 persisted with a monotonically increasing ``version`` so clients can sync.
+
+``version`` is the revision of the projection CONTENT, not a recompute counter
+(evaluation §4): it moves when the projection signature changes — current task,
+current plan, pending set, or the event-derived identity fields of
+``recent_state`` — or on the very first computation (``version=0`` means "never
+computed"). Display fields whose only drift is the wall clock (``current_time``,
+the 24h event count, the available-minutes breakdown) refresh on every recompute
+without moving the version, so one batch of events costs one recompute and at
+most one version bump instead of one per event.
 """
 
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -115,9 +126,53 @@ def current_plan_for(session: Session, user_id: uuid.UUID) -> Plan | None:
     return session.scalar(stmt)
 
 
+# Batch-end recompute registry (evaluation §4): event handlers no longer
+# recompute inline — they mark the user dirty on the session and the
+# ingestion entry point flushes once per user. A 103-event sync costs one
+# projection rescan instead of 103. Marks live on ``session.info``: they are
+# transaction-scoped by construction (a rolled-back request discards them
+# with the session) and need no schema.
+_DIRTY_KEY = "agenthu_state_dirty_users"
+_DEFER_KEY = "agenthu_state_recompute_deferred"
+
+
+def mark_state_dirty(session: Session, user_id: uuid.UUID) -> None:
+    session.info.setdefault(_DIRTY_KEY, set()).add(user_id)
+
+
+@contextmanager
+def defer_state_recompute(session: Session) -> Iterator[None]:
+    """Suppress flushing inside ``create_event`` while a batch is running."""
+
+    session.info[_DEFER_KEY] = True
+    try:
+        yield
+    finally:
+        session.info[_DEFER_KEY] = False
+
+
+def flush_state_recompute(session: Session) -> None:
+    """Recompute once per user marked since the last flush; no-op if deferred.
+
+    Called at every event-ingestion exit point (``create_event`` for the
+    single-event path, ``ingest_event_batch`` after its loop). Marks whose
+    request later rolls back vanish with the session — recomputing from the
+    final committed state would have been wasted anyway.
+    """
+
+    if session.info.get(_DEFER_KEY):
+        return
+    dirty: set[uuid.UUID] | None = session.info.pop(_DIRTY_KEY, None)
+    if not dirty:
+        return
+    for user_id in sorted(dirty, key=str):
+        recompute_current_state(session, user_id)
+
+
 def recompute_current_state(session: Session, user_id: uuid.UUID) -> CurrentStateRead:
     now = utcnow()
     state = get_or_create_state(session, user_id)
+    previous = _projection_signature(state)
     tasks = pending_tasks(session, user_id)
 
     current_task: Task | None = None
@@ -135,29 +190,64 @@ def recompute_current_state(session: Session, user_id: uuid.UUID) -> CurrentStat
     )
     recent["available_minutes_breakdown"] = breakdown
 
-    state.version = (state.version or 0) + 1
     state.current_time = now
     state.current_task_id = current_task.id if current_task else None
     state.current_plan_id = plan.id if plan else None
     state.pending_task_ids = [str(task.id) for task in tasks]
     state.recent_state = recent
+    if state.version == 0 or previous != _projection_signature(state):
+        state.version = (state.version or 0) + 1
     session.flush()
 
     return _to_read(state, current_task, tasks, plan, available_minutes, context_label)
+
+
+def _projection_signature(state: CurrentState) -> tuple[object, ...]:
+    """The change-detector behind ``version``: identity fields only.
+
+    Wall-clock-derived values (``current_time``, ``recent_event_count_24h``,
+    ``available_minutes_breakdown``) are deliberately excluded — they drift
+    between any two recomputes minutes apart without the state meaningfully
+    changing, and counting them would re-create the per-recompute version
+    churn the evaluation flagged. ``recent_event_types`` is sorted so a
+    display-order tie between same-timestamp events cannot flip the
+    signature.
+    """
+
+    recent = state.recent_state if isinstance(state.recent_state, dict) else {}
+    return (
+        state.current_task_id,
+        state.current_plan_id,
+        tuple(state.pending_task_ids or []),
+        recent.get("last_event_at"),
+        recent.get("last_event_type"),
+        tuple(sorted(recent.get("recent_event_types") or [])),
+    )
 
 
 def update_overrides(
     session: Session, user_id: uuid.UUID, payload: CurrentStateUpdate
 ) -> CurrentStateRead:
     state = get_or_create_state(session, user_id)
+    applied = False
     if payload.current_context is not None:
         state.current_context = payload.current_context
+        applied = True
     if payload.available_minutes is not None:
         state.available_minutes = payload.available_minutes
+        applied = True
     if payload.current_task_id is not None:
         ensure_owned_tasks(session, user_id=user_id, task_ids=[payload.current_task_id])
         state.current_task_id = payload.current_task_id
-    session.flush()
+        applied = True
+    if applied:
+        # User intent changed stored fields that recompute does not derive
+        # (context/available-minutes overrides) — move the version so other
+        # clients resync even when the derived projection is unchanged. A
+        # current_task_id override that changes the structure bumps again in
+        # recompute; versions are monotonic, skipped numbers are fine.
+        state.version = (state.version or 0) + 1
+        session.flush()
     return recompute_current_state(session, user_id)
 
 
@@ -180,7 +270,12 @@ def _recent_events_summary(session: Session, user_id: uuid.UUID) -> dict[str, ob
         )
     )
     return {
-        "last_event_at": latest.timestamp.isoformat() if latest else None,
+        # Normalized to UTC at write time: the same event reads back with a
+        # different isoformat offset depending on whether the ORM object came
+        # from the wire (original offset) or from a UTC database session —
+        # an unnormalized string made the version gate see a change where
+        # only the representation had flipped.
+        "last_event_at": latest.timestamp.astimezone(UTC).isoformat() if latest else None,
         "last_event_type": latest.type if latest else None,
         "recent_event_count_24h": int(count_24h or 0),
         "recent_event_types": recent_types,

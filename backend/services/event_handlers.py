@@ -112,7 +112,7 @@ def handle_focus_started(session: Session, event: Event) -> None:
     task = _get_task(session, event.user_id, event.data.get("task_id"))
     if task is not None and task.status == TaskStatus.TODO:
         task.status = TaskStatus.IN_PROGRESS
-    _recompute(session, event.user_id)
+    _mark_state_dirty(session, event.user_id)
 
 
 @register("focus.completed")
@@ -137,7 +137,7 @@ def handle_focus_completed(session: Session, event: Event) -> None:
             else:
                 task.status = TaskStatus.IN_PROGRESS
         _mark_confirmed_plan_items(session, task.id, actual)
-    _recompute(session, event.user_id)
+    _mark_state_dirty(session, event.user_id)
 
 
 @register("focus.completed")
@@ -308,7 +308,7 @@ def _mark_confirmed_plan_items(
 @register("task.*")
 def handle_task_event(session: Session, event: Event) -> None:
     # Any task lifecycle event can change the projection.
-    _recompute(session, event.user_id)
+    _mark_state_dirty(session, event.user_id)
 
 
 # --------------------------------------------------------------------------- #
@@ -420,11 +420,20 @@ def handle_assignment_event(session: Session, event: Event) -> None:
         task.status = TaskStatus.COMPLETED
         task.completed_at = event.timestamp
     session.flush()
-    _recompute(session, event.user_id)
+    _mark_state_dirty(session, event.user_id)
 
 
-def _recompute(session: Session, user_id: uuid.UUID) -> None:
-    # Imported lazily to avoid an import cycle (current_state imports schemas).
-    from backend.services.current_state import recompute_current_state
+def _mark_state_dirty(session: Session, user_id: uuid.UUID) -> None:
+    """Defer the projection recompute to the ingestion exit point.
 
-    recompute_current_state(session, user_id)
+    Handlers used to call ``recompute_current_state`` inline, so a 103-event
+    sync rescanned the projection 103 times and bumped its version 103 times
+    (evaluation §4). Handlers now only mark the user dirty;
+    ``create_event`` flushes once for the single-event path and
+    ``ingest_event_batch`` once per batch. Imported lazily to avoid an
+    import cycle (current_state imports schemas).
+    """
+
+    from backend.services.current_state import mark_state_dirty
+
+    mark_state_dirty(session, user_id)

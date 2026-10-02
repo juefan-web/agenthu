@@ -16,6 +16,7 @@ from backend.models.event import Event
 from backend.models.task import Task
 from backend.schemas.client_contract import EventEnvelope
 from backend.schemas.event import EventCreate
+from backend.services.current_state import defer_state_recompute, flush_state_recompute
 from backend.services.event_handlers import process_event
 from backend.worker.enqueue import mark_user_dirty
 
@@ -138,6 +139,11 @@ def create_event(
 
     process_event(session, event)
     session.flush()
+    # Single-event path: handlers only marked the user dirty, so the
+    # projection must be refreshed here before the request ends. Batch
+    # ingestion defers this (defer_state_recompute) and flushes once after
+    # its loop (evaluation §4).
+    flush_state_recompute(session)
     # New facts may satisfy a replan trigger (focus overrun, schedule change,
     # near-deadline task). Best-effort dirty marker; the worker cron drains it
     # (D-031 §2) — Redis being down must never fail ingestion.
@@ -207,31 +213,38 @@ def ingest_event_batch(
     envelopes: list[EventEnvelope],
 ) -> EventBatchOutcome:
     outcome = EventBatchOutcome()
-    for envelope in envelopes:
-        reason = (
-            validate_json_payload("data", envelope.data)
-            or validate_json_payload("context", envelope.context)
-            or validate_json_payload("provenance", envelope.provenance.model_dump())
-            or assignment_payload_rejection(envelope.type, envelope.data)
-        )
-        if reason is not None:
-            outcome.rejected.append((envelope.client_event_id, reason))
-            continue
+    # Handlers mark the user dirty instead of recomputing inline; the
+    # projection is refreshed ONCE below for the whole batch (evaluation §4).
+    with defer_state_recompute(session):
+        for envelope in envelopes:
+            reason = (
+                validate_json_payload("data", envelope.data)
+                or validate_json_payload("context", envelope.context)
+                or validate_json_payload("provenance", envelope.provenance.model_dump())
+                or assignment_payload_rejection(envelope.type, envelope.data)
+            )
+            if reason is not None:
+                outcome.rejected.append((envelope.client_event_id, reason))
+                continue
 
-        payload = EventCreate(
-            type=envelope.type,
-            timestamp=envelope.occurred_at,
-            source=envelope.source,
-            data=envelope.data,
-            context=envelope.context,
-            provenance=envelope.provenance.model_dump(mode="json"),
-        )
-        # Envelope-level validation already ran; create and classify.
-        _event, created = create_event(
-            session, user_id=user_id, payload=payload, client_event_id=envelope.client_event_id
-        )
-        if created:
-            outcome.accepted.append(envelope.client_event_id)
-        else:
-            outcome.duplicates.append(envelope.client_event_id)
+            payload = EventCreate(
+                type=envelope.type,
+                timestamp=envelope.occurred_at,
+                source=envelope.source,
+                data=envelope.data,
+                context=envelope.context,
+                provenance=envelope.provenance.model_dump(mode="json"),
+            )
+            # Envelope-level validation already ran; create and classify.
+            _event, created = create_event(
+                session,
+                user_id=user_id,
+                payload=payload,
+                client_event_id=envelope.client_event_id,
+            )
+            if created:
+                outcome.accepted.append(envelope.client_event_id)
+            else:
+                outcome.duplicates.append(envelope.client_event_id)
+    flush_state_recompute(session)
     return outcome
