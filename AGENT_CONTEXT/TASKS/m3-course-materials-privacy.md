@@ -109,5 +109,33 @@ Backend worker：按页抽取文本 → material_chunks →（开启检索时）
 - A：**rotcar07（2026-10-01，`feature/a-signoffs-d032-m3docs`）**
   B：**juefan-web（2026-10-01，同分支随 PR #19 会签）**——双签完成，本文件
   转 accepted，转录为 DECISIONS D-033；修订走 DECISIONS 变更（同 D-027 口径）。
-- Provider 政策核对记录：＿＿＿（首次核对日期 + 链接；M3 摄取开工前完成
-  首核，未核前决策清单第 4 条保持默认关闭）。
+- Provider 政策核对记录（**首核完成 2026-10-02，A 执行**；首次核对
+  日期 + 链接；M3 摄取开工前完成首核，未核前决策清单第 4 条保持默认
+  关闭）。核对对象 = 第一实现供应商 **OpenAI**（TECH_STACK「Provider
+  adapter + OpenAI Responses API」；embedding = text-embedding-3-small，
+  D-031 维度 1536）。核对当日有效版本：
+  ① `https://openai.com/enterprise-privacy/`（页首 Updated January 8,
+  2026）——「By default, we do not use your business data for training
+  our models」；API Platform（2023-03-01 起）输入输出默认不用于训练，
+  需显式 opt-in 才参与改进；「you retain all rights to the inputs you
+  provide … you own any output」。
+  ② `https://platform.openai.com/docs/guides/your-data`（Data controls）
+  ——`/v1/responses` 与 `/v1/embeddings` 端点级表格均为 not used for
+  training；embedding 端点 eligible for zero data retention。
+  **残留事实（须向用户如实披露）**：API 输入/输出在供应商侧有**至多
+  30 天**的滥用监控日志保留（含客户内容；ZDR 需资格审批，alpha 个人
+  账号不适用）；Responses API 默认 `store: true` 亦产生至多 30 天的
+  application state。**实现约束（随摄取批次落地）**：适配层对
+  Responses 调用显式 `store: false`；按课程开启的同意文案披露「送出
+  的 chunk 文本在供应商侧有 ≤30 天滥用监控保留，默认不用于训练」。
+  **结论：与决策清单第 4 条兼容**——第 4 条「默认关闭」继续成立，
+  资料摄取批次可开工。复核节奏：供应商政策页变更或每里程碑一次
+  （下一复核 = M3 摄取合入前，B 会签本记录即完成双核）。
+  **B 双核（2026-10-02，juefan-web，PR #36 review）**：两页独立重取核对
+  （当日有效）——① enterprise-privacy 页首 "Updated: January 8, 2026" 与
+  「By default, we do not use your business data for training our models」
+  原句、输入输出所有权原句、30 天滥用保留与 ZDR 资格口径（qualifying
+  use-case）逐一命中；② Data controls 端点表 `/v1/responses` 与
+  `/v1/embeddings` 训练列均为 No、embeddings 行 ZDR-eligible 为 Yes、
+  滥用监控日志默认保留至多 30 天。**双核完成，资料摄取批次解锁**；
+  \`store: false\` 实现约束与同意文案披露口径随摄取批次验收。

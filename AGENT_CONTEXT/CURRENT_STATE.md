@@ -602,6 +602,18 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   pgvector 文本输出是最短 float32 往返表示，float64 精确值出库带 ~1e-7
   表示误差（存储本身精确）——embedding 断言必须 `pytest.approx`，已记入
   任务文档 §7 供检索切片复用。
+- **D-033 provider 政策首核完成（2026-10-02，A，`docs/d033-provider-policy-first-check`）
+  ——资料摄取的硬前置解除**：核对 OpenAI（Responses API +
+  text-embedding-3-small）数据政策，两页当日有效：enterprise-privacy
+  （Updated Jan 8 2026）与 platform docs Data controls——API 输入输出
+  默认不用于训练（2023-03-01 起，需显式 opt-in）、输入输出归用户。
+  残留事实如实入档：供应商侧 ≤30 天滥用监控日志保留（含内容；ZDR 需
+  审批，alpha 不适用）；实现约束 = 适配层 Responses 调用显式
+  `store: false`，按课程同意文案披露供应商侧保留。结论：与决策清单第 4
+  条兼容，「默认关闭」继续成立，摄取批次可开工（待 B 会签本记录）。
+  记录落 `TASKS/m3-course-materials-privacy.md` §7；复核节奏 = 供应商
+  政策变更或每里程碑一次。**B 双核完成（同日，两页独立重取，五项声明与残留事实逐
+  一命中）——摄取批次正式解锁。**
 - 流程规则不变：分支从 main 拉出；跨边界先冻结；PR 互审（A=rotcar07，
   B=juefan-web）；**并行会话各用独立 worktree**（2026-10-01 混合提交事故
   后的新规则）。
