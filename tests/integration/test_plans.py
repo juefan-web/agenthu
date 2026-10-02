@@ -7,8 +7,11 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from backend.config import get_settings
+from backend.db.base import utcnow
 from backend.models.enums import PlanStatus
 from backend.models.plan import Plan, PlanItem
+from backend.services.current_state import pending_tasks
+from backend.services.planner import _generate_v2_items, _nothing_placeable
 from tests.fixtures.payloads import task_payload
 
 pytestmark = pytest.mark.integration
@@ -630,3 +633,39 @@ def test_empty_draft_reused_when_nothing_placeable(client, auth_headers) -> None
     assert second["id"] == first["id"]  # reused, not churned
     third = client.get("/v1/plans/today", headers=auth_headers).json()
     assert third["id"] == first["id"]
+
+
+def test_nothing_placeable_mirrors_generate_v2_items(client, auth_headers, db_session) -> None:
+    """Drift pin (PR #30 review): `_nothing_placeable` must mirror the placement
+    eligibility of `_generate_v2_items` — both predicates over the same fixtures.
+    Divergence means an empty draft is reused while work IS placeable (hides
+    tasks from today) or churns one draft per read while nothing fits."""
+
+    user_id = uuid.UUID(client.get("/v1/auth/me", headers=auth_headers).json()["id"])
+
+    def assert_predicates_agree() -> None:
+        tasks = pending_tasks(db_session, user_id)
+        placed = _generate_v2_items(db_session, user_id=user_id, tasks=tasks, start=utcnow())
+        assert _nothing_placeable(db_session, user_id) == (len(placed) == 0)
+
+    # 1. Nothing pending: both empty-draft-eligible.
+    assert_predicates_agree()
+
+    # 2. A small task that fits today's room: both placeable.
+    client.post(
+        "/v1/tasks",
+        json={"title": "Fits", "estimated_duration_minutes": 30},
+        headers=auth_headers,
+    )
+    assert_predicates_agree()
+
+    # 3. Only an unplaceable task left (single block > any slot/budget): both
+    # empty-eligible. Estimated 600 minutes exceeds any day budget (D-027 cap).
+    first_task_id = client.get("/v1/tasks", headers=auth_headers).json()[0]["id"]
+    client.delete(f"/v1/tasks/{first_task_id}", headers=auth_headers)
+    client.post(
+        "/v1/tasks",
+        json={"title": "Too big", "estimated_duration_minutes": 600},
+        headers=auth_headers,
+    )
+    assert_predicates_agree()
