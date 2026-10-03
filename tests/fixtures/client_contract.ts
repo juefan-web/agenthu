@@ -348,9 +348,11 @@ export const ChatMessageSchema = z.object({
   content: z.string(),
   created_at: IsoDateTime,
   // A5 裁定：经 agent_run_id join 的投影列，不落第二份存储。
-  agent_run_id: z.string().optional(),
-  decision_basis: DecisionBasisSchema.optional(),
-  pending_action_id: z.string().optional(),
+  // nullable+optional：服务端 ORMModel 不带 exclude_none，None 字段以
+  // 显式 null 下发（A1 评审时发现；仅 optional 会拒收 null）。
+  agent_run_id: z.string().nullable().optional(),
+  decision_basis: DecisionBasisSchema.nullable().optional(),
+  pending_action_id: z.string().nullable().optional(),
 });
 
 /** D-029 events 口径的 cursor page：只断言 items + next_cursor（缺省/null

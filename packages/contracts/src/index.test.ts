@@ -212,6 +212,12 @@ describe("M4 frozen contract (D-034)", () => {
     });
     expect(message.decision_basis).toBeUndefined();
     expect(() => ChatMessageSchema.parse({ ...message, decision_basis: basis, pending_action_id: "pa-1" })).toBeTruthy();
+    // 服务端 ORMModel 不 exclude_none：无 run 关联的消息以显式 null 下发
+    // 投影列，仅 .optional() 会拒收（A1 评审发现的回归点）。
+    const nulled = ChatMessageSchema.parse({
+      ...message, agent_run_id: null, decision_basis: null, pending_action_id: null,
+    });
+    expect(nulled.agent_run_id).toBeNull();
 
     const preferences = NotificationPreferencesSchema.parse({
       version: 2, timezone: "Asia/Shanghai", enabled_categories: ["deadline"],
