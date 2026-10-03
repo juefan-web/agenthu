@@ -118,3 +118,27 @@ def test_build_context_numbers_chunks_memories_question() -> None:
     assert "已确认的个人学习记忆" in context
     assert "该生在滤波作业上平均用时 40 分钟" in context
     assert "问题：什么是频谱泄漏" in context
+
+
+def test_cleaned_marker_order_matches_citations_order() -> None:
+    # 客户端（GroundedAnswersView，PR #44）按 「quote」[n] 重析清洗后正文，
+    # 假定「存活标记序 == citations 数组序」。该不变量由 verify_citations
+    # 的单遍循环结构保证——本测试把它钉死，防止未来重构悄悄破坏 B 侧的
+    # 渲染假设（中间夹一条伪造引用后，两侧顺序仍须一一对应）。
+    answer = (
+        "其一「傅里叶变换将时域信号分解为频率分量」[1]，"
+        "其二「这段话根本不存在于任何课件之中」[2]，"
+        "其三「频谱展示了各频率的幅度」[1]。"
+    )
+    cleaned, grounded, citations = verify_citations(answer, [CHUNK_1])
+    assert grounded is True
+    # 伪造者只丢 [2] 标记（「」与摘录保留为散文），存活者原样在位
+    assert cleaned == (
+        "其一「傅里叶变换将时域信号分解为频率分量」[1]，"
+        "其二「这段话根本不存在于任何课件之中」，"
+        "其三「频谱展示了各频率的幅度」[1]。"
+    )
+    assert [c["quote"] for c in citations] == [
+        "傅里叶变换将时域信号分解为频率分量",
+        "频谱展示了各频率的幅度",
+    ]

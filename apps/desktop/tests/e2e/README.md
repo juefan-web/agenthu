@@ -15,6 +15,7 @@ spec 已按验收反馈修订；**M2 起的验收以本套件为常规工具**�
 | E3 派生任务 | 「校园采集」徽标、标题非 UUID、`due_at` 时刻与作业事件 `data.deadline` 配对一致（时区无关）、UI 与数据一致 | Backend 凭据；依赖 E2 的采集状态（串行跑） |
 | E4-seed | 真实管线预置：事件 → 派生（课程前缀标题）→ Focus 实际用时（API 覆盖值，无需真实等待）→ 课表事件 | Backend 凭据；独立于 E2/E3 |
 | E4（门控） | M2 出口判据全链：避开课表的人话计划 → learned/default 双向估时断言 → 超时 Focus → 重排建议 → 接受即取代 → L1 记忆可修正（superseded-by 链）| `AGENTHU_E4_FULL=1`；依赖 A 侧 planner v2/估时学习/触发引擎/L1 写入者 |
+| E5（门控） | M3 出口后端半边（API 造数）：上传→抽取/嵌入→同意门→提问→引用机械可核（page+quote 对 fixture 原文独立复核）→删 Learning Memory→同问不再体现→删回答 | `AGENTHU_E5_FULL=1`；栈见下方「E5 栈」；场景定义 `TASKS/m3-e5-exit-scenario.md`；UI 半边等 #44 合入后追加 |
 
 ## 前置
 
@@ -25,6 +26,24 @@ spec 已按验收反馈修订；**M2 起的验收以本套件为常规工具**�
    `VITE_BACKEND_URL` 需指向它（构建期变量，见 `.env.example`）。
 3. **安装测试依赖**：仓库根 `pnpm install`（`@playwright/test` 为 devDependency；
    CDP 附着不下载浏览器，无需 `playwright install`）。
+
+### E5 栈（门控 `AGENTHU_E5_FULL=1`）
+
+E5 走**真实栈**（与 E4 同口径）：compose `db redis s3mock` + 独立库
+（如 `agenthu_e5`，alembic 从零 up）+ uvicorn + arq worker，进程环境
+`STORAGE_BACKEND=minio`、`S3_ENDPOINT_URL=http://127.0.0.1:9090`、
+`OPENAI_BASE_URL=http://127.0.0.1:9099/v1`、`OPENAI_API_KEY=<replay 占位
+非空值>`；供应商侧是本目录的 `e5-replay.mjs`（零依赖 Node，
+`node e5-replay.mjs` 起 :9099，recorded-replay 契约见任务文件）。运行：
+
+```bash
+AGENTHU_TEST_BACKEND_URL=http://127.0.0.1:8010 \
+AGENTHU_TEST_BACKEND_EMAIL=e5@any AGENTHU_TEST_BACKEND_PASSWORD=any-value \
+AGENTHU_E5_FULL=1 pnpm --filter @agenthu/desktop exec playwright test e5-m3-exit
+```
+
+（EMAIL/PASSWORD 仅作非空门槛——spec 自注册全新账号；worker 启动后确认
+日志 `Starting worker for N functions`。）
 
 ## 启动构建包（带 CDP）
 
