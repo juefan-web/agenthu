@@ -33,6 +33,7 @@ import {
 } from "@agenthu/contracts";
 import type { z } from "zod";
 import { MemoryItemSchema, type MemoryItem } from "./memory";
+import { ModelContextConsentSchema, type ModelContextConsent } from "./modelConsent";
 import {
   FileInfoSchema,
   GroundingConsentSchema,
@@ -354,6 +355,20 @@ export class BackendClient {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...patch, expected_version: expectedVersion }),
+    });
+  }
+
+  /** 全局「Agent 模型上下文」同意（D-034 §6.2，默认关）：GET 带服务端文案
+   *  与版本；PUT 开启必须回显读到的版本（文案更新强制重新确认）。 */
+  async getModelContextConsent(): Promise<ModelContextConsent> {
+    return this.requestValidated("/v1/model-context-consent", ModelContextConsentSchema);
+  }
+
+  async setModelContextConsent(enabled: boolean, textVersion: string): Promise<ModelContextConsent> {
+    return this.requestValidated("/v1/model-context-consent", ModelContextConsentSchema, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled, consent_text_version: textVersion }),
     });
   }
 

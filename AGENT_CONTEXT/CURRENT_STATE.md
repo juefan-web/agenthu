@@ -1035,6 +1035,7 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   下一步：A rebase 到 `1bdae73` 开 PR（两步挂 reviewer）→ B 交叉审；
   **B2 依赖面已齐（pending mutations / chat 202 / 偏好 / 同意 GET/PUT），
   B 可即刻开工**。
+<<<<<<< HEAD
 - **勘误（协调人，2026-10-03）**：上条「B2 依赖面已齐……全在 main」
   **不成立**——pending mutations / chat 202 / 同意 GET/PUT 在 A2 未合并
   分支上，main 实际只有读面 + 偏好 PATCH + M3 同意门（B 开工前独立
@@ -1049,3 +1050,28 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   预埋关注点：同意门双层单源性 / watchdog 幂等键覆盖面 / chat 202
   `client_request_id` 公式与 A2 裁定逐字一致。合序建议：#54 先、#55
   rebase 对齐后合（或若零冲突按便利序）。
+- **B2 视图族交付（2026-10-03，`feature/m4-b2-view-family`，base `b01c9ae`）**：
+  ①`DecisionBasisView` 共享渲染器（8 kind 定位渲染、失效标注、`parseDecisionBasis`
+  弱类型入口；`BasisPanel` 检出 `basis.agent_decision` 子键转交，形状不符退回
+  JSON 透出）→ ②`PendingActionsView/Card`（8 态 × 操作矩阵、仅 PENDING 倒计时、
+  409 静默 refetch、防双击、用户自致失败子码单列文案、结果三元组、深链滚动）→
+  ③`ChatView`（模型上下文同意门 = 文案下发 + 版本回显开启/撤销；会话/消息
+  cursor 流；发送 202 + 3s 有限轮询封顶 40 次；断供「模型暂不可用」不伪造
+  兜底；消息/会话删除；「为什么」同一渲染器；pending action 深链到确认卡；
+  网络失败同一 client_message_id 幂等重发）→ ④`NotificationPreferencesView`
+  （类别 chips + 免打扰起止（跨午夜）/每日上限数值控件、server-only 用量
+  只读、PATCH expected_version、409 重填不静默覆盖）。App 加 确认/对话/提醒
+  三视图 + 待确认徽标（与视图共用 query key）。新增本地 schema
+  `backend/modelConsent.ts` + 两个 client 方法（镜像 A2 冻结形状：GET 带
+  consent_text/version，PUT 回显）。测试 +31（共 176 绿）、tsc/build 绿。
+  `searchChat` 继续等 A3（结果形状未字段级冻结）。
+- **#55 rebase 轮（2026-10-03，base 新 main `8d47781` = #54 合入）**：诚实
+  失败态翻真实读写（mutation/202/同意端点已在 main，同意门成活接口）。
+  四条裁定落地：①客户端自致失败码**超集**——实发码 `permission_denied`/
+  `grounding_consent_missing` 入集合，原三词（`permission_revoked`/
+  `consent_revoked`/`source_deleted`）注释为 A3/B3 前向词汇保留；②Chat
+  删除入口补 onError 错误呈现、按钮保留（A3 同波交付 DELETE，「确认后
+  静默无结果」消除）；③L3 标签按状态分词——PENDING 上的 L3 = 「自动执行
+  未获授权，需你处理」，历史已授权派发 = 「已授权自动执行」；④不可达
+  403 分支防御性保留。同意门两 client 方法对 main openapi 现端面补
+  path/body/解析用例。A 于新 head 重新出绑定 approve 后合入。

@@ -1,6 +1,10 @@
 /** 「为什么」面板（D-031 §1）：`reason` 是人话渲染层，`basis` 是结构化依据。
  *  契约弱类型（z.record(z.unknown())），已知字段按语义渲染，未知字段原样
- *  透出——服务端形状演进不需要客户端同步发版。 */
+ *  透出——服务端形状演进不需要客户端同步发版。
+ *  M4（契约 §4/A 契约 §7）：结构化 `DecisionBasis` 落在 `basis.agent_decision`
+ *  子键，检出后转交共享 `DecisionBasisView`（同 pending action / Chat 的
+ *  「为什么」）；legacy 字段照旧，`agent_decision` 不进未知字段透出。 */
+import { parseDecisionBasis, DecisionBasisView } from "../agent/DecisionBasisView";
 
 const ESTIMATE_SOURCE_LABELS: Record<string, string> = {
   default: "默认值（60 分钟）",
@@ -63,10 +67,17 @@ function basisRows(basis: Record<string, unknown>): Array<{ label: string; value
 }
 
 export function BasisPanel({ basis }: { basis: Record<string, unknown> | undefined }) {
-  const rows = basis ? basisRows(basis) : [];
-  if (rows.length === 0) return null;
+  // 结构化 agent_decision 可解析才转交共享渲染器（并从 legacy 行中拿掉）；
+  // 形状不符时退回未知字段 JSON 透出——服务端形状演进保持透明（§4）。
+  const structured = basis ? parseDecisionBasis(basis["agent_decision"]) : null;
+  const legacySource = structured && basis
+    ? Object.fromEntries(Object.entries(basis).filter(([key]) => key !== "agent_decision"))
+    : basis;
+  const rows = legacySource ? basisRows(legacySource) : [];
+  if (rows.length === 0 && !structured) return null;
   return <details className="basis-panel">
     <summary>为什么</summary>
-    <dl>{rows.map((row) => <div key={row.label}><dt>{row.label}</dt><dd className={row.atRisk ? "basis-at-risk" : undefined}>{row.value}</dd></div>)}</dl>
+    {rows.length > 0 && <dl>{rows.map((row) => <div key={row.label}><dt>{row.label}</dt><dd className={row.atRisk ? "basis-at-risk" : undefined}>{row.value}</dd></div>)}</dl>}
+    {structured && <DecisionBasisView basis={structured} />}
   </details>;
 }
