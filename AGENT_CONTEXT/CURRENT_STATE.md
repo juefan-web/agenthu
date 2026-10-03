@@ -1,6 +1,6 @@
 # CURRENT_STATE
 
-Updated: 2026-10-02 · Milestone: **M3（让回答有据可依：资料摄取 + Memory 检索/grounding + 引用）**。M2 已关闭（main `e2a80e6`，出口判据「四绿三窗口双人」达成，见 2026-10-02 条目）。M0/M1 已合并（PR #1-#15，round-5 数据闭环验收通过 + e2e 首跑解锁）；对概念基线的完整差距评估见 `HANDOFF/2026-09-30-implementation-evaluation.md`（§8 七子句：4 达成 + 1 部分 + 2 缺失），M2 出口判据即该报告末节的场景化 §8 全句。路线大纲（M2–M8）已经 A/B 确认采纳（**D-030 accepted**，含三处修订：M3 同步产出删除/依赖图设计、TECH_STACK 依赖方已注取代、m2-breakdown 已对齐大纲口径）。
+Updated: 2026-10-03 · Milestone: **M4（Agent 运行时、Chat 与主动 Agent）——先决文档阶段**。M3 已收口（main `5b381fd`，D-030 口径出口判据「代码 + 真机双证」达成，见 2026-10-03 收口条目）。M2 已关闭（main `e2a80e6`，出口判据「四绿三窗口双人」达成，见 2026-10-02 条目）。M0/M1 已合并（PR #1-#15，round-5 数据闭环验收通过 + e2e 首跑解锁）；对概念基线的完整差距评估见 `HANDOFF/2026-09-30-implementation-evaluation.md`（§8 七子句：4 达成 + 1 部分 + 2 缺失），M2 出口判据即该报告末节的场景化 §8 全句。路线大纲（M2–M8）已经 A/B 确认采纳（**D-030 accepted**，含三处修订：M3 同步产出删除/依赖图设计、TECH_STACK 依赖方已注取代、m2-breakdown 已对齐大纲口径）。
 · 集成分支 `integration/study-time-m0` 已合并 Backend（`61fcf82`）与客户端
 （`a2693e9`），冲突已解决，双侧 CI 与联合 drift check 全绿（draft PR #1）。
 · **Merge-1 Windows 构建包人工测试结论：不建议转正合并**（见
@@ -854,6 +854,33 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   `course_name === courseName` 过滤再建图，补跨课程同名用例（另一门课
   的 extracted 不串到本课的「抽取进行中」）。cargo 18（+1）/
   vitest 140（+1）/build 绿。
+- 流程规则不变：分支从 main 拉出；跨边界先冻结；PR 互审（A=rotcar07，
+- **M3 收口（2026-10-03，协调人，main `5b381fd`）**：#47（keyword
+  lane ANY-token 修复 + `scan_ms`/`embed_ms` 拆分，B approve）合
+  `41b9e96`、#49（E5 UI 半边 + 验收记录 + B 评审修订 `4411bb5` DOM id
+  命名空间）合 `5b381fd`；#48（read_timeout + 徽标课程过滤）此前已合
+  `7c677b7`。**D-030 口径 M3 出口判据达成，代码 + 真机双证**：E5
+  backend 半边合并后 main 复跑绿 + E5 UI 打包客户端全链 1 passed +
+  campus 真机链闭环（105 事件同步、36.3MB 真实课件 → 167 chunks 全
+  clean → 回填嵌入、第 74 页引用机械校验通过且服务端核验）——证据链
+  见 `HANDOFF/2026-10-03-m3-acceptance-round.md` §4。**backlog（检索
+  重做桶，B #47 评审观察）**：OR 通道内候选按文件序截断 32、无命中
+  计数排序——语料增大后可能把真命中挤出前 32；命中计数排序/BM25 化
+  与 HNSW 决策同桶，触发条件 = 语料规模数据。首组 HNSW 数据结论 =
+  不建索引（2→167 chunk 混计延迟同数量级、DB 扫描非瓶颈）。
+  **M3 全程 PR 链**：#33-#49（Memory 迁移/检索下限/批末重算/分页/
+  摄取/grounding/讲解页/上传链/E5/三笔修复），A/B 互审全部在案。
+- **M4 先决文档阶段分派（2026-10-03，协调人）**：任务文件
+  `TASKS/m4-phase0-prereq-docs.md`——A 草拟《Agent 运行时与审计契约》
+  （agent_runs schema、工具注册表 ACTION_POLICY、pending_actions
+  生命周期、上下文装配快照格式、provider 工具调用接口缺口），B 草拟
+  《动作确认与 Chat 交互契约》（pending_actions 确认 UI、Chat 视图
+  与 basis 渲染复用、主动提醒呈现与打扰预算）。双文档互审 → 冻结 →
+  拆实施任务（沿用 M2/M3 phase-0 模式）。
+- 流程规则追加：**开 PR 一律两步走——先 `gh pr create` 拿真实编号、
+  再单独 `--add-reviewer`，挂完回读 `reviewRequests` 确认生效**
+  （三起 reviewer 误挂/静默失败教训：#46/#47/#48 号段竞争 + 命令成功
+  返回 ≠ 挂载生效）。
 - 流程规则不变：分支从 main 拉出；跨边界先冻结；PR 互审（A=rotcar07，
   B=juefan-web）；**并行会话各用独立 worktree**（2026-10-01 混合提交事故
   后的新规则）；**openapi.json 冲突一律 rebase 后 `--write` 重导**——CI
