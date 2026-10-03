@@ -5,6 +5,13 @@ Status: open（2026-10-03 立项，协调人）。契约依据 = 两份冻结文
 chat-contract.md` r3，D-034）。**顺序门禁：切片 B1/A1（契约代码化）
 同批先行合入，之后 A/B 并行；A2 内含全局同意门禁。**
 
+进度：**A1 已交付**（2026-10-03 深夜，`feature/m4-a1-contract-codification`
+——迁移 `b8d3e57a21c4` 五表 + grant 部分唯一 + content_revision 回填、
+ACTION_POLICY 四新行 + focus.start L2、软撤销语义、8 读面端点、drift
+注册与快照预置；309 passed / pyright 0 / 迁移可逆。**staged drift：**
+快照侧零漂移，packages/contracts 侧 6 条待 B1 镜像——B1 合入即双源绿）。
+B1 进行中。
+
 ## A（backend）
 
 ### A1 迁移与契约代码化（与 B1 同批）

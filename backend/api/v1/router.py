@@ -3,8 +3,10 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from backend.api.v1 import (
+    agent_runs,
     audit,
     auth,
+    chat,
     current_state,
     events,
     files,
@@ -14,6 +16,8 @@ from backend.api.v1 import (
     material,
     material_answers,
     memory,
+    notification_preferences,
+    pending_actions,
     permissions,
     plans,
     tasks,
@@ -34,5 +38,9 @@ api_router.include_router(audit.router)
 api_router.include_router(jobs.router)
 api_router.include_router(material.router)
 api_router.include_router(material_answers.router)
+api_router.include_router(agent_runs.router)
+api_router.include_router(pending_actions.router)
+api_router.include_router(chat.router)
+api_router.include_router(notification_preferences.router)
 
 __all__ = ["api_router"]
