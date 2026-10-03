@@ -5,6 +5,13 @@ Status: open（2026-10-03 立项，协调人，M3 收口后开跑）。依据：
 数据化）、`HANDOFF/2026-10-01-hermes-memory-prestudy.md` §2 的两条
 「记账 M4」（会话 FTS、前缀稳定排序）、现有 M2/M3 phase-0 模式。
 
+进度（2026-10-03 晚）：A 草案 **v3**（裁定 A1/A2/B4② 落案、B4① 确认、
+A4 终裁执行，跨契约吸收见 §11.1 第 10-14 条）；B 草案 **r2** @ `564f68a`
+（B1/B2/B3/A3/A5 + B4①② + AgentRunRead 字段级 + 路径对齐）。**A 对 B r2
+评审 = Approve 无阻塞**（`HANDOFF/2026-10-03-a-review-m4-b-contract.md`）。
+冻结前剩余：B 补 `AgentRunRead.tool_calls[]` 镜像与 `expires_at` 非空
+（A 评审要求）；随后双稿 head 各持对方 approve → 协调人终审记 DECISIONS。
+
 ## 0. 为什么先文档后动工
 
 M4 是权限层第一次面对真正的对象（agent 而非用户本人），且 Chat、

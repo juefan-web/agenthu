@@ -877,6 +877,32 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   《动作确认与 Chat 交互契约》（pending_actions 确认 UI、Chat 视图
   与 basis 渲染复用、主动提醒呈现与打扰预算）。双文档互审 → 冻结 →
   拆实施任务（沿用 M2/M3 phase-0 模式）。
+- **A 的《Agent 运行时与审计契约》草案已交（2026-10-03 @
+  `feature/m4-phase0-runtime-contract`，worktree `D:\agenthu-wt-m4`）**：
+  `TASKS/m4-agent-runtime-audit-contract.md`。**v2（同日晚）**：以重写稿
+  为基并入 A 首稿（PR #50）更优部分——attempt/operation_key/client_request_id
+  幂等与 lease/watchdog 恢复、权限账本同事务 + 递归脱敏（redact 顶层过滤
+  已核实）、**grant 等级收紧**（fnmatch 通配 + granted>=required 越级漏洞
+  已核实：L3 grant 只自动执行 L3 动作）、grant 软撤销、**全局「Agent 模型
+  上下文」同意缺口**（M3 同意只覆盖 chunk，不授权 CurrentState/Memory/chat
+  外发）、`content_revision` 前缀排序（updated_at 受 use 遥测扰动已核实）；
+  并回的部分：pg_trgm FTS 决定（tsvector 对 CJK 无分词）、materials.answer
+  工具、会话近史段入前缀、chat/pending API 形状与默认值。
+- **M4 互审轮闭环（2026-10-03 晚，PR #50 分支）**：协调人补推 B 草案
+  （`f8ef58a`）并出具裁定表（A1-A5/B1-B4①② + 附加两项）；B 随即落 r2
+  （`564f68a`：B1/B2/B3/A3/A5、B4①②、AgentRunRead 字段级、路径对齐
+  `/v1/agent/runs`、A1/A2/A4 引用，且完成对 A v2 的 delta 复核——12 项
+  承重语义在位）。**A 落 v3**（同分支）：A1（CONFIRMED 起不过期）、A2
+  （`chat:{session_id}:{client_message_id}` 映射 + §8 字段名统一）、B4②
+  （`current_state` kind + version）、B4① 确认、A4 终裁执行（pg_trgm +
+  <3 字符降级 + conftest 预装两条件）、跨契约吸收四项（chat/search、
+  消息级 DELETE、title 可选+回退、`pending_actions.result` 按 B1 三元组）。
+  **A 对 B 草案 r2 的正式评审已交：Approve 无阻塞**
+  （`HANDOFF/2026-10-03-a-review-m4-b-contract.md`，对 head `564f68a`
+  文本；§9 四问逐答；唯一互审要求 = AgentRunRead 补 `tool_calls[]`——
+  评审点 6 成立条件；小修 expires_at 非空；非阻塞建议「旧 → 新」渲染
+  约定与 A2 重发断言）。**待 B 补 tool_calls[] 镜像 + expires_at 非空后，
+  双稿具备冻结候选条件**（head 文本各持对方 approve）。
 - 流程规则追加：**开 PR 一律两步走——先 `gh pr create` 拿真实编号、
   再单独 `--add-reviewer`，挂完回读 `reviewRequests` 确认生效**
   （三起 reviewer 误挂/静默失败教训：#46/#47/#48 号段竞争 + 命令成功
