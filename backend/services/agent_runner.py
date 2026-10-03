@@ -226,7 +226,7 @@ async def _execute_proactive_run(session: Session, *, run: AgentRun) -> AgentRun
     assert tool is not None
 
     started = utcnow()
-    grant = _level3_grant(session, run.user_id, tool)
+    grant = _level3_grant(session, run.user_id, tool, args)
     references: list[dict[str, Any]] = [
         {
             "kind": "current_state",
@@ -416,12 +416,21 @@ def _tool_call_row(
     return row
 
 
-def _level3_grant(session: Session, user_id: uuid.UUID, tool: ToolDefinition) -> Any | None:
+def _level3_grant(
+    session: Session, user_id: uuid.UUID, tool: ToolDefinition, args: Any | None = None
+) -> Any | None:
+    """Shape- AND value-scoped Level-3 grant for THIS call (§5.3, ruling
+    2026-10-04). ``args`` are the validated tool arguments; a grant whose
+    scope does not cover them yields None — the caller falls back to a
+    PENDING confirmation card instead of auto-execution."""
+
     decision = evaluate_permission(
         session,
         user_id=user_id,
         action=tool.name,
         scope_validator=tool.scope_validator,
+        scope_matcher=tool.scope_matcher,
+        args=args,
     )
     if decision.allowed:
         from backend.models.permission import PermissionGrant
@@ -564,7 +573,10 @@ async def dispatch_confirmed_action(
         # user-confirmed action (``grant_snapshot`` NULL) carries its own
         # explicit per-action authorization — the confirm endpoint settled
         # that intent, so dispatch must not re-demand a grant.
-        grant = _level3_grant(session, row.user_id, tool)
+        # ``row.args`` (raw dict) here: the validated ``args`` model is only
+        # built below once the grant gate passes; the scope matcher accepts
+        # both shapes.
+        grant = _level3_grant(session, row.user_id, tool, row.args)
         if grant is None:
             failure = {
                 "code": "permission_denied",
@@ -906,7 +918,7 @@ async def execute_run(
                             summary_parts.append(exec_result["summary"])
                     else:
                         grant = (
-                            _level3_grant(session, run.user_id, tool)
+                            _level3_grant(session, run.user_id, tool, args)
                             if tool.required_level == PermissionLevel.AUTO
                             else None
                         )

@@ -465,6 +465,45 @@ def test_proactive_with_grant_auto_executes_and_budget_settles_then_exhausts(
     assert "budget exhausted" in summaries[2]
 
 
+def test_proactive_grant_scoped_to_other_category_falls_to_pending(
+    db_session, client, auth_headers
+) -> None:
+    """§5.3 value-level (ruling 2026-10-04), end to end: a Level-3 grant
+    scoped to "deadline" must not auto-execute a "replan" push — the
+    proactive settlement falls back to a PENDING card for explicit
+    confirmation, and confirming it executes under the user's own
+    authorization (budget still settling at delivery)."""
+
+    user_id = _me(client, auth_headers)
+    prefs = _prefs(db_session, user_id, enabled_categories=["replan"], daily_budget=1)
+    _notify_grant(db_session, user_id, categories=["deadline"])  # NOT replan
+
+    _overrun_suggestion(db_session, client, auth_headers, user_id)
+    run = queue_proactive_run(
+        db_session,
+        user_id=user_id,
+        trigger_kind="replan_trigger",
+        trigger_signature="value-scope-mismatch",
+    )
+    assert run is not None
+    asyncio.run(execute_run(db_session, run_id=run.id, provider=None))
+
+    action = db_session.scalar(select(PendingAction).where(PendingAction.agent_run_id == run.id))
+    assert action is not None
+    assert action.status == "PENDING"  # shape-valid grant, value mismatch
+    assert action.grant_snapshot is None  # never claimed grant-based authority
+
+    confirmed = client.post(
+        f"/v1/pending-actions/{action.id}/confirm",
+        json={"expected_version": action.version, "mutation_id": "m-value-scope"},
+        headers=auth_headers,
+    )
+    assert confirmed.status_code == 200, confirmed.text
+    body = confirmed.json()
+    assert body["status"] == "SUCCEEDED"
+    assert prefs.sent_count == 1  # user-confirmed delivery still pays the budget
+
+
 # ----------------------------------------------------- budget settlement --
 
 

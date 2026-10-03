@@ -67,6 +67,13 @@ class ToolDefinition:
     # Grant-scope validator for Level 3 tools (§5.3): strict schema, no
     # wildcards, unknown fields deny.
     scope_validator: Callable[[dict | None], bool] | None = None
+    # Value-level grant-scope match for Level 3 tools (§5.3, coordinator
+    # ruling 2026-10-04): the grant must cover THIS call's argument values
+    # (e.g. ``args.category in grant.scope["categories"]``), not merely have
+    # a well-formed scope. A Level-3 grant scoped to "deadline" pushes must
+    # not auto-execute a "replan" push — that becomes a PENDING card.
+    # ``validate_registry`` requires this for every Level-3 tool.
+    scope_matcher: Callable[[dict | None, Any], bool] | None = None
     execute: Callable[..., Awaitable[dict[str, Any]]] | None = None
 
     @property
@@ -123,6 +130,12 @@ def validate_registry() -> list[str]:
         # required_level property; a missing row already raised above.
         if tool.side_effect and tool.idempotency == "none":
             problems.append(f"{name}: side-effect tools must declare an idempotency mode")
+        # §5.3 fail-closed: auto-execution must be shape- AND value-scoped;
+        # a Level-3 tool without both gates cannot register.
+        if tool.required_level == 3 and (
+            tool.scope_validator is None or tool.scope_matcher is None
+        ):
+            problems.append(f"{name}: level-3 tools must declare scope_validator and scope_matcher")
         if tool.required_level == 2:
             # Level 2 only ever creates pending actions: the model's proposal
             # lands in the confirmation queue, so the failure mode is fixed

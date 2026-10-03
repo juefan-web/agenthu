@@ -164,6 +164,16 @@ class NotifyPushArgs(_StrictModel):
 NOTIFY_CATEGORY_REPLAN = "replan"
 
 
+def _notify_scope_matches(scope: dict | None, args: Any) -> bool:
+    """§5.3 value-level match (ruling 2026-10-04): the grant must name this
+    call's category — a "deadline"-scoped grant never auto-runs a "replan"
+    push. Accepts the validated args model (runner loop, proactive
+    settlement) or the stored args dict (dispatch re-verification)."""
+
+    category = args.get("category") if isinstance(args, dict) else getattr(args, "category", None)
+    return isinstance(scope, dict) and category in scope.get("categories", [])
+
+
 class _PlaceholderArgs(_StrictModel):
     """Registered-but-unimplemented Level 2 tools share a permissive input:
     validation of their real shape lands with their implementation."""
@@ -699,6 +709,9 @@ register_tool(
             frozenset({"categories", "channels", "local_time_window"}),
             list_keys=frozenset({"categories", "channels"}),
         ),
+        # §5.3 value-level: shape validation above plus this call's category
+        # must be inside the grant's categories list (ruling 2026-10-04).
+        scope_matcher=_notify_scope_matches,
         display_builder=lambda a: _display(
             f"发送通知（{a.category}）",
             [
