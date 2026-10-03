@@ -26,32 +26,50 @@ struct Snapshot {
     cookies: Vec<cookie_store::Cookie<'static>>,
 }
 
+/// 校园重定向策略：allowlist 内才跟随（follow 与 download 客户端共用）。
+fn campus_redirect_policy() -> reqwest::redirect::Policy {
+    reqwest::redirect::Policy::custom(|attempt| {
+        if attempt.previous().len() >= 10 || !allowed_campus_url(attempt.url()) {
+            attempt.error("Campus redirect rejected")
+        } else {
+            attempt.follow()
+        }
+    })
+}
+
 struct CampusClients {
     follow: reqwest::Client,
     manual: reqwest::Client,
+    /// 课件下载（material_transfer）：大文件不给总时限（只留连接时限），
+    /// 重定向同一 allowlist 策略，同一 cookie jar（learn 下载需登录态）。
+    download: reqwest::Client,
 }
 
 impl CampusClients {
     fn new(jar: Arc<CookieStoreMutex>) -> Result<Self, String> {
         let follow = reqwest::Client::builder()
-            .redirect(reqwest::redirect::Policy::custom(|attempt| {
-                if attempt.previous().len() >= 10 || !allowed_campus_url(attempt.url()) {
-                    attempt.error("Campus redirect rejected")
-                } else {
-                    attempt.follow()
-                }
-            }))
+            .redirect(campus_redirect_policy())
             .cookie_provider(Arc::clone(&jar))
             .timeout(Duration::from_secs(30))
             .build()
             .map_err(|_| "Campus transport unavailable")?;
         let manual = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
-            .cookie_provider(jar)
+            .cookie_provider(Arc::clone(&jar))
             .timeout(Duration::from_secs(30))
             .build()
             .map_err(|_| "Campus transport unavailable")?;
-        Ok(Self { follow, manual })
+        let download = reqwest::Client::builder()
+            .redirect(campus_redirect_policy())
+            .cookie_provider(jar)
+            .connect_timeout(Duration::from_secs(15))
+            .build()
+            .map_err(|_| "Campus transport unavailable")?;
+        Ok(Self { follow, manual, download })
+    }
+
+    pub fn downloader(&self) -> &reqwest::Client {
+        &self.download
     }
 }
 
@@ -65,6 +83,19 @@ struct CampusSession {
 
 #[derive(Default)]
 pub struct CampusState(Mutex<CampusSession>);
+
+impl CampusState {
+    /// 课件下载客户端（material_transfer）：与 campus_request 同一把锁内
+    /// 惰性初始化；clone 的 Client 共享同一 cookie jar。
+    pub async fn download_client(&self) -> Result<reqwest::Client, String> {
+        let mut session = self.0.lock().await;
+        if session.clients.is_none() {
+            let jar = Arc::clone(&session.jar);
+            session.clients = Some(CampusClients::new(jar)?);
+        }
+        Ok(session.clients.as_ref().expect("campus clients initialized").downloader().clone())
+    }
+}
 
 pub fn allowed_campus_url(url: &url::Url) -> bool {
     let host = url.host_str().unwrap_or("");

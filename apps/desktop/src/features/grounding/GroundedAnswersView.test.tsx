@@ -6,6 +6,10 @@ import { BackendHttpError } from "../../backend/client";
 import { AppServicesContext, type AppServices } from "../../app/services";
 import { GroundedAnswersView } from "./GroundedAnswersView";
 
+vi.mock("../../campus/instance", () => ({
+  campus: { getCourses: vi.fn().mockResolvedValue([]), getCourseFiles: vi.fn().mockResolvedValue([]) },
+}));
+
 const listFiles = vi.fn();
 const getGroundingConsent = vi.fn();
 const setGroundingConsent = vi.fn();

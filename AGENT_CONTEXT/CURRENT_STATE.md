@@ -769,6 +769,26 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   已删/已换版本（checksum 不匹配）→ 失效锚点标注；历史（offset 拉全量
   + 删除入口）。课件上传 UI 不在本切片（后续项）。127 测试（+11）/
   build 绿；E1 主视图正则扩入「讲解」。
+- **B ④ 课件上传入口（2026-10-02，PR #46，叠置 #44 之上，待 review）**：
+  按 `TASKS/m3-materials-upload-ui.md` 落地。**§5 三预埋点实测先行**：
+  ① vendor 字段口径——`learn/getFileList` 已有实测归一化映射
+  （wjid/bt/wjlx/scsj/fileSize，含「文件消失」根因注记），Zod 按
+  `CourseFile` 镜像不发明第二套；② Windows 临时句柄——探针证明
+  写→读流后 drop 可删，实现用 `tempfile::tempfile()` 仅句柄 RAII（无
+  路径、含 panic 全失败路径无残留）；③ 大 POST body——**字节不走
+  WebView IPC**（§3.3），Rust reqwest multipart 流式实测 12MB loopback
+  8KB 块 10.7s / 1MB BufReader+ReaderStream 5.3s → 256MB 上限 ≈2min，
+  600s 传输预算 5 倍余量，无需分块（两处 API 实测修正：
+  `Part::stream_with_length(Body)`；`From<tokio::fs::File>` 而非
+  std File）。**实现**：列表 = 既有 `campus_request`+cookie jar（D8
+  路径，`getCourseFiles` 走 read() 自动重登）；下载+上传 = 新 Rust 单
+  命令 `material_upload`（campus 下载客户端无总时限共享 jar；Backend
+  上传长时限客户端 + B-4 origin 谓词；multipart 表单带 course_name）；
+  UI = 讲解页课件面板（按需拉取 gcTime 0 不缓存、单文件显式上传、
+  §3.5 同意门双态如实标注、status 生命周期按文件名对应透出、校园/
+  Backend 失败显式透出不静默空列表）。验收 2（临时无残留）/3（React
+  零字节）由构造保证；打包端到端（验收 1/4）待真机联调。cargo 17
+  测试 + vitest 139（+12：adapter 3 + wrapper 3 + panel 6）/build 绿。
 - **#41 交付细节与竞态记录（2026-10-02，A 侧汇报，协调人核验；该汇报的
   「当前局面」一节已过期——七个 PR 实际已全部合并，A 报告时读的是合并前
   状态）**：增量声明逐项坐实——迁移 `c8f2a14d6b93`（material_chunks +

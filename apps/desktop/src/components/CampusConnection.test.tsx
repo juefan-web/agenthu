@@ -15,6 +15,7 @@ vi.mock("../campus/instance", () => ({
     retryTwoFactor: vi.fn(),
     logout: vi.fn(),
     getCourses: vi.fn(),
+    getCourseFiles: vi.fn(),
     getAssignments: vi.fn(),
     getSchedule: vi.fn(),
     getAcademicCalendar: vi.fn(),

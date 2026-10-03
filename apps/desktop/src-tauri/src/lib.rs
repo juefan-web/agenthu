@@ -1,5 +1,6 @@
 mod backend_proxy;
 mod campus;
+mod material_transfer;
 mod vault;
 
 use rusqlite::{params, Connection};
@@ -279,6 +280,7 @@ pub fn run() {
             backend_token_get, backend_token_set, backend_token_clear,
             backend_proxy::backend_request, backend_proxy::backend_origin_list,
             backend_proxy::backend_origin_add, backend_proxy::backend_origin_remove,
+            material_transfer::material_upload,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Agenthu");

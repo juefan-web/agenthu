@@ -32,6 +32,23 @@ export interface CampusCourse {
   url: string;
 }
 
+/** 课程课件（learn 域 getFileList，TASKS/m3-materials-upload-ui.md §3.1）：
+ *  按需拉取的会话态数据——不进采集循环、不落任何 Event（§2 裁定）。 */
+export interface CampusCourseFile {
+  id: string;
+  courseId: string;
+  title: string;
+  uploadTime: string;
+  /** 会话态下载 URL：仅作当次上传命令的入参，不进 Event/本地存储/同步
+   *  队列（D-033：downloadUrl 不入 Event）。 */
+  downloadUrl: string;
+  fileType?: string;
+  /** 人类可读大小（vendor 原样，如 "2.3MB"）。 */
+  size?: string;
+  description?: string;
+  important?: boolean;
+}
+
 export interface CampusAssignment {
   id: string;
   courseId: string;
@@ -101,6 +118,7 @@ export interface CampusAdapter {
   retryTwoFactor(): Promise<SessionStatus | null>;
   logout(): Promise<void>;
   getCourses(): Promise<CampusCourse[]>;
+  getCourseFiles(courseId: string): Promise<CampusCourseFile[]>;
   getAssignments(): Promise<CampusAssignment[]>;
   getSchedule(range: DateRange): Promise<CampusScheduleEntry[]>;
   getAcademicCalendar(): Promise<CampusCalendar>;

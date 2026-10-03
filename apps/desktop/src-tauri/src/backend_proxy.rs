@@ -15,6 +15,17 @@ const MAX_BACKEND_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 #[derive(Default)]
 pub struct BackendProxy {
     client: once_cell_proxy::Client,
+    /// 课件上传专用长时限客户端（material_transfer：>10MB multipart 的
+    /// 总时限 600s，30s 会掐断真实课件上传）。
+    upload_client: once_cell_proxy::Client<true>,
+}
+
+impl BackendProxy {
+    /// 语义与其余 Backend 流量一致：无 cookie、不跟随重定向、同一
+    /// allowlist 谓词（在 material_transfer 内校验）。
+    pub fn uploader(&self) -> &reqwest::Client {
+        self.upload_client.get()
+    }
 }
 
 /// 延迟构建的 reqwest Client（无 cookie、不跟随重定向——Authorization 永不
@@ -22,24 +33,29 @@ pub struct BackendProxy {
 mod once_cell_proxy {
     use std::sync::OnceLock;
 
-    pub struct Client(OnceLock<reqwest::Client>);
+    pub struct Client<const LONG: bool = false>(OnceLock<reqwest::Client>);
 
-    impl Client {
+    impl<const LONG: bool> Client<LONG> {
         pub fn new() -> Self {
             Self(OnceLock::new())
         }
         pub fn get(&self) -> &reqwest::Client {
             self.0.get_or_init(|| {
+                let timeout = if LONG {
+                    std::time::Duration::from_secs(600)
+                } else {
+                    std::time::Duration::from_secs(30)
+                };
                 reqwest::Client::builder()
                     .redirect(reqwest::redirect::Policy::none())
-                    .timeout(std::time::Duration::from_secs(30))
+                    .timeout(timeout)
                     .build()
                     .expect("backend client builds")
             })
         }
     }
 
-    impl Default for Client {
+    impl<const LONG: bool> Default for Client<LONG> {
         fn default() -> Self {
             Self::new()
         }
@@ -97,7 +113,7 @@ pub fn acceptable_added_origin(raw: &str) -> Result<String, String> {
 }
 
 /// 出厂默认（构建期）+ 用户持久化源的并集。
-fn effective_origins(db: &QueueDb) -> Result<BTreeSet<String>, String> {
+pub(crate) fn effective_origins(db: &QueueDb) -> Result<BTreeSet<String>, String> {
     let mut origins = BTreeSet::new();
     if let Some(build_time) = BUILD_TIME_BACKEND_ORIGIN {
         origins.insert(build_time.to_string());
