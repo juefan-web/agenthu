@@ -91,6 +91,16 @@ describe("MaterialsPanel（课件上传入口，M3 §3）", () => {
     expect(await screen.findByText("已抽取")).toBeTruthy();
   });
 
+  it("scopes status badges to the current course (same filename across courses)", async () => {
+    // 跨课程同名文件：另一门课的同名文件是 extracted，不该串到本课
+    renderPanel({ backendFiles: [
+      { ...backendFile, course_name: "数字逻辑", status: "extracted" },
+      { ...backendFile, status: "uploaded" },
+    ] });
+    expect(await screen.findByText("已上传 · 抽取进行中")).toBeTruthy();
+    expect(screen.queryByText(/^已抽取$/)).toBeNull();
+  });
+
   it("shows the campus-auth failure as an explicit error", async () => {
     getCourses.mockReset().mockRejectedValue(new Error("校园账号未连接"));
     renderPanel();

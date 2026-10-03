@@ -845,6 +845,15 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   僵死会让 invoke 无限挂起、按钮停在「转送中…」，**建议验收轮前
   落地**；② status 徽标建图按课程过滤（`backendStatusByName` 仅按
   filename，跨课程同名串标签，纯外观）。
+- **B 跟进落地（2026-10-02，PR #48，①② 同批）**：① 下载客户端
+  `read_timeout(30s)`（无总时限语义不变——慢而流动的传输不受影响，
+  30s 无字节进展即中止）；回归测试用 1s 缩时验证僵死源在时限内报错
+  （reqwest 源码核实 timer 在等响应头阶段同样武装）。**测试过程发现**
+  ：客户端超时中止后 Windows 对端不一定 FIN，测试服务端需自带读超时
+  才能 join——已注释在测试内。② `backendStatusByName` 先按
+  `course_name === courseName` 过滤再建图，补跨课程同名用例（另一门课
+  的 extracted 不串到本课的「抽取进行中」）。cargo 18（+1）/
+  vitest 140（+1）/build 绿。
 - 流程规则不变：分支从 main 拉出；跨边界先冻结；PR 互审（A=rotcar07，
   B=juefan-web）；**并行会话各用独立 worktree**（2026-10-01 混合提交事故
   后的新规则）；**openapi.json 冲突一律 rebase 后 `--write` 重导**——CI

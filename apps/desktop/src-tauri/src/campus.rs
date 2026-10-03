@@ -63,6 +63,10 @@ impl CampusClients {
             .redirect(campus_redirect_policy())
             .cookie_provider(jar)
             .connect_timeout(Duration::from_secs(15))
+            // 无总时限（大文件 + 慢网络）但必须有读超时：否则一条僵死
+            // 连接（对端停止发送且不断开）会让课件下载无限挂起（#46 评审
+            // 观察；30s 无任何字节进展即中止，慢而流动的传输不受影响）。
+            .read_timeout(Duration::from_secs(30))
             .build()
             .map_err(|_| "Campus transport unavailable")?;
         Ok(Self { follow, manual, download })
