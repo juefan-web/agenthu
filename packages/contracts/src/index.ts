@@ -177,19 +177,19 @@ export const DecisionReferenceSchema = z.object({
   kind: z.enum(["event", "memory", "goal", "plan", "task", "material", "chat_message", "current_state"]),
   id: z.string(),
   label: z.string(),
-  state: z.enum(["available", "source_deleted", "version_mismatch"]).optional(),
+  state: z.enum(["available", "source_deleted", "version_mismatch"]).nullable().optional(),
   locator: z.object({
-    page: z.number().int().optional(),
-    quote: z.string().optional(),
-    occurred_at: z.string().optional(),
-    file_id: z.string().optional(),
-    checksum: z.string().optional(),
-    chunk_id: z.string().optional(),
-    span_start: z.number().int().optional(),
-    span_end: z.number().int().optional(),
-    message_id: z.string().optional(),
-    state_version: z.number().int().optional(),
-  }).optional(),
+    page: z.number().int().nullable().optional(),
+    quote: z.string().nullable().optional(),
+    occurred_at: z.string().nullable().optional(),
+    file_id: z.string().nullable().optional(),
+    checksum: z.string().nullable().optional(),
+    chunk_id: z.string().nullable().optional(),
+    span_start: z.number().int().nullable().optional(),
+    span_end: z.number().int().nullable().optional(),
+    message_id: z.string().nullable().optional(),
+    state_version: z.number().int().nullable().optional(),
+  }).nullable().optional(),
 });
 
 export const DecisionBasisSchema = z.object({
@@ -214,19 +214,19 @@ export const PendingActionReadSchema = z.object({
     summary: z.string(),
     parameters: z.array(z.object({ label: z.string(), value: z.string() })),
     impact: z.string(),
-    risk_note: z.string().optional(),
+    risk_note: z.string().nullable().optional(),
   }),
   basis: DecisionBasisSchema,
   // 非空（D-034 裁定）：服务端恒有值；「确认后不再过期」是状态机行为，
   // 不以置空字段表达。
   expires_at: IsoDateTime,
   retryable: z.boolean(),
-  safe_error: z.object({ code: z.string(), message: z.string() }).optional(),
+  safe_error: z.object({ code: z.string(), message: z.string() }).nullable().optional(),
   result: z.object({
     summary: z.string(),
-    resource_type: z.string().optional(),
-    resource_id: z.string().optional(),
-  }).optional(),
+    resource_type: z.string().nullable().optional(),
+    resource_id: z.string().nullable().optional(),
+  }).nullable().optional(),
   created_at: IsoDateTime,
   updated_at: IsoDateTime,
 });
@@ -238,7 +238,7 @@ export const AgentRunToolCallSchema = z.object({
   status: z.string(),
   started_at: IsoDateTime.nullable(),
   ended_at: IsoDateTime.nullable(),
-  error_code: z.string().optional(),
+  error_code: z.string().nullable().optional(),
 });
 
 export const AgentRunReadSchema = z.object({
@@ -247,9 +247,9 @@ export const AgentRunReadSchema = z.object({
   invocation_kind: z.enum(["chat", "proactive_trigger", "pending_action_resume", "retry"]),
   trigger_ref: z.object({
     kind: z.string(),
-    event_id: z.string().optional(),
-    trigger_signature: z.string().optional(),
-    chat_message_id: z.string().optional(),
+    event_id: z.string().nullable().optional(),
+    trigger_signature: z.string().nullable().optional(),
+    chat_message_id: z.string().nullable().optional(),
   }),
   provider: z.object({
     name: z.string(),
@@ -271,9 +271,9 @@ export const AgentRunReadSchema = z.object({
     tool_tokens: z.number().int().nonnegative(),
   }).nullable(),
   result: z.object({
-    summary: z.string().optional(),
+    summary: z.string().nullable().optional(),
     degraded: z.boolean(),
-    degrade_code: z.string().optional(),
+    degrade_code: z.string().nullable().optional(),
   }).nullable(),
   failure: z.object({
     code: z.string(),

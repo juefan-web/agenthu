@@ -936,9 +936,14 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   ② `searchChat` 未实现——搜索结果形状未在冻结文本字段级定义，归
   B2 与 A1 OpenAPI 对齐时补。
 - **B1 自修 + A1（#52）交叉评审（2026-10-03）**：评审 A1 时发现 B1 缺陷
-  ——`ORMModel` 不 exclude_none，None 投影列以显式 null 下发，仅
+  ——`ORMModel` 不带 exclude_none，None 投影列以显式 null 下发，仅
   `.optional()` 会拒收；`2e484c0` 改三投影列为 `.nullable().optional()`
-  （包 + 镜像 + 回归测试，145/14/tsc/drift 全绿）。#52 内容核验通过
+  （包 + 镜像 + 回归测试，145/14/tsc/drift 全绿）。**A 评审 #51 又出
+  同类五处（chat 三列 + safe_error/result），且"其余可空字段写法正确"
+  的断言不成立——嵌套面同样发 null（trigger_ref 三列、locator 全列、
+  state、risk_note、resource_type/id、error_code、summary/degrade_code），
+  B 做了全类清扫（累计 26 处字段实例，含 A 的五处），补显式 null
+  全覆盖回归测试。**#52 内容核验通过
   （schemas 与 B1 逐字段一致、迁移/软撤销/政策行/读面路径全对），但
   request-changes：除映射键改名外，**A1 写入 fixture 的整份 staged 副本
   （+203 行）须删除**——与 B1 镜像同锚点，rebase 必冲突且四个同名
