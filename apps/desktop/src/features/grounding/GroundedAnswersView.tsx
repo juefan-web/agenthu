@@ -38,8 +38,15 @@ function askErrorText(error: unknown): string {
   return errorText(error);
 }
 
-/** 回答正文：把存活引用标记渲染为可点击引用点（与引用卡双向跳转）。 */
-function AnswerText({ answer, highlighted }: { answer: MaterialAnswer; highlighted: number | null }) {
+/** 回答正文：把存活引用标记渲染为可点击引用点（与引用卡双向跳转）。
+ *  idPrefix 给「最新回答卡」命名空间——它常与历史列表里的同一条回答
+ *  同时渲染，共用 answer.id 拼 DOM id 会重复，跳转/高亮命中第一处
+ *  （E5-UI 验收轮观察）。 */
+function AnswerText({ answer, highlighted, idPrefix = "" }: {
+  answer: MaterialAnswer;
+  highlighted: number | null;
+  idPrefix?: string;
+}) {
   const parts: ReactNode[] = [];
   let cursor = 0;
   let survivor = 0;
@@ -52,10 +59,10 @@ function AnswerText({ answer, highlighted }: { answer: MaterialAnswer; highlight
       <button
         key={`m${match.index}`}
         type="button"
-        id={`marker-${answer.id}-${index}`}
+        id={`${idPrefix}marker-${answer.id}-${index}`}
         className={`citation-marker ${highlighted === index ? "highlighted" : ""}`}
         title="跳到引用"
-        onClick={() => scrollToId(`citation-${answer.id}-${index}`)}
+        onClick={() => scrollToId(`${idPrefix}citation-${answer.id}-${index}`)}
       >
         「{match[1]}」<sup>[{match[2]}]</sup>
       </button>,
@@ -67,11 +74,12 @@ function AnswerText({ answer, highlighted }: { answer: MaterialAnswer; highlight
   return <p className="answer-text">{parts}</p>;
 }
 
-function CitationList({ answer, filesById, highlighted, onHighlight }: {
+function CitationList({ answer, filesById, highlighted, onHighlight, idPrefix = "" }: {
   answer: MaterialAnswer;
   filesById: Map<string, { filename: string; checksum: string | null }>;
   highlighted: number | null;
   onHighlight: (index: number) => void;
+  idPrefix?: string;
 }) {
   if (answer.citations.length === 0) return null;
   return <ul className="citation-list">
@@ -79,8 +87,8 @@ function CitationList({ answer, filesById, highlighted, onHighlight }: {
       const file = filesById.get(citation.file_id);
       const stale = file === undefined;
       const outdated = file !== undefined && file.checksum !== null && citation.checksum !== null && file.checksum !== citation.checksum;
-      return <li key={index} id={`citation-${answer.id}-${index}`} className={`citation-card ${highlighted === index ? "highlighted" : ""}`}>
-        <button type="button" className="citation-source" onClick={() => { onHighlight(index); scrollToId(`marker-${answer.id}-${index}`); }}>
+      return <li key={index} id={`${idPrefix}citation-${answer.id}-${index}`} className={`citation-card ${highlighted === index ? "highlighted" : ""}`}>
+        <button type="button" className="citation-source" onClick={() => { onHighlight(index); scrollToId(`${idPrefix}marker-${answer.id}-${index}`); }}>
           [{index + 1}] {file ? file.filename : `文件已删除（${citation.file_id.slice(0, 8)}…）`}
           {citation.page !== null ? ` · 第 ${citation.page} 页` : ""}
         </button>
@@ -92,10 +100,11 @@ function CitationList({ answer, filesById, highlighted, onHighlight }: {
   </ul>;
 }
 
-function AnswerCard({ answer, filesById, onDelete }: {
+function AnswerCard({ answer, filesById, onDelete, idPrefix = "" }: {
   answer: MaterialAnswer;
   filesById: Map<string, { filename: string; checksum: string | null }>;
   onDelete?: (answer: MaterialAnswer) => void;
+  idPrefix?: string;
 }) {
   const [highlighted, setHighlighted] = useState<number | null>(null);
   return <article className="answer-card">
@@ -103,9 +112,9 @@ function AnswerCard({ answer, filesById, onDelete }: {
       <strong>{answer.question}</strong>
       <button className="ghost-button" onClick={() => onDelete(answer)}>删除</button>
     </div>}
-    <AnswerText answer={answer} highlighted={highlighted} />
+    <AnswerText answer={answer} highlighted={highlighted} idPrefix={idPrefix} />
     <span className="section-meta">{answerMetaText(answer)}</span>
-    <CitationList answer={answer} filesById={filesById} highlighted={highlighted} onHighlight={setHighlighted} />
+    <CitationList answer={answer} filesById={filesById} highlighted={highlighted} onHighlight={setHighlighted} idPrefix={idPrefix} />
   </article>;
 }
 
@@ -225,7 +234,7 @@ export function GroundedAnswersView() {
         </div>
       </div>
       {ask.error && <p className="error-text" role="alert">{askErrorText(ask.error)}</p>}
-      {latest && <AnswerCard answer={latest} filesById={filesById} />}
+      {latest && <AnswerCard answer={latest} filesById={filesById} idPrefix="latest-" />}
     </>}
 
     {enabled && <div className="section-heading">
