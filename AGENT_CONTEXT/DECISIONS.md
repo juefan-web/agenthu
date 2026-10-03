@@ -740,3 +740,44 @@ Tauri/OneTHU learn 域现拉文件列表（会话态，不落 Event、不缓存�
 采集更保守，与 §1 表精神同向。`downloadUrl` 不进 Event 约束不变。
 实现载体 = `TASKS/m3-materials-upload-ui.md`；A/B 异议在该任务 review
 时提出，未异议即生效。
+
+## D-034 — M4 phase-0 契约冻结（Agent 运行时/审计 + 动作确认/Chat）
+
+Status: accepted（2026-10-03；规范文本 = `TASKS/m4-agent-runtime-audit-contract.md`
+（v3，`92e2c24`）+ `TASKS/m4-action-confirmation-chat-contract.md`（r3，
+`50b86f7`），随 PR #50 合并 `05330f3` 进 main。A/B 互审 approve 均 head
+绑定：A 契约 v3 ← B approve（PR #50，10:08Z，附 head 字节不变声明）；
+B 契约 r3 ← A approve（`HANDOFF/2026-10-03-a-review-m4-b-contract.md` +
+PR #50 评论 09:38Z）。本条为冻结索引，冲突时以规范文本为准。草案由
+模型辅助生成（gpt6），经 A/B 三轮互审 + 协调人逐裁定核验后采纳）。
+
+Decision 要点：
+- **双契约生效**：`agent_runs`（attempt/operation_key 二维幂等、
+  lease/heartbeat/watchdog 先查下游幂等键再结算、context_snapshot 只存
+  引用+checksum、`content_revision` 前缀稳定排序）；`pending_actions`
+  （8 态状态机、**CONFIRMED 起不再过期**、`(pending_action_id,
+  mutation_id)` 响应缓存、创建时固定 idempotency_key）；工具注册表
+  （ACTION_POLICY 数据化、新增 `materials.answer`、`focus.start` 校正
+  L2）；上下文装配（token 预算、untrusted 边界、会话近史段、逐字节
+  fixture）；provider 工具调用协议（capability 协商、store=False 继承、
+  4 turns/8 calls 上限）；Chat API（202+轮询、pg_trgm 检索、消息级
+  删除）；通知偏好与打扰预算；`AgentRunRead.tool_calls[]` 读面。
+- **pg_trgm 显式取代 m4-phase0 任务 §1.8 的 tsvector 预设**（simple
+  对 CJK 无分词、zhparser 不在镜像；<3 字符查询走过滤降级；conftest
+  预装扩展，#35 先例）。
+- **grant 收紧**：`grant.level==3` 仅自动执行工具自身声明的 L3 动作，
+  L2 永远逐次确认（修 `fnmatch` 通配 + `granted>=required` 的越级
+  漏洞，permissions.py:100-145）；DELETE grants 改软撤销（revoked_at
+  回填）。
+- **全局「Agent 模型上下文」同意 = 实施切片 2 门禁**：任何携带
+  CurrentState/Memory/chat 的 provider 调用上线前必须先落地该同意
+  （默认关）；M3 课程同意只覆盖 chunk，不构成对三者的授权。
+- **审计降噪及成立条件**：L0 只读成功不逐行写 audit（进
+  run.tool_calls/snapshot），权限/状态/副作用账本与状态转换同事务；
+  成立条件 = 审计面可 join `AgentRunRead.tool_calls[]`（双方已落文）。
+- audit 递归白名单脱敏（`redact()` 顶层过滤升级）；`result.degraded/
+  degrade_code` 标注断供降级（无 DEGRADED 终态）；断供时确定性计划/
+  重排/Focus 必须仍可用（M4 出口判据）。
+
+Revisit：M4 出口 e2e（E6）落地后复核轮询口径与打扰预算默认值；
+HNSW/检索重做桶 backlog 不变（触发条件 = 语料规模数据）。

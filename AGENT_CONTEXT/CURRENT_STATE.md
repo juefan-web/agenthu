@@ -1,6 +1,6 @@
 # CURRENT_STATE
 
-Updated: 2026-10-03 · Milestone: **M4（Agent 运行时、Chat 与主动 Agent）——先决文档阶段**。M3 已收口（main `5b381fd`，D-030 口径出口判据「代码 + 真机双证」达成，见 2026-10-03 收口条目）。M2 已关闭（main `e2a80e6`，出口判据「四绿三窗口双人」达成，见 2026-10-02 条目）。M0/M1 已合并（PR #1-#15，round-5 数据闭环验收通过 + e2e 首跑解锁）；对概念基线的完整差距评估见 `HANDOFF/2026-09-30-implementation-evaluation.md`（§8 七子句：4 达成 + 1 部分 + 2 缺失），M2 出口判据即该报告末节的场景化 §8 全句。路线大纲（M2–M8）已经 A/B 确认采纳（**D-030 accepted**，含三处修订：M3 同步产出删除/依赖图设计、TECH_STACK 依赖方已注取代、m2-breakdown 已对齐大纲口径）。
+Updated: 2026-10-03 · Milestone: **M4（Agent 运行时、Chat 与主动 Agent）——实施阶段（phase-0 契约已冻结 D-034，PR #50 合并 `05330f3`）**。M3 已收口（main `5b381fd`，D-030 口径出口判据「代码 + 真机双证」达成，见 2026-10-03 收口条目）。M2 已关闭（main `e2a80e6`，出口判据「四绿三窗口双人」达成，见 2026-10-02 条目）。M0/M1 已合并（PR #1-#15，round-5 数据闭环验收通过 + e2e 首跑解锁）；对概念基线的完整差距评估见 `HANDOFF/2026-09-30-implementation-evaluation.md`（§8 七子句：4 达成 + 1 部分 + 2 缺失），M2 出口判据即该报告末节的场景化 §8 全句。路线大纲（M2–M8）已经 A/B 确认采纳（**D-030 accepted**，含三处修订：M3 同步产出删除/依赖图设计、TECH_STACK 依赖方已注取代、m2-breakdown 已对齐大纲口径）。
 · 集成分支 `integration/study-time-m0` 已合并 Backend（`61fcf82`）与客户端
 （`a2693e9`），冲突已解决，双侧 CI 与联合 drift check 全绿（draft PR #1）。
 · **Merge-1 Windows 构建包人工测试结论：不建议转正合并**（见
@@ -907,6 +907,19 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   再单独 `--add-reviewer`，挂完回读 `reviewRequests` 确认生效**
   （三起 reviewer 误挂/静默失败教训：#46/#47/#48 号段竞争 + 命令成功
   返回 ≠ 挂载生效）。
+- **M4 phase-0 闭环与冻结（2026-10-03，协调人终审）**：双契约互审完成
+  ——A 契约 v3（`92e2c24`）持 B 的 head 绑定 approve（PR #50，
+  10:08Z，附「50b86f7 处逐字节不变」声明，协调人 diff 验证属实）；
+  B 契约 r3（`50b86f7`）持 A 的 approve（HANDOFF + PR 评论 09:38Z）。
+  终审核验：四项代码断言（fnmatch 越级 / 硬删 / redact 顶层 /
+  onupdate 扰动）三方独立复核一致；协调人裁定 A1/A2/B4①② 全部落文；
+  r3 三修（`AgentRunRead.tool_calls[]` 逐字段镜像、`expires_at` 非空、
+  旧→新渲染）在库。**PR #50 合并 `05330f3`，12/12 绿**；冻结条目
+  **D-034**（含 pg_trgm 取代 §1.8 预设、grant 收紧、全局模型上下文
+  同意 = 切片 2 门禁、8 态 + CONFIRMED 不过期、content_revision 排序、
+  审计降噪成立条件）。**实施分派 = `TASKS/m4-implementation-slices.md`**
+  （B1/A1 契约代码化同批先行 → A2 运行时含同意门禁 → A3/B2 并行 →
+  B3 = E6 出口 e2e）。
 - 流程规则不变：分支从 main 拉出；跨边界先冻结；PR 互审（A=rotcar07，
   B=juefan-web）；**并行会话各用独立 worktree**（2026-10-01 混合提交事故
   后的新规则）；**openapi.json 冲突一律 rebase 后 `--write` 重导**——CI
