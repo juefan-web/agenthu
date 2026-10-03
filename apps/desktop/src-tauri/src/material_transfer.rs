@@ -312,6 +312,51 @@ mod tests {
         assert!(!path.exists(), "temp file must be gone after drop");
     }
 
+    /// #46 评审跟进：下载客户端的 read_timeout 语义——服务端接受连接后
+    /// 一个字节都不发（僵死连接）必须在中止时限内报错，而不是无限挂起。
+    /// 测试用 1s（生产 30s，见 campus.rs download client），避免拖慢套件。
+    #[test]
+    fn a_stalled_download_source_errors_within_the_read_timeout() {
+        use std::io::Write as _;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            // 客户端因 read_timeout 中止后其 socket 未必立刻可读地关闭
+            // （实测 Windows 上对端不 FIN）——测试服务端自带读超时兜底，
+            // 保证线程可 join、套件不挂。
+            stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            let mut buffer = [0u8; 1024];
+            // 读掉请求头后保持连接但不发任何响应字节（僵死）
+            loop {
+                match stream.read(&mut buffer) {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => {}
+                }
+            }
+        });
+
+        let started = Instant::now();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let result = runtime.block_on(async {
+            let client = reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .read_timeout(Duration::from_secs(1))
+                .build()
+                .unwrap();
+            client
+                .get(format!("http://127.0.0.1:{port}/b/download?wjid=stalled"))
+                .send()
+                .await
+        });
+        assert!(result.is_err(), "stalled source must error, not hang");
+        assert!(started.elapsed() < Duration::from_secs(5), "error must arrive near the 1s read timeout");
+        server.join().expect("stalled server must end after client aborts");
+    }
+
     fn find_head_end(buffer: &[u8]) -> Option<usize> {
         buffer.windows(4).position(|w| w == b"\r\n\r\n")
     }

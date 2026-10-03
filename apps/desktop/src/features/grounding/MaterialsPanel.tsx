@@ -48,7 +48,13 @@ export function MaterialsPanel({ courseName, consentEnabled, backendFiles }: {
     retry: false,
     gcTime: 0,
   });
-  const backendStatusByName = new Map(backendFiles.map((file) => [file.filename, file.status]));
+  // 先按课程过滤再建图：backendFiles 是全课程列表，跨课程同名文件会
+  // 互相串状态标签（#46 评审观察）
+  const backendStatusByName = new Map(
+    backendFiles
+      .filter((file) => file.course_name === courseName)
+      .map((file) => [file.filename, file.status]),
+  );
 
   const upload = useMutation({
     mutationFn: (file: CampusCourseFile) => uploadCourseMaterial({
