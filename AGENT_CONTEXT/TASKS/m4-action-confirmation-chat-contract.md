@@ -1,6 +1,9 @@
 # M4-B 草案：动作确认与 Chat 交互契约
 
-状态：**draft，待 A 互审**（2026-10-03）。本文件是
+状态：**draft r2，待 A 互审**（2026-10-03；r2 并入 B 对 A 契约 v2 的
+delta 复核与协调人裁定：B1/B2/B3/A3/A5、B4①② 入 kind 枚举、
+`AgentRunRead` 字段级化、路径对齐 `/v1/agent/runs`、A1 过期语义与
+A2 幂等键映射的引用）。本文件是
 `m4-phase0-prereq-docs.md` 的 B 侧产出，依赖
 [m4-agent-runtime-audit-contract.md](m4-agent-runtime-audit-contract.md) 的
 `PendingActionRead`、`DecisionBasis`、权限与降级语义。它冻结 UI 所需的
@@ -29,13 +32,18 @@ E5 的构建包 + CDP 验收模式；A 侧 draft 的 pending action / run 契约
 
 ```ts
 type DecisionReference = {
-  kind: "event" | "memory" | "goal" | "plan" | "task" | "material";
+  // chat_message / current_state 为冻结裁定新增（B4①②）：聊天引用是
+  // 定位不是正文；CurrentState 携 version，派生数字只在 references
+  // 出现、不重复进 summary。
+  kind: "event" | "memory" | "goal" | "plan" | "task" | "material"
+      | "chat_message" | "current_state";
   id: string;
   label: string;
   state?: "available" | "source_deleted" | "version_mismatch";
   locator?: { page?: number; quote?: string; occurred_at?: string;
     file_id?: string; checksum?: string; chunk_id?: string;
-    span_start?: number; span_end?: number };
+    span_start?: number; span_end?: number;
+    message_id?: string; state_version?: number };
 };
 
 type DecisionBasis = {
@@ -43,6 +51,9 @@ type DecisionBasis = {
   summary: string;
   references: DecisionReference[];
   rule_versions: Record<string, string>;
+  // B1（必修）：A 契约 §3.1 的服务端字段，共享 Zod 必须含全字段。
+  // UI 不渲染它，drift check 靠它保双源一致。
+  selected_tool_call_ids: string[];
 };
 
 type PendingActionRead = {
@@ -69,6 +80,11 @@ type PendingActionRead = {
 cookie、账号、token 或课件正文。所有字段进共享 Zod schema，随后纳入 D-021
 OpenAPI/Zod drift check。
 
+命名分层（B1 裁定）：**动作级**结果统一叫 `result`（上表的
+`{summary, resource_type?, resource_id?}` 结构化三元组）；
+**工具调用级**保留 A 契约 `tool_calls[].result_ref`——同一事实两个粒度，
+不混名。
+
 API 冻结目标：
 
 | 请求 | 成功 | 客户端必须处理 |
@@ -84,9 +100,14 @@ API 冻结目标：
 由服务端最终裁定。
 
 `history` 必须包含终态 action、Level 3 自动动作和通知投递结果；它是用户可见的
-动作账本，不以普通 `/audit` 原始行替代。默认 active 视图只请求未终态 action，
-历史按 `finished_at/updated_at, id` keyset 分页。客户端对 confirm/ignore/retry
+动作账本，不以普通 `/audit` 原始行替代。默认 active 视图只请求未终态 action
+（keyset 排序键 `(created_at, id)`，A3 裁定）；历史按
+`finished_at/updated_at, id` keyset 分页。客户端对 confirm/ignore/retry
 生成稳定 `mutation_id`；网络超时后以同一个 id 重试，由服务端返回前次结算结果。
+
+过期语义（A1 裁定）：`EXPIRED` 仅可自 `PENDING` 进入；**确认后不再过期**
+——确认即用户意图结算，不被时间撤回。UI 侧「即将到期」提示只针对
+`PENDING`。
 
 ## 3. Pending-action 确认视图
 
@@ -114,6 +135,7 @@ API 冻结目标：
 | `SUCCEEDED` | 显示结果摘要及关联资源跳转 | 无重试；刷新相关 Plan / Task / Memory 查询。 |
 | `FAILED_RETRYABLE` | 显示服务器安全错误和“使用同一操作重试” | retry / ignore；不让用户暗中改参数。 |
 | `FAILED` | 显示失败原因和可行替代入口 | 无 retry，必要时重开新的 Chat 请求。 |
+| `FAILED`（用户自致子码：`permission_revoked` / `consent_revoked` / `source_deleted`） | 文案为「你撤销了授权/同意（或来源已删除），动作已失效」——用户自己选择的结果，不显示为系统故障（B3 裁定） | 无 retry；提供对应撤销入口/重开请求。 |
 | `IGNORED`, `EXPIRED` | 保留审计可追溯的终态文案 | 无执行按钮。 |
 
 Mutation 必须防双击：同 action 共享 mutation key，提交中禁用所有互斥按钮；
@@ -164,10 +186,34 @@ Chat 是同一 Agent 的一个入口，不是独立助手或第二套任务系�
 | `GET /v1/chat/sessions?cursor=` | 当前用户的 `ChatSessionRead[]` cursor page；字段为 `id,title,created_at,updated_at,archived_at`。 |
 | `POST /v1/chat/sessions` | 可选标题和 `client_request_id`；同 key 重发返回同一会话。 |
 | `GET /v1/chat/sessions/{id}/messages?cursor=` | `ChatMessageRead[]` cursor page，按稳定时间/id 排序；包含 `id,role,content,created_at,agent_run_id?,decision_basis?,pending_action_id?`。 |
-| `POST /v1/chat/sessions/{id}/messages` | `{content,client_message_id}`，同 `(session_id,client_message_id)` 重发返回同一 user message 和关联 queued `agent_run`。 |
-| `GET /v1/agent-runs/{id}` | `status, safe_result, failure, decision_basis, pending_action_ids, updated_at`；客户端在非终态 run 时有限轮询。 |
-| `GET /v1/chat/search?q=&cursor=` | 只返回仍可见的原消息、会话和定位；服务端 FTS 不先摘要。 |
-| `DELETE /v1/chat/messages/{id}` | 204；同事务从 FTS 与后续 Agent 检索资格移除，关联引用改为 `source_deleted`。 |
+| `POST /v1/chat/sessions/{id}/messages` | `{content,client_message_id}` → **202 `{run_id, user_message_id}`**（异步，A §8 评审点 5 裁定）；同 `(session_id,client_message_id)` 重发返回同一 user message 和关联 queued `agent_run`。幂等键映射（A2 裁定）：`run.client_request_id := "chat:{session_id}:{client_message_id}"`——A 契约 §8 现写的请求字段名 `client_request_id?` 落 A2 时统一为 `client_message_id`。 |
+| `DELETE /v1/chat/sessions/{id}` | 204；先失效检索资格/FTS，再级联内容行（对齐 A §8 §5.3 顺序）。 |
+| `GET /v1/agent/runs/{id}` | `AgentRunRead`（字段级见下）；客户端在非终态 run 时有限轮询。 |
+| `GET /v1/chat/search?q=&cursor=` | 只返回仍可见的原消息、会话和定位；**pg_trgm + ILIKE**（A4 裁定，取代 tsvector 预设；ASCII 词 + CJK bigram 复用 M3 keyword lane 同源函数；<3 字符查询走索引外过滤，冻结文本注明的可接受降级）；不先摘要。 |
+| `DELETE /v1/chat/messages/{id}` | 204；同事务从检索资格移除（`deleted_at` 置位同事务），关联引用改为 `source_deleted`。 |
+
+`AgentRunRead`（字段级，drift check 消费；不含 context_snapshot 原文、
+tool args、prompt——与 A §3.2 读面一致）：
+
+```ts
+type AgentRunRead = {
+  id: string;
+  status: "QUEUED" | "RUNNING" | "WAITING_CONFIRMATION" | "SUCCEEDED" | "FAILED" | "CANCELLED";
+  invocation_kind: "chat" | "proactive_trigger" | "pending_action_resume" | "retry";
+  created_at: string;
+  updated_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  result: { summary: string; degraded: boolean; degrade_code?: string } | null;
+  failure: { code: string; retryable: boolean; safe_message: string } | null;
+  decision_basis: DecisionBasis | null;
+  pending_action_ids: string[];
+  usage: { input_tokens: number; output_tokens: number; tool_tokens: number } | null;
+};
+```
+
+`ChatMessageRead` 的 `decision_basis?` / `pending_action_id?` 是经
+`agent_run_id` join 的**投影列**，不落第二份存储（A5 裁定）。
 
 1. 会话列表和消息流来自 Backend `chat_sessions` / `chat_messages`；本地只做
    短期 UI 缓存。发送消息创建或关联 `agent_run`，消息气泡携带 run status、
@@ -201,6 +247,8 @@ type NotificationPreferences = {
   quiet_hours_end: string | null;
   daily_budget: number;
   sent_count: number;               // current local day, read-only
+  budget_date: string;              // server-only 只读（B2）：sent_count 的归属日
+  last_sent_at: string | null;      // server-only 只读（B2）
 };
 ```
 
@@ -257,6 +305,14 @@ A 互审应确认：`display` 是否足以让用户理解每个初始工具、`D
 能不泄露原文地定位证据、action 状态机是否覆盖 worker 恢复，以及 Chat 数据删除
 能否与 M5 依赖图相容。B 互审完成后才把本文件和 A 文件的共同部分记入
 DECISIONS。
+
+r2 状态（2026-10-03）：B 对 A 契约 v2 的 delta 复核已完成——fca521c 基线的
+承重语义 12 项在 v2 全部在位（−64 行均为引号风格/重排），v2 新增面
+（degrade_code、manifest 冻结形状、pg_trgm、异步 202、默认值集）经 B 裁定
+采纳，§11.2 十二条 B 侧逐条裁定见 PR #50 评审留痕。**待 A 侧补落三项裁定**：
+A1（CONFIRMED 起不过期）、A2（`chat:{session_id}:{client_message_id}` 映射，
+并统一 A §8 的请求字段名）、B4②（`current_state` kind + version）；B4①
+（`chat_message` kind）B 已按裁定并入本文件，A 如无异议确认即可。
 
 冻结后的 B 实施建议顺序：共享 Zod + BackendClient action 方法和 mocks；
 `DecisionBasisView` 兼容现有 `BasisPanel`；PendingAction 视图；Chat 骨架；
