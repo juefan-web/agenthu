@@ -27,6 +27,15 @@
 //     serializes an explicit null on plans without a replacement, which
 //     `.optional()` alone would reject).
 //
+//
+// 2026-10-03 (D-034, M4 B1): the M4 frozen-contract block appended to both
+// copies — DecisionBasis/DecisionReference (incl. chat_message and
+// current_state kinds), PendingActionRead (expires_at required non-null),
+// AgentRunRead with the tool_calls[] mirror (review-point-6 condition),
+// NotificationPreferences (budget_date/last_sent_at server-only), chat
+// session/message shapes, CursorPage factory, and the mutation/send request
+// shapes. Drift-map entries (ZOD_TO_OPENAPI) land with the A1 alignment
+// batch, so the new schemas are intentionally unmapped until then.
 // The desktop client (Developer B) owns this contract. The Backend serves these
 // exact shapes under `/v1` (DECISIONS.md D-009) and the drift check in
 // `backend/scripts/check_contract_drift.py` reads this file so CI can report an
@@ -195,3 +204,192 @@ export type LoginRequest = z.infer<typeof LoginRequestSchema>;
 export type RegisterRequest = z.infer<typeof RegisterRequestSchema>;
 export type Token = z.infer<typeof TokenSchema>;
 export type User = z.infer<typeof UserSchema>;
+// ---------------------------------------------------------------------------
+// M4（D-034 冻结契约）：pending actions / agent runs / chat / 通知偏好。
+// 字段级依据 m4-agent-runtime-audit-contract.md v3 与
+// m4-action-confirmation-chat-contract.md r3；与 A1 的 Pydantic/OpenAPI
+// 对齐（drift 映射条目随对齐批登记）。
+
+export const DecisionReferenceSchema = z.object({
+  // chat_message / current_state 为 D-034 冻结裁定新增（B4①②）。
+  kind: z.enum(["event", "memory", "goal", "plan", "task", "material", "chat_message", "current_state"]),
+  id: z.string(),
+  label: z.string(),
+  state: z.enum(["available", "source_deleted", "version_mismatch"]).nullable().optional(),
+  locator: z.object({
+    page: z.number().int().nullable().optional(),
+    quote: z.string().nullable().optional(),
+    occurred_at: z.string().nullable().optional(),
+    file_id: z.string().nullable().optional(),
+    checksum: z.string().nullable().optional(),
+    chunk_id: z.string().nullable().optional(),
+    span_start: z.number().int().nullable().optional(),
+    span_end: z.number().int().nullable().optional(),
+    message_id: z.string().nullable().optional(),
+    state_version: z.number().int().nullable().optional(),
+  }).nullable().optional(),
+});
+
+export const DecisionBasisSchema = z.object({
+  basis_version: z.string(),
+  summary: z.string(),
+  references: z.array(DecisionReferenceSchema),
+  rule_versions: z.record(z.string()),
+  // B1（D-034）：服务端字段，UI 不渲染；drift 双源靠它保持一致。
+  selected_tool_call_ids: z.array(z.string()),
+});
+
+export const PendingActionReadSchema = z.object({
+  id: z.string(),
+  version: z.number().int().nonnegative(),
+  status: z.enum([
+    "PENDING", "CONFIRMED", "EXECUTING", "SUCCEEDED",
+    "FAILED_RETRYABLE", "FAILED", "IGNORED", "EXPIRED",
+  ]),
+  required_level: z.union([z.literal(2), z.literal(3)]),
+  tool: z.object({ name: z.string(), version: z.string(), title: z.string() }),
+  display: z.object({
+    summary: z.string(),
+    parameters: z.array(z.object({ label: z.string(), value: z.string() })),
+    impact: z.string(),
+    risk_note: z.string().nullable().optional(),
+  }),
+  basis: DecisionBasisSchema,
+  // 非空（D-034 裁定）：服务端恒有值；「确认后不再过期」是状态机行为，
+  // 不以置空字段表达。
+  expires_at: IsoDateTime,
+  retryable: z.boolean(),
+  safe_error: z.object({ code: z.string(), message: z.string() }).nullable().optional(),
+  result: z.object({
+    summary: z.string(),
+    resource_type: z.string().nullable().optional(),
+    resource_id: z.string().nullable().optional(),
+  }).nullable().optional(),
+  created_at: IsoDateTime,
+  updated_at: IsoDateTime,
+});
+
+export const AgentRunToolCallSchema = z.object({
+  call_id: z.string(),
+  tool_name: z.string(),
+  tool_version: z.string(),
+  status: z.string(),
+  started_at: IsoDateTime.nullable(),
+  ended_at: IsoDateTime.nullable(),
+  error_code: z.string().nullable().optional(),
+});
+
+export const AgentRunReadSchema = z.object({
+  id: z.string(),
+  status: z.enum(["QUEUED", "RUNNING", "WAITING_CONFIRMATION", "SUCCEEDED", "FAILED", "CANCELLED"]),
+  invocation_kind: z.enum(["chat", "proactive_trigger", "pending_action_resume", "retry"]),
+  trigger_ref: z.object({
+    kind: z.string(),
+    event_id: z.string().nullable().optional(),
+    trigger_signature: z.string().nullable().optional(),
+    chat_message_id: z.string().nullable().optional(),
+  }),
+  provider: z.object({
+    name: z.string(),
+    model: z.string(),
+    capability: z.enum(["tools", "text_only", "none"]),
+  }),
+  created_at: IsoDateTime,
+  updated_at: IsoDateTime,
+  started_at: IsoDateTime.nullable(),
+  finished_at: IsoDateTime.nullable(),
+  // 评审点 6 的成立条件（D-034 裁定必修）：读面必须能 join 出工具调用
+  // 序列，L0 审计降噪才不是漏洞。
+  tool_calls: z.array(AgentRunToolCallSchema),
+  decision_basis: DecisionBasisSchema.nullable(),
+  pending_action_ids: z.array(z.string()),
+  usage: z.object({
+    input_tokens: z.number().int().nonnegative(),
+    output_tokens: z.number().int().nonnegative(),
+    tool_tokens: z.number().int().nonnegative(),
+  }).nullable(),
+  result: z.object({
+    summary: z.string().nullable().optional(),
+    degraded: z.boolean(),
+    degrade_code: z.string().nullable().optional(),
+  }).nullable(),
+  failure: z.object({
+    code: z.string(),
+    retryable: z.boolean(),
+    safe_message: z.string(),
+  }).nullable(),
+});
+
+export const NotificationPreferencesSchema = z.object({
+  version: z.number().int().nonnegative(),
+  timezone: z.string(),
+  enabled_categories: z.array(z.string()),
+  quiet_hours_start: z.string().nullable(),
+  quiet_hours_end: z.string().nullable(),
+  daily_budget: z.number().int().nonnegative(),
+  sent_count: z.number().int().nonnegative(),
+  // server-only 只读（B2 裁定）：sent_count 的归属日 / 最近发送时间。
+  budget_date: z.string(),
+  last_sent_at: IsoDateTime.nullable(),
+});
+
+export const ChatSessionSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  created_at: IsoDateTime,
+  updated_at: IsoDateTime,
+  archived_at: IsoDateTime.nullable(),
+});
+
+export const ChatMessageSchema = z.object({
+  id: z.string(),
+  // 值域未在冻结文本枚举（服务端权威）；客户端不据此分支。
+  role: z.string(),
+  content: z.string(),
+  created_at: IsoDateTime,
+  // A5 裁定：经 agent_run_id join 的投影列，不落第二份存储。
+  // nullable+optional：服务端 ORMModel 不带 exclude_none，None 字段以
+  // 显式 null 下发（A1 评审时发现；仅 optional 会拒收 null）。
+  agent_run_id: z.string().nullable().optional(),
+  decision_basis: DecisionBasisSchema.nullable().optional(),
+  pending_action_id: z.string().nullable().optional(),
+});
+
+/** D-029 events 口径的 cursor page：只断言 items + next_cursor（缺省/null
+ *  = 末页）；Page 包装的其余字段（total/limit/offset）透传剥离。 */
+export const CursorPageSchema = <T extends z.ZodTypeAny>(item: T) =>
+  z.object({ items: z.array(item), next_cursor: z.string().nullable() });
+
+export const PendingActionMutationSchema = z.object({
+  expected_version: z.number().int().nonnegative(),
+  mutation_id: z.string().min(1),
+});
+
+export const ChatSessionCreateSchema = z.object({
+  title: z.string().optional(),
+  client_request_id: z.string().optional(),
+});
+
+export const ChatMessageSendSchema = z.object({
+  content: z.string().min(1),
+  client_message_id: z.string().min(1),
+});
+
+export const ChatMessageSendResponseSchema = z.object({
+  run_id: z.string(),
+  user_message_id: z.string(),
+});
+
+export type DecisionReference = z.infer<typeof DecisionReferenceSchema>;
+export type DecisionBasis = z.infer<typeof DecisionBasisSchema>;
+export type PendingActionRead = z.infer<typeof PendingActionReadSchema>;
+export type AgentRunToolCall = z.infer<typeof AgentRunToolCallSchema>;
+export type AgentRunRead = z.infer<typeof AgentRunReadSchema>;
+export type NotificationPreferences = z.infer<typeof NotificationPreferencesSchema>;
+export type ChatSession = z.infer<typeof ChatSessionSchema>;
+export type ChatMessage = z.infer<typeof ChatMessageSchema>;
+export type CursorPage<T> = { items: T[]; next_cursor: string | null };
+export type PendingActionMutation = z.infer<typeof PendingActionMutationSchema>;
+export type ChatSessionCreate = z.infer<typeof ChatSessionCreateSchema>;
+export type ChatMessageSend = z.infer<typeof ChatMessageSendSchema>;
+export type ChatMessageSendResponse = z.infer<typeof ChatMessageSendResponseSchema>;

@@ -8,15 +8,30 @@ import {
   TaskSchema,
   TokenSchema,
   UserSchema,
+  AgentRunReadSchema,
+  ChatMessageSchema,
+  ChatMessageSendResponseSchema,
+  ChatSessionSchema,
+  CursorPageSchema,
+  NotificationPreferencesSchema,
+  PendingActionMutationSchema,
+  PendingActionReadSchema,
+  type AgentRunRead,
+  type ChatMessage,
+  type ChatMessageSendResponse,
+  type ChatSession,
   type CurrentState,
   type EventBatchRequest,
   type EventBatchResponse,
   type FocusSession,
+  type NotificationPreferences,
+  type PendingActionRead,
   type Plan,
   type Task,
   type Token,
   type User,
 } from "@agenthu/contracts";
+import type { z } from "zod";
 import { MemoryItemSchema, type MemoryItem } from "./memory";
 import {
   FileInfoSchema,
@@ -28,6 +43,10 @@ import {
 } from "./grounding";
 
 export type FocusSessionUpdate = Partial<Pick<FocusSession, "status" | "actual_minutes" | "deviation_note">>;
+
+/** 通知偏好 PATCH 载荷（契约 §6）：值域校验在服务端，客户端只送显式改动。 */
+export type NotificationPreferencesPatch = Partial<Pick<NotificationPreferences,
+  "timezone" | "enabled_categories" | "quiet_hours_start" | "quiet_hours_end" | "daily_budget">>;
 
 /** D-029 拉全量口径：每页条数取服务端上限（PaginationDep le=200）；
  *  MAX_PAGES 是防失控护栏（服务端持续铸游标/短页判停失效时中止并报错，
@@ -230,6 +249,112 @@ export class BackendClient {
       if (items.length < PAGE_SIZE) return files;
     }
     throw new Error(`文件分页异常：连续 ${MAX_PAGES} 页未到末页，中止拉取`);
+  }
+
+  // ---- M4（D-034）：pending actions / agent runs / chat / 通知偏好 ----
+
+  /** cursor page 拉全量（D-029 events 口径）：next_cursor 缺省/null = 末页。 */
+  private async drainCursorPages<TItem>(buildPath: (cursor: string | null) => string, itemSchema: z.ZodType<TItem>, label: string): Promise<TItem[]> {
+    const items: TItem[] = [];
+    let cursor: string | null = null;
+    for (let page = 0; page < MAX_PAGES; page += 1) {
+      const data = await this.requestJson(buildPath(cursor));
+      const parsed = CursorPageSchema(itemSchema).parse(data);
+      items.push(...parsed.items);
+      cursor = parsed.next_cursor ?? null;
+      if (cursor === null || cursor === "") return items;
+    }
+    throw new Error(`${label}分页异常：连续 ${MAX_PAGES} 页未到末页，中止拉取`);
+  }
+
+  async listPendingActions(status: "active" | "history"): Promise<PendingActionRead[]> {
+    return this.drainCursorPages(
+      (cursor) => `/v1/pending-actions?status=${status}&limit=${PAGE_SIZE}${cursor === null ? "" : `&cursor=${encodeURIComponent(cursor)}`}`,
+      PendingActionReadSchema,
+      "待确认动作",
+    );
+  }
+
+  private async mutatePendingAction(action: "confirm" | "ignore" | "retry", actionId: string, expectedVersion: number, mutationId: string): Promise<PendingActionRead> {
+    // 409（已被确认/忽略/过期/抢先结算）经 BackendHttpError 携带状态码，
+    // 由视图 refetch 后按服务端状态呈现（契约 §3.1）。
+    return this.requestValidated(`/v1/pending-actions/${encodeURIComponent(actionId)}/${action}`, PendingActionReadSchema, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(PendingActionMutationSchema.parse({ expected_version: expectedVersion, mutation_id: mutationId })),
+    });
+  }
+
+  async confirmPendingAction(actionId: string, expectedVersion: number, mutationId: string): Promise<PendingActionRead> {
+    return this.mutatePendingAction("confirm", actionId, expectedVersion, mutationId);
+  }
+
+  async ignorePendingAction(actionId: string, expectedVersion: number, mutationId: string): Promise<PendingActionRead> {
+    return this.mutatePendingAction("ignore", actionId, expectedVersion, mutationId);
+  }
+
+  async retryPendingAction(actionId: string, expectedVersion: number, mutationId: string): Promise<PendingActionRead> {
+    return this.mutatePendingAction("retry", actionId, expectedVersion, mutationId);
+  }
+
+  async getAgentRun(runId: string): Promise<AgentRunRead> {
+    return this.requestValidated(`/v1/agent/runs/${encodeURIComponent(runId)}`, AgentRunReadSchema);
+  }
+
+  async listChatSessions(): Promise<ChatSession[]> {
+    return this.drainCursorPages(
+      (cursor) => `/v1/chat/sessions?limit=${PAGE_SIZE}${cursor === null ? "" : `&cursor=${encodeURIComponent(cursor)}`}`,
+      ChatSessionSchema,
+      "会话",
+    );
+  }
+
+  async createChatSession(input: { title?: string; clientRequestId?: string } = {}): Promise<ChatSession> {
+    return this.requestValidated("/v1/chat/sessions", ChatSessionSchema, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: input.title, client_request_id: input.clientRequestId }),
+    });
+  }
+
+  async deleteChatSession(sessionId: string): Promise<void> {
+    await this.requestJson(`/v1/chat/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
+  }
+
+  async listChatMessages(sessionId: string): Promise<ChatMessage[]> {
+    return this.drainCursorPages(
+      (cursor) => `/v1/chat/sessions/${encodeURIComponent(sessionId)}/messages?limit=${PAGE_SIZE}${cursor === null ? "" : `&cursor=${encodeURIComponent(cursor)}`}`,
+      ChatMessageSchema,
+      "消息",
+    );
+  }
+
+  /** 异步 202（D-034 评审点 5）：响应体 {run_id, user_message_id}；重发必须
+   *  传同一 clientMessageId（幂等键映射 A2），由调用方持有。 */
+  async sendChatMessage(sessionId: string, content: string, clientMessageId: string): Promise<ChatMessageSendResponse> {
+    return this.requestValidated(`/v1/chat/sessions/${encodeURIComponent(sessionId)}/messages`, ChatMessageSendResponseSchema, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content, client_message_id: clientMessageId }),
+    });
+  }
+
+  async deleteChatMessage(messageId: string): Promise<void> {
+    await this.requestJson(`/v1/chat/messages/${encodeURIComponent(messageId)}`, { method: "DELETE" });
+  }
+
+  async getNotificationPreferences(): Promise<NotificationPreferences> {
+    return this.requestValidated("/v1/notification-preferences", NotificationPreferencesSchema);
+  }
+
+  /** PATCH 携带 expected_version；409 = 他人端已改（返回最新值），由视图
+   *  以服务端状态重新呈现，不静默覆盖（契约 §6）。 */
+  async updateNotificationPreferences(patch: NotificationPreferencesPatch, expectedVersion: number): Promise<NotificationPreferences> {
+    return this.requestValidated("/v1/notification-preferences", NotificationPreferencesSchema, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...patch, expected_version: expectedVersion }),
+    });
   }
 
   /** D1 快速失败：无鉴权的 /health 探测，超时/非 2xx/异常一律 false（不抛）。

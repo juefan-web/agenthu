@@ -920,6 +920,35 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   审计降噪成立条件）。**实施分派 = `TASKS/m4-implementation-slices.md`**
   （B1/A1 契约代码化同批先行 → A2 运行时含同意门禁 → A3/B2 并行 →
   B3 = E6 出口 e2e）。
+- **B1 交付（2026-10-03，PR 见分支 `feature/m4-b1-contract-zod`）**：M4
+  冻结契约代码化——`@agenthu/contracts` 新增 M4 块（`DecisionBasis`/
+  `DecisionReference` 含 `chat_message`/`current_state` 两 kind、
+  `PendingActionRead`（`expires_at` 必填非空）、`AgentRunRead` 含
+  `tool_calls[]` 镜像、`NotificationPreferences`（budget_date/last_sent_at
+  server-only）、chat session/message、`CursorPage` 工厂与 mutation/send
+  请求形状）；`tests/fixtures/client_contract.ts` 同块镜像（头注记变更）。
+  BackendClient 新增 12 方法（pending-actions 拉/确认/忽略/重试、
+  agent run、chat 会话/消息/202 发送/两删除、通知偏好 GET/PATCH），共享
+  `drainCursorPages`（D-029 events 口径）。验证：contracts 14 测试、
+  desktop 145 测试（+5）、build、drift 双源本地绿（带 SECRET_KEY/S3_SECRET_KEY
+  环境变量跑通——worktree 无 .env 的本地口径）。**两点留待对齐批**：
+  ① `ZOD_TO_OPENAPI` 映射条目随 A1 登记（现在加会因组件缺失红 CI）；
+  ② `searchChat` 未实现——搜索结果形状未在冻结文本字段级定义，归
+  B2 与 A1 OpenAPI 对齐时补。
+- **B1 自修 + A1（#52）交叉评审（2026-10-03）**：评审 A1 时发现 B1 缺陷
+  ——`ORMModel` 不带 exclude_none，None 投影列以显式 null 下发，仅
+  `.optional()` 会拒收；`2e484c0` 改三投影列为 `.nullable().optional()`
+  （包 + 镜像 + 回归测试，145/14/tsc/drift 全绿）。**A 评审 #51 又出
+  同类五处（chat 三列 + safe_error/result），且"其余可空字段写法正确"
+  的断言不成立——嵌套面同样发 null（trigger_ref 三列、locator 全列、
+  state、risk_note、resource_type/id、error_code、summary/degrade_code），
+  B 做了全类清扫（累计 26 处字段实例，含 A 的五处），补显式 null
+  全覆盖回归测试。**#52 内容核验通过
+  （schemas 与 B1 逐字段一致、迁移/软撤销/政策行/读面路径全对），但
+  request-changes：除映射键改名外，**A1 写入 fixture 的整份 staged 副本
+  （+203 行）须删除**——与 B1 镜像同锚点，rebase 必冲突且四个同名
+  schema 双声明；title 先例不适用于 B1 已在库的批次。正式 approve 按
+  序列落 rebase 后绿 head（head 绑定）。
 - 流程规则不变：分支从 main 拉出；跨边界先冻结；PR 互审（A=rotcar07，
   B=juefan-web）；**并行会话各用独立 worktree**（2026-10-01 混合提交事故
   后的新规则）；**openapi.json 冲突一律 rebase 后 `--write` 重导**——CI

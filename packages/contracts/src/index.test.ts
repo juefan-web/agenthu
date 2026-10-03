@@ -7,6 +7,12 @@ import {
   PlanItemSchema,
   PlanSchema,
   TaskSchema,
+  AgentRunReadSchema,
+  ChatMessageSchema,
+  CursorPageSchema,
+  DecisionBasisSchema,
+  NotificationPreferencesSchema,
+  PendingActionReadSchema,
 } from "./index";
 
 const event = {
@@ -127,5 +133,145 @@ describe("plan contract (D-031 mirror)", () => {
     };
     expect(CurrentStateSchema.parse(state).recent_state).toEqual(state.recent_state);
     expect(CurrentStateSchema.parse({ ...state, recent_state: undefined }).recent_state).toBeUndefined();
+  });
+});
+
+const basis = {
+  basis_version: "v1",
+  summary: "作业临近且当前时段空闲",
+  references: [
+    { kind: "task", id: "task-1", label: "HW1", state: "available" },
+    { kind: "chat_message", id: "msg-9", label: "昨天的讨论", locator: { message_id: "msg-9", occurred_at: "2026-10-02T21:00:00+08:00" } },
+    { kind: "current_state", id: "state-42", label: "当前状态 v42", locator: { state_version: 42 } },
+    { kind: "material", id: "file-1", label: "lecture1.pdf", state: "version_mismatch", locator: { page: 3, checksum: "chk-old" } },
+  ],
+  rule_versions: { planner: "v2" },
+  selected_tool_call_ids: ["call-1"],
+};
+
+const pendingAction = {
+  id: "pa-1",
+  version: 3,
+  status: "PENDING",
+  required_level: 2,
+  tool: { name: "task.create", version: "1.0.0", title: "创建任务" },
+  display: {
+    summary: "把「复习第三章」加入任务列表",
+    parameters: [{ label: "标题", value: "复习第三章（旧：复习 → 新：复习第三章）" }],
+    impact: "将在任务列表新增一条 todo",
+    risk_note: "不可逆程度低",
+  },
+  basis,
+  expires_at: "2026-10-04T12:00:00+08:00",
+  retryable: true,
+  created_at: "2026-10-03T12:00:00+08:00",
+  updated_at: "2026-10-03T12:00:00+08:00",
+};
+
+describe("M4 frozen contract (D-034)", () => {
+  it("parses a pending action with the full basis, including the new reference kinds", () => {
+    const parsed = PendingActionReadSchema.parse(pendingAction);
+    expect(parsed.basis.references.map((reference) => reference.kind)).toEqual([
+      "task", "chat_message", "current_state", "material",
+    ]);
+    expect(parsed.basis.selected_tool_call_ids).toEqual(["call-1"]);
+    expect(parsed.expires_at).toBe("2026-10-04T12:00:00+08:00");
+  });
+
+  it("requires a non-null expires_at (post-confirmation no-expiry is state-machine behaviour)", () => {
+    const { expires_at: _ignored, ...withoutExpiry } = pendingAction;
+    expect(() => PendingActionReadSchema.parse(withoutExpiry)).toThrow();
+    expect(() => PendingActionReadSchema.parse({ ...pendingAction, expires_at: null })).toThrow();
+  });
+
+  it("parses an agent run with the tool_calls mirror and the degraded result", () => {
+    const parsed = AgentRunReadSchema.parse({
+      id: "run-1",
+      status: "SUCCEEDED",
+      invocation_kind: "chat",
+      trigger_ref: { kind: "chat", chat_message_id: "msg-1" },
+      provider: { name: "openai", model: "gpt-x", capability: "none" },
+      created_at: "2026-10-03T12:00:00+08:00",
+      updated_at: "2026-10-03T12:00:05+08:00",
+      started_at: "2026-10-03T12:00:01+08:00",
+      finished_at: "2026-10-03T12:00:05+08:00",
+      tool_calls: [{ call_id: "call-1", tool_name: "plan.suggest", tool_version: "1.0.0", status: "succeeded", started_at: null, ended_at: null }],
+      decision_basis: basis,
+      pending_action_ids: [],
+      usage: null,
+      result: { degraded: true, degrade_code: "provider_unavailable" },
+      failure: null,
+    });
+    expect(parsed.tool_calls).toHaveLength(1);
+    expect(parsed.result?.degraded).toBe(true);
+  });
+
+  it("parses chat messages with optional join projections and notification server-only fields", () => {
+    const message = ChatMessageSchema.parse({
+      id: "msg-1", role: "user", content: "把作业加进日程", created_at: "2026-10-03T12:00:00+08:00",
+    });
+    expect(message.decision_basis).toBeUndefined();
+    expect(() => ChatMessageSchema.parse({ ...message, decision_basis: basis, pending_action_id: "pa-1" })).toBeTruthy();
+    // 服务端 ORMModel 不 exclude_none：无 run 关联的消息以显式 null 下发
+    // 投影列，仅 .optional() 会拒收（A1 评审发现的回归点）。
+    const nulled = ChatMessageSchema.parse({
+      ...message, agent_run_id: null, decision_basis: null, pending_action_id: null,
+    });
+    expect(nulled.agent_run_id).toBeNull();
+
+    const preferences = NotificationPreferencesSchema.parse({
+      version: 2, timezone: "Asia/Shanghai", enabled_categories: ["deadline"],
+      quiet_hours_start: "22:00", quiet_hours_end: "07:00", daily_budget: 3,
+      sent_count: 1, budget_date: "2026-10-03", last_sent_at: "2026-10-03T08:00:00+08:00",
+    });
+    expect(preferences.budget_date).toBe("2026-10-03");
+  });
+
+  it("cursor pages assert items + next_cursor only (null = last page)", () => {
+    const page = CursorPageSchema(ChatMessageSchema).parse({
+      items: [], next_cursor: null, total: 7, limit: 50, offset: 0,
+    });
+    expect(page.items).toEqual([]);
+    expect(page.next_cursor).toBeNull();
+  });
+
+  it("accepts explicit nulls on every backend-emitted nullable field (no exclude_none)", () => {
+    // 服务端 ORMModel/嵌套 Pydantic 均不带 exclude_none：X | None 字段以
+    // 显式 null 下发（顶层与嵌套同理）。仅 .optional() 拒收 null——本测试
+    // 固化全量清扫：safe_error/result、trigger_ref 三列、locator 全列、
+    // state、risk_note、resource_type/id、error_code、summary/degrade_code。
+    const action = PendingActionReadSchema.parse({
+      ...pendingAction,
+      display: { ...pendingAction.display, risk_note: null },
+      safe_error: null,
+      result: null,
+    });
+    expect(action.safe_error).toBeNull();
+    expect(action.result).toBeNull();
+
+    const run = AgentRunReadSchema.parse({
+      id: "run-2", status: "FAILED", invocation_kind: "chat",
+      trigger_ref: { kind: "chat", event_id: null, trigger_signature: null, chat_message_id: "msg-2" },
+      provider: { name: "openai", model: "gpt-x", capability: "none" },
+      created_at: "2026-10-03T12:00:00+08:00", updated_at: "2026-10-03T12:00:05+08:00",
+      started_at: null, finished_at: null,
+      tool_calls: [{ call_id: "call-2", tool_name: "memory.retrieve", tool_version: "1.0.0", status: "succeeded", started_at: null, ended_at: null, error_code: null }],
+      decision_basis: null, pending_action_ids: [], usage: null,
+      result: { summary: null, degraded: true, degrade_code: null },
+      failure: { code: "provider_unavailable", retryable: true, safe_message: "模型暂不可用" },
+    });
+    expect(run.trigger_ref.event_id).toBeNull();
+    expect(run.tool_calls[0].error_code).toBeNull();
+    expect(run.result?.summary).toBeNull();
+
+    const withNullReferenceBasis = DecisionBasisSchema.parse({
+      ...basis,
+      references: [
+        { kind: "goal", id: "goal-1", label: "绩点", state: null, locator: null },
+        { kind: "memory", id: "mem-1", label: "偏好", locator: { page: null, quote: null, span_start: null, span_end: null } },
+      ],
+    });
+    expect(withNullReferenceBasis.references[0].state).toBeNull();
+    expect(withNullReferenceBasis.references[1].locator?.page).toBeNull();
   });
 });
