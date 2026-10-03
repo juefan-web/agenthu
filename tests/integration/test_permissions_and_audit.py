@@ -15,7 +15,12 @@ def test_permission_policy_exposes_levels(client, auth_headers) -> None:
     assert actions["state.read"] == 0
 
 
-def test_confirm_requires_grant_then_is_allowed(client, auth_headers) -> None:
+def test_confirm_always_requires_confirmation_even_with_grant(client, auth_headers) -> None:
+    """D-034 §2.5 tightening: a Level 3 grant never elevates a Level 2
+    action — ``plan.confirm`` asks for confirmation on every execution, with
+    or without a covering grant. The M0-era ``granted >= required`` shortcut
+    is retired."""
+
     check = client.post(
         "/v1/permissions/check",
         json={"action": "plan.confirm"},
@@ -32,12 +37,14 @@ def test_confirm_requires_grant_then_is_allowed(client, auth_headers) -> None:
     )
     assert grant.status_code == 201
 
-    allowed = client.post(
+    after_grant = client.post(
         "/v1/permissions/check",
         json={"action": "plan.confirm"},
         headers=auth_headers,
     ).json()
-    assert allowed["allowed"] is True
+    assert after_grant["allowed"] is False
+    assert after_grant["requires_confirmation"] is True
+    assert after_grant["granted_level"] == 3
 
     assert (
         client.delete(

@@ -60,6 +60,7 @@ ZOD_TO_OPENAPI: dict[str, str] = {
     "ChatSessionSchema": "ChatSessionRead",
     "ChatMessageSchema": "ChatMessageRead",
     "NotificationPreferencesSchema": "NotificationPreferencesRead",
+    "ChatMessageSendResponseSchema": "ChatMessageSendResponse",
 }
 
 # Direction of the contract:
@@ -85,6 +86,7 @@ ZOD_DIRECTION: dict[str, str] = {
     "ChatSessionSchema": "response",
     "ChatMessageSchema": "response",
     "NotificationPreferencesSchema": "response",
+    "ChatMessageSendResponseSchema": "response",
 }
 
 _BRACKETS = {"(": ")", "[": "]", "{": "}"}

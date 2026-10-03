@@ -21,7 +21,7 @@ import uuid
 from datetime import datetime
 from typing import Literal, cast
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from backend.models.agent import PendingAction as PendingActionORM
 from backend.schemas.common import ORMModel
@@ -218,3 +218,12 @@ def pending_action_read(row: PendingActionORM) -> PendingActionRead:
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
+
+
+class PendingActionMutation(BaseModel):
+    """Frozen mutation request (B1 Zod mirror): optimistic version echo plus
+    the client-generated id whose settled response is cached so a lost-HTTP
+    resend returns the same body instead of a second dispatch."""
+
+    expected_version: int = Field(ge=0)
+    mutation_id: str = Field(min_length=1, max_length=64)

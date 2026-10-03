@@ -105,6 +105,23 @@ class Settings(BaseSettings):
     # --- Observability -----------------------------------------------------
     audit_enabled: bool = True
 
+    # --- Agent runtime (D-034 §5.1/§6 defaults; review point 8) -----------
+    # Pending-action TTL: 24h, tools may shorten but never below the floor.
+    agent_pending_ttl_hours: int = 24
+    agent_pending_min_ttl_minutes: int = 5
+    # Worker claim leases: run execution and pending-action execution.
+    agent_run_lease_seconds: int = 300
+    agent_execution_lease_seconds: int = 300
+    # Provider tool-call loop caps (§6.2): 4 model turns, 8 tool calls.
+    agent_max_model_turns: int = 4
+    agent_max_tool_calls: int = 8
+    # Context assembly (§6.1): token budget with the reserved head for
+    # policy/tool-schema/rules; chunk render cap keeps one chunk bounded.
+    agent_context_token_budget: int = 8000
+    agent_context_reserved_tokens: int = 1200
+    agent_history_window: int = 10
+    agent_chunk_render_char_cap: int = 2000
+
     @property
     def is_local(self) -> bool:
         return self.environment.lower() in {"local", "dev", "development", "test"}

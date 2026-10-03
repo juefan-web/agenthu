@@ -25,6 +25,10 @@ from backend.adapters.model_provider.base import (
     EmbeddingResult,
     ModelProviderError,
     ModelProviderUnavailable,
+    ModelTurn,
+    ProviderCapabilities,
+    ToolCall,
+    ToolResult,
 )
 from backend.config import get_settings
 
@@ -132,6 +136,129 @@ class OpenAIProvider:
     @property
     def model_name(self) -> str:
         return get_settings().responses_model
+
+    def capabilities(self) -> ProviderCapabilities:
+        return ProviderCapabilities(text_generation=True, tool_calls=True)
+
+    def _tool_wire(self, tool_schemas: list[dict[str, object]]) -> list[dict[str, object]]:
+        return [
+            {
+                "type": "function",
+                "name": schema["name"],
+                "description": schema.get("description", ""),
+                "parameters": schema.get("input_schema", {"type": "object"}),
+            }
+            for schema in tool_schemas
+        ]
+
+    @staticmethod
+    def _parse_turn(payload: dict) -> ModelTurn:
+        text_parts: list[str] = []
+        calls: list[ToolCall] = []
+        for item in payload.get("output", []):
+            if item.get("type") == "function_call":
+                calls.append(
+                    ToolCall(
+                        call_id=item.get("call_id", ""),
+                        name=item.get("name", ""),
+                        arguments_json=item.get("arguments", "{}"),
+                    )
+                )
+                continue
+            for block in item.get("content", []):
+                if block.get("type") == "output_text":
+                    text_parts.append(block.get("text", ""))
+        usage = payload.get("usage") or {}
+        return ModelTurn(
+            text="".join(text_parts) or None,
+            tool_calls=calls,
+            usage={
+                "input_tokens": usage.get("input_tokens", 0),
+                "output_tokens": usage.get("output_tokens", 0),
+            },
+            provider_request_id=payload.get("id"),
+            finish_reason=payload.get("status"),
+        )
+
+    async def _post_responses(self, body: dict[str, object]) -> dict:
+        if not self._api_key:
+            raise ModelProviderUnavailable(
+                "OpenAI API key is not configured; tool calls require provider"
+                " consent + configuration (fail-closed, D-033)"
+            )
+        url = f"{self._base_url}/responses"
+        last_error: Exception | None = None
+        for attempt in range(self._max_retries + 1):
+            if attempt:
+                await asyncio.sleep(min(2**attempt, 8))
+            try:
+                async with httpx.AsyncClient(
+                    timeout=self._generation_timeout, transport=self._transport
+                ) as client:
+                    response = await client.post(
+                        url,
+                        headers={"Authorization": f"Bearer {self._api_key}"},
+                        json=body,
+                    )
+                if response.status_code == 200:
+                    return response.json()
+                if response.status_code == 429 or response.status_code >= 500:
+                    last_error = ModelProviderError(
+                        f"Responses call failed: HTTP {response.status_code}"
+                    )
+                    continue
+                raise ModelProviderError(
+                    f"Responses call rejected: HTTP {response.status_code} {response.text[:200]}"
+                )
+            except (httpx.TimeoutException, httpx.TransportError) as exc:
+                last_error = exc
+                continue
+        raise ModelProviderError(
+            f"Tool-call turn failed after {self._max_retries + 1} attempts"
+        ) from last_error
+
+    async def generate_with_tools(
+        self,
+        input_text: str,
+        instructions: str | None,
+        tool_schemas: list[dict[str, object]],
+    ) -> ModelTurn:
+        """First tool-capable turn. ``store=False`` stays hardcoded (D-033)."""
+
+        body = self.build_responses_request(
+            get_settings().responses_model, input_text, instructions
+        )
+        body["tools"] = self._tool_wire(tool_schemas)
+        return self._parse_turn(await self._post_responses(body))
+
+    async def continue_with_tool_results(
+        self, turn: ModelTurn, results: list[ToolResult]
+    ) -> ModelTurn:
+        """Next turn feeding safe tool results back (§6.2: only schema-safe
+        results ever travel back to the provider)."""
+
+        body: dict[str, object] = {
+            "model": get_settings().responses_model,
+            "store": False,
+            "input": [
+                {
+                    "type": "function_call",
+                    "call_id": call.call_id,
+                    "name": call.name,
+                    "arguments": call.arguments_json,
+                }
+                for call in turn.tool_calls
+            ]
+            + [
+                {
+                    "type": "function_call_output",
+                    "call_id": result.call_id,
+                    "output": result.safe_result_json,
+                }
+                for result in results
+            ],
+        }
+        return self._parse_turn(await self._post_responses(body))
 
     async def embed_texts(self, texts: list[str]) -> EmbeddingResult:
         if not texts:

@@ -25,7 +25,14 @@ from sqlalchemy import select
 
 from backend.adapters.model_provider import get_model_provider
 from backend.db.session import session_scope
+from backend.models.agent import AgentRun
 from backend.models.file import FileObject
+from backend.services.agent_runner import (
+    execute_run,
+    reclaim_expired_runs,
+    recover_pending_actions,
+    sweep_pending_actions,
+)
 from backend.services.material_ingestion import (
     consent_enabled,
     embed_pending_chunks,
@@ -42,6 +49,70 @@ async def ping(ctx: dict[str, Any], message: str = "pong") -> dict[str, Any]:
     """Trivial task used to verify Redis -> Arq -> task execution."""
 
     return {"message": message, "job_try": ctx.get("job_try", 1)}
+
+
+def _provider_or_none() -> Any | None:
+    """Provider construction must never take the run down with it: an
+    unconfigured provider degrades the run to the deterministic path."""
+
+    try:
+        return get_model_provider()
+    except Exception:
+        logger.warning("Model provider unavailable; runs degrade deterministically")
+        return None
+
+
+async def execute_agent_run(ctx: dict[str, Any] | None, run_id: str) -> dict[str, Any]:
+    """Execute one agent run end-to-end (lease-claimed, settled, audited)."""
+
+    with session_scope() as session:
+        run = await execute_run(session, run_id=uuid.UUID(run_id), provider=_provider_or_none())
+        if run is None:
+            return {"run_id": run_id, "skipped": "not_claimable"}
+        return {"run_id": run_id, "status": run.status}
+
+
+# A QUEUED run whose enqueue was lost gets picked up after this grace (the
+# normal enqueued path always wins the atomic claim before the cron fires).
+_RUN_GRACE = timedelta(seconds=60)
+
+
+async def sweep_agent_runtime(ctx: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Cron reliability net for the whole agent runtime (§3.2/§5.1):
+
+    - settle PENDING TTLs and EXECUTING rows with expired leases;
+    - re-dispatch CONFIRMED/FAILED_RETRYABLE rows (atomic claims);
+    - reclaim RUNNING runs with expired leases (watchdog);
+    - execute stale QUEUED runs (lost enqueues).
+    """
+
+    summary: dict[str, Any] = {}
+    with session_scope() as session:
+        summary.update(sweep_pending_actions(session))
+        summary.update(reclaim_expired_runs(session))
+        stale_ids = list(
+            session.scalars(
+                select(AgentRun.id)
+                .where(
+                    AgentRun.status == "QUEUED",
+                    AgentRun.created_at < datetime.now(UTC) - _RUN_GRACE,
+                )
+                .limit(20)
+            )
+        )
+    summary["redispatched"] = await recover_pending_actions_by_session()
+    for run_id in stale_ids:
+        try:
+            await execute_agent_run(None, str(run_id))
+        except Exception:
+            logger.exception("Stale run execution failed", extra={"run_id": str(run_id)})
+    summary["stale_runs"] = len(stale_ids)
+    return summary
+
+
+async def recover_pending_actions_by_session() -> int:
+    with session_scope() as session:
+        return await recover_pending_actions(session, provider=_provider_or_none())
 
 
 async def drain_trigger_evaluation(ctx: dict[str, Any] | None = None) -> dict[str, Any]:

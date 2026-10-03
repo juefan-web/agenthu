@@ -969,6 +969,44 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   （+203 行）须删除**——与 B1 镜像同锚点，rebase 必冲突且四个同名
   schema 双声明；title 先例不适用于 B1 已在库的批次。正式 approve 按
   序列落 rebase 后绿 head（head 绑定）。
+- **#51 合并 + #52 rebase 收口 + B 绑定 approve（2026-10-03 晚）**：
+  #51 增量（`88f786b` 全量 nullable 清扫）复审 **APPROVE**（绑定 head，
+  12:06Z）；**#51 合并 `9ffe10c`**；#52 rebase 到新 main，head `523023a`
+  （快照零 diff——staged 块删除后冲突源整体消失；drift `--require-zod`
+  绿；12/12 CI 全绿）；**B 于 12:24Z 在 `523023a` 出绑定 APPROVE**——
+  闸门解除，待协调人执行合并。#53 节流 PR 已关闭（仓库转 public 后
+  Actions 免费无限额；双触发与 12/12 口径维持原样）。
+- **A2 运行时与同意门禁已交付（2026-10-03 深夜 @
+  `feature/m4-a2-agent-runtime`，自 `523023a` 拉出，worktree
+  `D:\agenthu-wt-m4`；边界 = `HANDOFF/2026-10-03-a2-agent-runtime.md`）**：
+  ①**全局模型上下文同意门禁**（`model_context_consents` 表 + GET/PUT
+  `/v1/model-context-consent`，形状镜像 grounding_consents、版本回显、
+  默认关）——双层强制（装配层裁剪 + runner 层零调用），同意关 ⇒ fake
+  provider 计数恰为 0 且确定性路径照常出计划（degraded=
+  model_consent_missing）；②权限收紧落地（L3 grant 仅自动执行 L3 声明
+  动作、L2 永远逐次确认、通配不再越级、空 scope/通配 scope/过期/撤销
+  全 deny——`_matching_grants` 只做候选匹配）；③工具注册表 16 项
+  （server-side 版本化代码配置、schema→权限→display 三道顺序、启动
+  校验与 ACTION_POLICY 对齐；calendar.write/message.send/file.delete/
+  data.delete 诚实 `tool_not_implemented`）；④确定性 runner（原子
+  claim/lease/heartbeat、watchdog 先查可见副作用再结算 + attempt+1、
+  同事务审计账本）；⑤pending 8 态 mutation 面（confirm/ignore/retry、
+  expected_version 409、mutation 响应缓存表、CONFIRMED 不过期、
+  FOR UPDATE SKIP LOCKED 原子派发、EXECUTING 租约回收→同 key
+  FAILED_RETRYABLE）；⑥上下文装配 manifest（固定前缀序、
+  content_revision 排序、token 预算整段丢弃计数、逐字节
+  rendered_context_hash、untrusted 边界、N=10 近史段）；⑦redact 递归化
+  （嵌套键全禁 + 白名单变体 + 200 字符截断）；⑧provider 能力协商
+  （capabilities/generate_with_tools/continue_with_tool_results，
+  OpenAI Responses tools 实现，store=False 维持）；⑨chat 发送入口
+  （POST sessions/messages 202、消息级幂等、client_request_id 公式派生、
+  assistant 消息随终态落行）+ worker `execute_agent_run`/
+  `sweep_agent_runtime` cron（30s）。**验证：329 passed 1 skipped（含
+  20 个新 A2 回归 = §9 之 A2 面）、ruff/format/pyright 0 错、迁移
+  up/down/up + alembic check 绿、drift 双源绿（+ChatMessageSendResponse
+  映射）**。**未落地（留 A3/B2）**：pg_trgm/搜索、触发器接线、打扰预算
+  结算、消息删除、通知投递通道。分支叠在 #52 上，待 #52 合并后 rebase
+  到 main 再开 PR。
 - 流程规则不变：分支从 main 拉出；跨边界先冻结；PR 互审（A=rotcar07，
   B=juefan-web）；**并行会话各用独立 worktree**（2026-10-01 混合提交事故
   后的新规则）；**openapi.json 冲突一律 rebase 后 `--write` 重导**——CI

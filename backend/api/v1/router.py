@@ -16,6 +16,7 @@ from backend.api.v1 import (
     material,
     material_answers,
     memory,
+    model_context_consent,
     notification_preferences,
     pending_actions,
     permissions,
@@ -42,5 +43,6 @@ api_router.include_router(agent_runs.router)
 api_router.include_router(pending_actions.router)
 api_router.include_router(chat.router)
 api_router.include_router(notification_preferences.router)
+api_router.include_router(model_context_consent.router)
 
 __all__ = ["api_router"]

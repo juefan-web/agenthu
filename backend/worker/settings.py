@@ -16,8 +16,10 @@ from backend.worker.tasks import (
     drain_storage_orphans,
     drain_trigger_evaluation,
     embed_course_backfill,
+    execute_agent_run,
     extract_material,
     ping,
+    sweep_agent_runtime,
 )
 
 
@@ -33,6 +35,8 @@ class WorkerSettings:
         embed_course_backfill,
         drain_pending_extractions,
         drain_storage_orphans,
+        execute_agent_run,
+        sweep_agent_runtime,
     ]
     cron_jobs = [
         # Debounce for the trigger engine (D-031 §2: ~30s per user): poll
@@ -42,6 +46,9 @@ class WorkerSettings:
         # enqueues and best-effort object deletes both get retried.
         cron(drain_pending_extractions, second={0, 30}, unique=True, timeout=120),
         cron(drain_storage_orphans, minute=5, unique=True, timeout=60),
+        # Agent runtime reliability net (D-034 §3.2/§5.1): lease watchdogs,
+        # TTL expiry, lost-enqueue QUEUED runs, pending re-dispatch.
+        cron(sweep_agent_runtime, second={0, 30}, unique=True, timeout=120),
     ]
     redis_settings = _redis_settings()
     max_tries = 3

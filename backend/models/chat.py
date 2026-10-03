@@ -22,6 +22,7 @@ from sqlalchemy import (
     String,
     Text,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -49,6 +50,13 @@ class ChatMessage(Base, UUIDPrimaryKeyMixin):
         Index("ix_chat_messages_session_created", "session_id", "created_at"),
         Index("ix_chat_messages_user_created", "user_id", "created_at"),
         CheckConstraint("role IN ('user', 'assistant')", name="ck_chat_messages_role"),
+        Index(
+            "uq_chat_messages_client_id",
+            "session_id",
+            "client_message_id",
+            unique=True,
+            postgresql_where=text("client_message_id IS NOT NULL"),
+        ),
     )
 
     session_id: Mapped[uuid.UUID] = mapped_column(
@@ -61,6 +69,10 @@ class ChatMessage(Base, UUIDPrimaryKeyMixin):
     )
     role: Mapped[str] = mapped_column(String(16), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    # Message-level idempotency (ruling A2): the client generates one UUID
+    # per sent message; a lost-202 resend lands on the same row + run via the
+    # partial unique below instead of creating a duplicate message.
+    client_message_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     agent_run_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("agent_runs.id", ondelete="SET NULL"), nullable=True
     )
