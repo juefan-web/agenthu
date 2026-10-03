@@ -825,6 +825,26 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   半边）；HNSW 继续等检索延迟数据。B = #44 合并后开工 **④ 课件上传
   入口**（新任务文件 `TASKS/m3-materials-upload-ui.md`，含文件列表
   来源裁定：按需拉取、不进采集循环——见 DECISIONS D-033 §1 实现注记）。
+- **#45/#46 审毕合并，M3 主体落地（2026-10-02，A/B 互审 + 协调人核验
+  与合并）**：#45（A 的 E5 后端半边 + 回放 provider + 标记序不变式，
+  B approve 16:21Z）合 `55169c1`；#46（B 的课件上传链路，A approve
+  16:46Z）合 `8f9c04b`——A 评审三重点全过（双 URL 闸 + 重定向策略
+  对称性、无总时限下载客户端的非对称有理性、downloadUrl 会话态全链
+  路不落地），§5 三预埋点固化为常驻回归（12MB loopback multipart、
+  Windows 句柄探针），§6 验收 2-5 由构造与测试覆盖。**协调人事故
+  记录（转正 A 的记忆条目）**：合并 #44 时带 `--delete-branch` 删掉
+  叠置 base 分支，连带关闭 #46——已重建指针、重开、改基 main 完整
+  恢复；教训：**叠置 PR 链的底层合并勿带 `--delete-branch`，等上层
+  改基后再清分支**。
+- **下一队列（2026-10-02 指派，第三轮）——M3 验收轮**：A = 执行
+  **M3 验收**（compose 栈 + 打包客户端）：E5 全链升级为真实上传链
+  （A 自述将 API 造数换成真实上传）+ 上传 → 同意 → 提问 → 引用跳转
+  → 删 Learning Memory 复验；`m3-materials-upload-ui.md` 验收 1
+  （打包端到端）在此闭环；HNSW 决策看检索延迟日志。B = A 评审的两条
+  非阻塞跟进（小 PR）：① 下载端补 `read_timeout(30s)`——现状连接
+  僵死会让 invoke 无限挂起、按钮停在「转送中…」，**建议验收轮前
+  落地**；② status 徽标建图按课程过滤（`backendStatusByName` 仅按
+  filename，跨课程同名串标签，纯外观）。
 - 流程规则不变：分支从 main 拉出；跨边界先冻结；PR 互审（A=rotcar07，
   B=juefan-web）；**并行会话各用独立 worktree**（2026-10-01 混合提交事故
   后的新规则）；**openapi.json 冲突一律 rebase 后 `--write` 重导**——CI
