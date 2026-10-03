@@ -66,7 +66,9 @@ type PendingActionRead = {
   display: { summary: string; parameters: Array<{ label: string; value: string }>;
     impact: string; risk_note?: string };
   basis: DecisionBasis;
-  expires_at: string | null;
+  // 必填非空（A 评审裁定）：服务端恒有值。「确认后不再过期」是状态机
+  // 行为（A1），不以置空字段表达；UI 仅对 PENDING 显示到期倒计时。
+  expires_at: string;
   retryable: boolean;
   safe_error?: { code: string; message: string };
   result?: { summary: string; resource_type?: string; resource_id?: string };
@@ -120,7 +122,9 @@ API 冻结目标：
 每张卡固定展示：
 
 1. 动作标题、影响摘要和 Level 标签（例如“需要确认”），而不是内部 tool name。
-2. 安全参数清单、会影响的对象和不可逆/外发风险说明。
+2. 安全参数清单、会影响的对象和不可逆/外发风险说明。更新类动作
+   （`task.update` 等）的参数清单按「字段：旧值 → 新值」渲染变更，未变
+   字段不逐条罗列（A 评审建议，随小修采纳）。
 3. “为什么”入口，渲染该 action 的 `DecisionBasis`；过期绝对时间按用户
    timezone 显示，同时给出相对时间。
 4. `确认执行`、`忽略` 两个显式命令。`确认执行` 是危险或外发动作时应带
@@ -192,23 +196,38 @@ Chat 是同一 Agent 的一个入口，不是独立助手或第二套任务系�
 | `GET /v1/chat/search?q=&cursor=` | 只返回仍可见的原消息、会话和定位；**pg_trgm + ILIKE**（A4 裁定，取代 tsvector 预设；ASCII 词 + CJK bigram 复用 M3 keyword lane 同源函数；<3 字符查询走索引外过滤，冻结文本注明的可接受降级）；不先摘要。 |
 | `DELETE /v1/chat/messages/{id}` | 204；同事务从检索资格移除（`deleted_at` 置位同事务），关联引用改为 `source_deleted`。 |
 
-`AgentRunRead`（字段级，drift check 消费；不含 context_snapshot 原文、
-tool args、prompt——与 A §3.2 读面一致）：
+`AgentRunRead`（字段级，与 A §3.2 权威形状同形——**Zod 镜像逐字段对齐
+v3**；不含 context_snapshot、工具参数正文、prompt 或 chain-of-thought）：
 
 ```ts
+type AgentRunToolCallRead = {
+  call_id: string;
+  tool_name: string;
+  tool_version: string;
+  status: string; // 注册表声明的调用状态（A §3.1 tool_calls.status）
+  started_at: string | null;
+  ended_at: string | null;
+  error_code?: string;
+};
+
 type AgentRunRead = {
   id: string;
   status: "QUEUED" | "RUNNING" | "WAITING_CONFIRMATION" | "SUCCEEDED" | "FAILED" | "CANCELLED";
   invocation_kind: "chat" | "proactive_trigger" | "pending_action_resume" | "retry";
+  trigger_ref: { kind: string; event_id?: string; trigger_signature?: string; chat_message_id?: string };
+  provider: { name: string; model: string; capability: "tools" | "text_only" | "none" };
   created_at: string;
   updated_at: string;
   started_at: string | null;
   finished_at: string | null;
-  result: { summary: string; degraded: boolean; degrade_code?: string } | null;
-  failure: { code: string; retryable: boolean; safe_message: string } | null;
+  // 评审点 6 的成立条件（协调人裁定必修）：读面必须能 join 出 run 的
+  // 工具调用序列，否则 L0 审计降噪落空。
+  tool_calls: AgentRunToolCallRead[];
   decision_basis: DecisionBasis | null;
   pending_action_ids: string[];
   usage: { input_tokens: number; output_tokens: number; tool_tokens: number } | null;
+  result: { summary?: string; degraded: boolean; degrade_code?: string } | null;
+  failure: { code: string; retryable: boolean; safe_message: string } | null;
 };
 ```
 
