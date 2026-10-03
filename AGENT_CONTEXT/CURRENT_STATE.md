@@ -947,8 +947,10 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   Pydantic 契约面（PendingActionRead/AgentRunRead 含 tool_calls[]/
   DecisionBasis/chat/偏好，严格镜像 B r3）+ 8 个读面端点（D-029 游标）；
   drift 检查器注册 6 新映射 + **anyOf[$ref,null] 下钻**（首个含可空
-  嵌套对象的契约 schema）+ 冻结快照 Zod 预置（**staged：packages/
-  contracts 侧 6 条待 B1 镜像闭合**，沿 M2 D-031 先例）。验证：
+  嵌套对象的契约 schema）。快照 staged 块**已按协调人裁定整块删除**
+  （B1 已在库落镜像段，暂存副本成冗余且会制造 rebase 冲突——映射键
+  亦已对齐 B1 实际导出名 `89d29ed`）；CI 保持红至 #51 合入 +
+  本分支 rebase（合并序列见 PR #52 披露评论）。验证：
   ruff/format/pyright 干净；**309 passed** 1 skipped（S3 env 既有跳过），
   含迁移 up→down→up + alembic check 与 9 个新测试（隔离 P0/分页/
   软撤销/修订号不可变/偏好 409 与成对校验）。**待 B1 同批合入后
