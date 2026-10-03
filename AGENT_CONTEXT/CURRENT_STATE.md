@@ -877,6 +877,17 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   《动作确认与 Chat 交互契约》（pending_actions 确认 UI、Chat 视图
   与 basis 渲染复用、主动提醒呈现与打扰预算）。双文档互审 → 冻结 →
   拆实施任务（沿用 M2/M3 phase-0 模式）。
+- **A 的《Agent 运行时与审计契约》草案已交（2026-10-03 @
+  `feature/m4-phase0-runtime-contract`，worktree `D:\agenthu-wt-m4`）**：
+  `TASKS/m4-agent-runtime-audit-contract.md`——三张契约字段级
+  （agent_runs+steps 状态机与快照复现、工具注册表条目字段+首批 11 工具+
+  planner 兜底、pending_actions 状态机/幂等/TTL/审计事件），五个配套
+  （上下文装配前缀稳定排序+字符预算+D-033 裁剪隔离、provider chat()
+  接口缺口与降级、循环相位落点表——「Agent 观察不是 Event」裁定、
+  触发器接线+打扰预算入 grant scope、会话 FTS）。**10 条评审点显式待 B
+  裁**（§11），其中两条是对既有口径的修订提案：focus.start L1→L2、
+  会话 FTS 用 pg_trgm 而非任务文件预设的 tsvector（CJK 分词事实）。
+  迁移面 = 5 新表 + pg_trgm，零存量表变更。待 B 草案到齐后互审。
 - 流程规则追加：**开 PR 一律两步走——先 `gh pr create` 拿真实编号、
   再单独 `--add-reviewer`，挂完回读 `reviewRequests` 确认生效**
   （三起 reviewer 误挂/静默失败教训：#46/#47/#48 号段竞争 + 命令成功
