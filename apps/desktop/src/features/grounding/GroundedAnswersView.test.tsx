@@ -110,7 +110,8 @@ describe("GroundedAnswersView（讲解页，M3 §6 客户端半边）", () => {
     fireEvent.click(screen.getByRole("button", { name: "提问" }));
     await waitFor(() => expect(askGroundedQuestion).toHaveBeenCalledWith("信号与系统", "什么是采样定理"));
     expect(await screen.findByText(/约束是/)).toBeTruthy();
-    expect(screen.getByTitle("跳到引用")).toBeTruthy();
+    // 最新回答卡走 latest- 命名空间：与历史同条回答并存时 DOM id 不重复
+    expect(screen.getByTitle("跳到引用").id).toBe("latest-marker-ans-1-0");
     expect(screen.getByText(/lecture1\.pdf · 第 2 页/)).toBeTruthy();
     expect(screen.getByText("采样率至少为信号最高频率的两倍")).toBeTruthy();
     expect(screen.getByText(/已落地 · 1 条引用 · 模型 fake-model/)).toBeTruthy();
@@ -173,6 +174,9 @@ describe("GroundedAnswersView（讲解页，M3 §6 客户端半边）", () => {
     await pickCourse();
     fireEvent.click(await screen.findByText(/展开历史（2 条）/));
     expect(screen.getByText("什么是采样定理")).toBeTruthy();
+    // 历史卡保持裸 id（latest 专属前缀不进历史）
+    expect(document.getElementById("citation-ans-hist-0")).toBeTruthy();
+    expect(document.getElementById("latest-citation-ans-hist-0")).toBeNull();
     fireEvent.click(screen.getAllByRole("button", { name: "删除" })[0]!);
     await waitFor(() => expect(deleteGroundedAnswer).toHaveBeenCalledWith("ans-hist"));
   });
