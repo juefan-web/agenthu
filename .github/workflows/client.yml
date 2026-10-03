@@ -1,9 +1,19 @@
 name: Client checks
 
+# Billing throttle (2026-10-03): PR pushes run once via pull_request; push
+# triggers only main (client jobs run on windows-latest at a 2x minute
+# multiplier, so the duplicate run was the most expensive one to keep).
+# Docs-only changes skip CI entirely.
 on:
   push:
-    branches: [main, "feature/**", "fix/**"]
+    branches: [main]
+    paths-ignore:
+      - "AGENT_CONTEXT/**"
+      - "**/*.md"
   pull_request:
+    paths-ignore:
+      - "AGENT_CONTEXT/**"
+      - "**/*.md"
 
 jobs:
   frontend:

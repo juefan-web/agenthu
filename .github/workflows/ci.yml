@@ -1,9 +1,19 @@
 name: CI
 
+# Billing throttle (2026-10-03): PR pushes run once via pull_request; push
+# triggers only main. Docs-only changes skip CI entirely. This also removes
+# the push+pull_request double run that produced the #41 openapi merge-preview
+# hybrid (the auto-merged file neither side would export).
 on:
   push:
-    branches: ["**"]
+    branches: [main]
+    paths-ignore:
+      - "AGENT_CONTEXT/**"
+      - "**/*.md"
   pull_request:
+    paths-ignore:
+      - "AGENT_CONTEXT/**"
+      - "**/*.md"
 
 concurrency:
   group: ci-${{ github.ref }}
