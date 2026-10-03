@@ -177,3 +177,4 @@ textarea { resize: vertical; }
 .category-chip button { all: unset; cursor: pointer; color: #9aa7a5; }
 .category-chip button:hover { color: #a03d38; }
 .category-add { display: flex; gap: 6px; }
+.chat-delete-error { margin: 0; font-size: 12px; color: #a03d38; }

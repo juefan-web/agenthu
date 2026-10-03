@@ -12,7 +12,16 @@ import { DecisionBasisView } from "./DecisionBasisView";
  *  Backend 会话就绪时可用；网络失败如实区分「没有执行」与「执行结果未知」，
  *  结果未知只能以同一 mutation_id 重发（服务端幂等结算）或刷新状态。 */
 
-const USER_CAUSED_FAILURE_CODES = new Set(["permission_revoked", "consent_revoked", "source_deleted"]);
+// 用户自致失败码（B3 裁定 + 协调人超集裁定）：前两个是 A2 起服务端实发码
+// （L3 派发复验失败 / 课程资料同意缺失）；后三词是 A3/B3 的前向词汇，
+// 服务端细分码落地前先入集合保证旧词不回归。
+const USER_CAUSED_FAILURE_CODES = new Set([
+  "permission_denied",
+  "grounding_consent_missing",
+  "permission_revoked",
+  "consent_revoked",
+  "source_deleted",
+]);
 
 const STATUS_LINES: Record<PendingActionRead["status"], string> = {
   PENDING: "待你决定",
@@ -48,10 +57,10 @@ function confirmLabel(action: PendingActionRead): string {
 function safeErrorLine(action: PendingActionRead): { title: string; userCaused: boolean } | null {
   const error = action.safe_error;
   if (!error) return null;
-  // 用户自致子码（B3 裁定）：撤销授权/同意或来源删除是用户自己的选择，
-  // 不显示为系统故障。
+  // 用户自致（B3 裁定 + 超集裁定）：授权/同意被撤销或未开启、来源被删除
+  // 是用户自己侧的状态，不显示为系统故障。
   if (action.status === "FAILED" && USER_CAUSED_FAILURE_CODES.has(error.code)) {
-    return { title: "你撤销了授权/同意（或来源已删除），动作已失效", userCaused: true };
+    return { title: "授权/同意已撤销或未开启（或来源已删除），动作已失效", userCaused: true };
   }
   return { title: `${error.code}：${error.message}`, userCaused: false };
 }
@@ -130,7 +139,13 @@ export function PendingActionCard({ action, backend }: { action: PendingActionRe
     <header className="pending-action-head">
       <h3>{action.tool.title}</h3>
       <span className="pending-action-level">
-        {action.required_level === 3 ? "Level 3 · 已授权自动执行" : "Level 2 · 需要确认"}
+        {/* L3 标签按状态分词（裁定 3）：PENDING 上的 L3 恰是「无有效 grant
+            待处理」，不能标成已授权；历史/执行面才是授权派发账本。 */}
+        {action.required_level === 3
+          ? (action.status === "PENDING"
+            ? "Level 3 · 自动执行未获授权，需你处理"
+            : "Level 3 · 已授权自动执行")
+          : "Level 2 · 需要确认"}
       </span>
     </header>
     <p className="pending-action-summary">{action.display.summary}</p>

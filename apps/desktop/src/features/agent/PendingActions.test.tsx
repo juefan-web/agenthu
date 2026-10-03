@@ -105,11 +105,31 @@ describe("PendingActionsView（契约 §3 待确认面）", () => {
     expect(screen.getByRole("button", { name: "按原参数重试" })).toBeTruthy();
   });
 
-  it("FAILED 用户自致子码：单列文案，不显示为系统故障、无重试", async () => {
-    renderView([actionWith({ status: "FAILED", retryable: false, safe_error: { code: "permission_revoked", message: "grant 已撤销" } })]);
-    expect(await screen.findByText("你撤销了授权/同意（或来源已删除），动作已失效")).toBeTruthy();
-    expect(screen.queryByText(/grant 已撤销/)).toBeNull();
+  it("FAILED 用户自致子码（A2 实发码 permission_denied / grounding_consent_missing）：单列文案，不显示为系统故障、无重试", async () => {
+    renderView([
+      actionWith({ id: "pa-2", status: "FAILED", retryable: false, safe_error: { code: "permission_denied", message: "grant 已失效" } }),
+      actionWith({ id: "pa-3", status: "FAILED", retryable: false, safe_error: { code: "grounding_consent_missing", message: "课程同意未开启" } }),
+    ]);
+    expect(await screen.findAllByText("授权/同意已撤销或未开启（或来源已删除），动作已失效")).toHaveLength(2);
+    expect(screen.queryByText(/grant 已失效/)).toBeNull();
     expect(screen.queryByRole("button", { name: "按原参数重试" })).toBeNull();
+  });
+
+  it("FAILED 前向词汇（permission_revoked 等）同集合兜底，旧词不回归", async () => {
+    renderView([actionWith({ status: "FAILED", retryable: false, safe_error: { code: "permission_revoked", message: "已撤销" } })]);
+    expect(await screen.findByText("授权/同意已撤销或未开启（或来源已删除），动作已失效")).toBeTruthy();
+  });
+
+  it("L3 标签按状态分词：PENDING = 未获授权待处理；历史 = 已授权自动执行", async () => {
+    renderView([
+      baseAction,
+      actionWith({ id: "pa-4", required_level: 3 }),
+      actionWith({ id: "pa-5", required_level: 3, status: "SUCCEEDED", result: { summary: "已通知" } }),
+    ]);
+    await screen.findAllByText("创建任务");
+    expect(screen.getByText("Level 3 · 自动执行未获授权，需你处理")).toBeTruthy();
+    expect(screen.getByText("Level 3 · 已授权自动执行")).toBeTruthy();
+    expect(screen.getByText("Level 2 · 需要确认")).toBeTruthy();
   });
 
   it("IGNORED / EXPIRED：终态文案，无执行按钮", async () => {

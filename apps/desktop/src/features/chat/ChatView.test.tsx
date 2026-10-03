@@ -168,6 +168,21 @@ describe("ChatView（契约 §5 骨架）", () => {
     await waitFor(() => expect(listChatMessages.mock.calls.length).toBeGreaterThanOrEqual(2));
   });
 
+  it("删除失败不静默（裁定 2）：消息级与会话级原地呈现错误、按钮保留", async () => {
+    window.confirm = vi.fn(() => true);
+    getModelContextConsent.mockResolvedValue(consentOn);
+    deleteChatMessage.mockRejectedValueOnce(new Error("DELETE 未交付（404）"));
+    deleteChatSession.mockRejectedValueOnce(new Error("会话删除失败"));
+    renderChat();
+    fireEvent.click(await screen.findByRole("button", { name: "第一条" }));
+    fireEvent.click((await screen.findAllByRole("button", { name: "删除" }))[0]);
+    expect(await screen.findByText(/删除未完成：/)).toBeTruthy();
+    // 按钮保留（A3 交付 DELETE 后即可用），失败态可重试
+    expect(screen.getAllByRole("button", { name: "删除" }).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByTitle("删除会话"));
+    expect(await screen.findByText(/会话删除未完成：/)).toBeTruthy();
+  });
+
   it("离线：明确失败面，不渲染会话与输入", () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const { container } = render(<QueryClientProvider client={queryClient}>

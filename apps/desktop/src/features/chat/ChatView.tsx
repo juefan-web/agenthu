@@ -44,9 +44,16 @@ function MessageBubble({ message, backend, onOpenAction }: {
 }) {
   const queryClient = useQueryClient();
   const [showBasis, setShowBasis] = useState(false);
+  // 删除失败不得静默（裁定 2）：原地呈现错误并保留重试（按钮不隐藏——
+  // DELETE 端点随 A3 交付，此前失败如实可见）。
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const remove = useMutation({
     mutationFn: () => backend.deleteChatMessage(message.id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["chat-messages"] }),
+    onSuccess: () => {
+      setDeleteError(null);
+      queryClient.invalidateQueries({ queryKey: ["chat-messages"] });
+    },
+    onError: (error) => setDeleteError(errorText(error)),
   });
   const isUser = message.role === "user";
   return <li className={`chat-message ${isUser ? "from-user" : "from-agent"}`}>
@@ -59,6 +66,7 @@ function MessageBubble({ message, backend, onOpenAction }: {
       </button>
     </div>
     <p className="chat-message-content">{message.content}</p>
+    {deleteError && <p role="alert" className="chat-delete-error">删除未完成：{deleteError}</p>}
     {message.decision_basis && <button type="button" className="chat-message-why" aria-expanded={showBasis} onClick={() => setShowBasis(!showBasis)}>
       为什么
     </button>}
@@ -82,6 +90,7 @@ export function ChatView({ backend, onOpenAction }: {
   const [runOutcome, setRunOutcome] = useState<string | null>(null);
   const [pollNotice, setPollNotice] = useState<string | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
+  const [sessionDeleteError, setSessionDeleteError] = useState<string | null>(null);
   const openAction = onOpenAction ?? (() => undefined);
 
   const consent = useQuery({
@@ -116,9 +125,11 @@ export function ChatView({ backend, onOpenAction }: {
   const deleteSession = useMutation({
     mutationFn: (id: string) => backend!.deleteChatSession(id),
     onSuccess: (_data, id) => {
+      setSessionDeleteError(null);
       if (sessionId === id) { setSessionId(null); setRunOutcome(null); }
       void queryClient.invalidateQueries({ queryKey: ["chat-sessions"] });
     },
+    onError: (error) => setSessionDeleteError(errorText(error)),
   });
 
   const send = useMutation({
@@ -217,6 +228,7 @@ export function ChatView({ backend, onOpenAction }: {
         <button type="button" className="primary" disabled={createSession.isPending}
           onClick={() => createSession.mutate(newClientId("chat-session"))}>新会话</button>
         {createSession.isError && <p role="alert">{errorText(createSession.error)}</p>}
+        {sessionDeleteError && <p role="alert">会话删除未完成：{sessionDeleteError}</p>}
         {sessions.isError && <p role="alert">会话加载失败：{errorText(sessions.error)}</p>}
         {sessions.data?.map((session) => <div key={session.id} className={`chat-session-row ${session.id === sessionId ? "active" : ""}`}>
           <button type="button" onClick={() => { setSessionId(session.id); setRunOutcome(null); }}>

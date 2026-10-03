@@ -415,4 +415,40 @@ describe("BackendClient M4 methods (D-034)", () => {
     expect(String(fetcher.mock.calls[0][0])).toContain("/v1/notification-preferences");
     expect(JSON.parse(String(init.body))).toEqual({ daily_budget: 5, expected_version: 5 });
   });
+
+  // 同意门活接口（A2 合入后 main 现端面）：GET 形状 = ModelContextConsentRead
+  // 四字段（backend/schemas/consent.py），PUT 回显 consent_text_version。
+  it("gets the model-context consent with the frozen read shape", async () => {
+    const consent = {
+      enabled: false,
+      consent_text: "开启后，……最小渲染版本发送给模型供应商……",
+      consent_text_version: "v1",
+      consented_at: null,
+    };
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => json(consent));
+    const parsed = await new BackendClient({ baseUrl: "http://backend", fetcher, getToken: () => "jwt" })
+      .getModelContextConsent();
+    expect(String(fetcher.mock.calls[0][0])).toContain("/v1/model-context-consent");
+    expect(parsed.enabled).toBe(false);
+    expect(parsed.consented_at).toBeNull();
+    expect(parsed.consent_text_version).toBe("v1");
+  });
+
+  it("opts in to model context by echoing the read consent_text_version", async () => {
+    const consent = {
+      enabled: true,
+      consent_text: "开启后，……",
+      consent_text_version: "v1",
+      consented_at: "2026-10-03T16:00:00+08:00",
+    };
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => json(consent));
+    const parsed = await new BackendClient({ baseUrl: "http://backend", fetcher, getToken: () => "jwt" })
+      .setModelContextConsent(true, "v1");
+    const init = fetcher.mock.calls[0][1] as RequestInit;
+    expect(init.method).toBe("PUT");
+    expect(String(fetcher.mock.calls[0][0])).toContain("/v1/model-context-consent");
+    expect(JSON.parse(String(init.body))).toEqual({ enabled: true, consent_text_version: "v1" });
+    expect(parsed.enabled).toBe(true);
+    expect(parsed.consented_at).toBe("2026-10-03T16:00:00+08:00");
+  });
 });
