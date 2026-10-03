@@ -37,6 +37,17 @@ class SpyProvider:
         self.calls: list[list[str]] = []
         self._dim = dim
 
+    def capabilities(self):
+        from backend.adapters.model_provider.base import ProviderCapabilities
+
+        return ProviderCapabilities(text_generation=True)
+
+    async def generate_with_tools(self, input_text, instructions, tool_schemas):
+        raise NotImplementedError("SpyProvider is embed-only")
+
+    async def continue_with_tool_results(self, turn, results):
+        raise NotImplementedError("SpyProvider is embed-only")
+
     async def embed_texts(self, texts: list[str]):
         self.calls.append(list(texts))
         from backend.adapters.model_provider import EmbeddingResult

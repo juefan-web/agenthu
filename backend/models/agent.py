@@ -211,3 +211,32 @@ class PendingAction(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     # Action-level structured triple (B1 naming layering: action `result`,
     # tool-call `result_ref`, run-level `result`).
     result: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+
+
+class PendingActionMutation(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """Response cache for settled pending-action mutations (contract §5.1).
+
+    ``(pending_action_id, mutation_id)`` is unique: a client that lost the
+    HTTP response resends the same ``mutation_id`` and gets the exact body
+    the first settlement returned, instead of triggering a second dispatch.
+    ``response`` stores the serialized ``PendingActionRead`` at settlement
+    time — historical rows render what the user actually saw.
+    """
+
+    __tablename__ = "pending_action_mutations"
+    __table_args__ = (
+        UniqueConstraint("pending_action_id", "mutation_id", name="uq_pending_action_mutations"),
+        CheckConstraint("kind IN ('confirm', 'ignore', 'retry')", name="ck_pending_mutations_kind"),
+    )
+
+    pending_action_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("pending_actions.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    mutation_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    response: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )

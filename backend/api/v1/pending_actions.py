@@ -1,10 +1,15 @@
-"""Pending action read face (D-034, M4-A1).
+"""Pending action read face + mutation state machine (D-034, M4-A1/A2).
 
 ``active`` = the confirmation queue (PENDING/CONFIRMED/EXECUTING/
 FAILED_RETRYABLE) keyed by (created_at, id) — ruling A3; ``history`` =
 terminal rows plus the Level 3 auto-dispatch ledger, keyed by
-(coalesce(finished_at, updated_at), id). Mutations (confirm/ignore/retry)
-land with the A2 state machine, not this slice.
+(coalesce(finished_at, updated_at), id).
+
+Mutations (confirm/ignore/retry, A2): optimistic ``expected_version``, a
+client ``mutation_id`` whose settled response is cached (lost-HTTP resends
+return the same body), PENDING-expiry converged lazily before any decision,
+and dispatch through the atomic-claim executor — a racing worker can never
+double-execute what the inline path already claimed.
 """
 
 from __future__ import annotations
@@ -16,10 +21,22 @@ from fastapi import APIRouter, Query
 from sqlalchemy import func, select, true
 
 from backend.api.deps import CurrentUser, DBSession
-from backend.core.errors import NotFoundError, ValidationError
+from backend.core.errors import ConflictError, NotFoundError, ValidationError
+from backend.db.base import utcnow
 from backend.models.agent import PendingAction
-from backend.schemas.agent import PendingActionRead, pending_action_read
+from backend.models.enums import AuditActor
+from backend.schemas.agent import (
+    PendingActionMutation,
+    PendingActionRead,
+    pending_action_read,
+)
 from backend.schemas.common import Page
+from backend.services.agent_runner import (
+    cached_mutation_response,
+    dispatch_confirmed_action,
+    store_mutation_response,
+)
+from backend.services.audit import record_audit
 from backend.services.pagination import count_total, decode_cursor, keyset_page
 
 router = APIRouter(prefix="/pending-actions", tags=["agent"])
@@ -101,9 +118,191 @@ def list_pending_actions(
 
 @router.get("/{action_id}", response_model=PendingActionRead)
 def get_pending_action(action_id: uuid.UUID, user: CurrentUser, db: DBSession) -> PendingActionRead:
-    action = db.scalar(
-        select(PendingAction).where(PendingAction.id == action_id, PendingAction.user_id == user.id)
-    )
+    action = _lock_or_404(db, action_id, user.id)
+    _lazy_expire(db, action)
+    return pending_action_read(action)
+
+
+def _lock_or_404(db, action_id: uuid.UUID, user_id: uuid.UUID) -> PendingAction:
+    action = db.execute(
+        select(PendingAction)
+        .where(PendingAction.id == action_id, PendingAction.user_id == user_id)
+        .with_for_update()
+    ).scalar_one_or_none()
     if action is None:
         raise NotFoundError("Pending action not found")
-    return pending_action_read(action)
+    return action
+
+
+def _lazy_expire(db, action: PendingAction) -> bool:
+    """Expiry converges from PENDING on the read/write paths too (§5.1);
+    CONFIRMED never expires (ruling A1)."""
+
+    if action.status == "PENDING" and action.expires_at <= utcnow():
+        action.status = "EXPIRED"
+        action.updated_at = utcnow()
+        db.flush()
+        record_audit(
+            db,
+            action="pending_action.expired",
+            actor=AuditActor.SYSTEM.value,
+            user_id=action.user_id,
+            resource_type="pending_action",
+            resource_id=str(action.id),
+            details={"tool_name": action.tool_name, "status": "EXPIRED"},
+        )
+        return True
+    return False
+
+
+def _mutation_response(
+    db,
+    *,
+    action: PendingAction,
+    payload: PendingActionMutation,
+    kind: str,
+) -> PendingActionRead:
+    read = pending_action_read(action)
+    store_mutation_response(
+        db,
+        pending_action_id=action.id,
+        user_id=action.user_id,
+        mutation_id=payload.mutation_id,
+        kind=kind,
+        response=read.model_dump(mode="json"),
+    )
+    return read
+
+
+async def _confirm(db, action: PendingAction, payload: PendingActionMutation) -> PendingActionRead:
+    _lazy_expire(db, action)
+    if action.status == "PENDING":
+        if action.version != payload.expected_version:
+            raise ConflictError(
+                f"Version mismatch: expected {action.version} (current row version)"
+            )
+        action.status = "CONFIRMED"
+        action.confirmed_at = utcnow()
+        action.version += 1
+        db.flush()
+        record_audit(
+            db,
+            action="pending_action.confirmed",
+            actor=AuditActor.USER.value,
+            user_id=action.user_id,
+            resource_type="pending_action",
+            resource_id=str(action.id),
+            details={"tool_name": action.tool_name, "status": "CONFIRMED"},
+        )
+        await dispatch_confirmed_action(db, action_id=action.id)
+    elif action.status in ("CONFIRMED", "FAILED_RETRYABLE", "EXECUTING", "SUCCEEDED"):
+        # Already advanced by an earlier confirmation: return the current
+        # row without re-driving the state machine (contract §5.1). The
+        # dispatch claim is atomic, so this can never double-execute.
+        if action.status in ("CONFIRMED", "FAILED_RETRYABLE"):
+            await dispatch_confirmed_action(db, action_id=action.id)
+    else:
+        raise ConflictError(
+            f"Action in status {action.status} cannot be confirmed",
+        )
+    return _mutation_response(db, action=action, payload=payload, kind="confirm")
+
+
+def _ignore(db, action: PendingAction, payload: PendingActionMutation) -> PendingActionRead:
+    _lazy_expire(db, action)
+    if action.status != "PENDING":
+        raise ConflictError(f"Action in status {action.status} cannot be ignored")
+    if action.version != payload.expected_version:
+        raise ConflictError(f"Version mismatch: expected {action.version} (current row version)")
+    action.status = "IGNORED"
+    action.ignored_at = utcnow()
+    action.version += 1
+    db.flush()
+    record_audit(
+        db,
+        action="pending_action.ignored",
+        actor=AuditActor.USER.value,
+        user_id=action.user_id,
+        resource_type="pending_action",
+        resource_id=str(action.id),
+        details={"tool_name": action.tool_name, "status": "IGNORED"},
+    )
+    return _mutation_response(db, action=action, payload=payload, kind="ignore")
+
+
+async def _retry(db, action: PendingAction, payload: PendingActionMutation) -> PendingActionRead:
+    if action.status != "FAILED_RETRYABLE":
+        raise ConflictError(
+            f"Action in status {action.status} is not retryable "
+            "(retry keeps the same args/hash/key — only FAILED_RETRYABLE)"
+        )
+    if action.version != payload.expected_version:
+        raise ConflictError(f"Version mismatch: expected {action.version} (current row version)")
+    action.status = "CONFIRMED"
+    action.version += 1
+    db.flush()
+    record_audit(
+        db,
+        action="pending_action.retry",
+        actor=AuditActor.USER.value,
+        user_id=action.user_id,
+        resource_type="pending_action",
+        resource_id=str(action.id),
+        details={"tool_name": action.tool_name, "attempt": action.attempt_count + 1},
+    )
+    await dispatch_confirmed_action(db, action_id=action.id)
+    return _mutation_response(db, action=action, payload=payload, kind="retry")
+
+
+@router.post("/{action_id}/confirm", response_model=PendingActionRead)
+async def confirm_pending_action(
+    action_id: uuid.UUID,
+    payload: PendingActionMutation,
+    user: CurrentUser,
+    db: DBSession,
+) -> PendingActionRead:
+    cached = cached_mutation_response(
+        db, pending_action_id=action_id, mutation_id=payload.mutation_id
+    )
+    if cached is not None:
+        return PendingActionRead.model_validate(cached)
+    action = _lock_or_404(db, action_id, user.id)
+    result = await _confirm(db, action, payload)
+    db.commit()
+    return result
+
+
+@router.post("/{action_id}/ignore", response_model=PendingActionRead)
+def ignore_pending_action(
+    action_id: uuid.UUID,
+    payload: PendingActionMutation,
+    user: CurrentUser,
+    db: DBSession,
+) -> PendingActionRead:
+    cached = cached_mutation_response(
+        db, pending_action_id=action_id, mutation_id=payload.mutation_id
+    )
+    if cached is not None:
+        return PendingActionRead.model_validate(cached)
+    action = _lock_or_404(db, action_id, user.id)
+    result = _ignore(db, action, payload)
+    db.commit()
+    return result
+
+
+@router.post("/{action_id}/retry", response_model=PendingActionRead)
+async def retry_pending_action(
+    action_id: uuid.UUID,
+    payload: PendingActionMutation,
+    user: CurrentUser,
+    db: DBSession,
+) -> PendingActionRead:
+    cached = cached_mutation_response(
+        db, pending_action_id=action_id, mutation_id=payload.mutation_id
+    )
+    if cached is not None:
+        return PendingActionRead.model_validate(cached)
+    action = _lock_or_404(db, action_id, user.id)
+    result = await _retry(db, action, payload)
+    db.commit()
+    return result

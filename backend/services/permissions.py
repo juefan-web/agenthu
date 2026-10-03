@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import fnmatch
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -113,12 +114,27 @@ def _active_grants(session: Session, user_id: uuid.UUID) -> list[PermissionGrant
     return active
 
 
-def _granted_level(grants: list[PermissionGrant], action: str) -> int:
-    level = PermissionLevel.READ
-    for grant in grants:
-        if grant.action == action or fnmatch.fnmatch(action, grant.action):
-            level = max(level, grant.level)
-    return level
+def _matching_grants(grants: list[PermissionGrant], action: str) -> list[PermissionGrant]:
+    """Grants whose action key covers ``action`` (exact or fnmatch pattern).
+
+    The pattern match only decides WHICH grants are candidates — since D-034
+    §2.5 it can no longer elevate an action's level: a Level 3 grant never
+    auto-executes a tool the registry declares Level 2.
+    """
+
+    return [
+        grant for grant in grants if grant.action == action or fnmatch.fnmatch(action, grant.action)
+    ]
+
+
+def _default_scope_ok(scope: dict | None) -> bool:
+    """Minimum bar for an auto-executable grant: a non-empty scope object.
+
+    Empty scope is not a wildcard (contract §5.3); tool-specific validators
+    (see the registry) additionally reject unknown fields and ``*``.
+    """
+
+    return isinstance(scope, dict) and len(scope) > 0
 
 
 def evaluate_permission(
@@ -129,7 +145,20 @@ def evaluate_permission(
     required_level: int | None = None,
     actor: str = AuditActor.AGENT.value,
     audit: bool = True,
+    scope_validator: Callable[[dict | None], bool] | None = None,
 ) -> PermissionDecision:
+    """Tightened D-034 §2.5 semantics.
+
+    - Level 0/1: allowed outright (read/suggest cannot mutate).
+    - Level 2: ALWAYS ``REQUIRE_CONFIRMATION`` — per-action user confirmation,
+      every time. A Level 3 grant does not elevate a Level 2 tool (the
+      M0-era ``granted >= required`` shortcut is retired).
+    - Level 3: ``ALLOW`` only with an active, unrevoked, unexpired matching
+      grant whose level is exactly 3 and whose scope passes validation
+      (``scope_validator`` when the caller has one, else the non-empty
+      default). Otherwise require confirmation.
+    """
+
     required = required_level if required_level is not None else required_level_for(action)
 
     if required <= PermissionLevel.SUGGEST:
@@ -149,23 +178,38 @@ def evaluate_permission(
             reason="no user context",
         )
     else:
-        grants = _active_grants(session, user_id)
-        granted = _granted_level(grants, action)
-        if granted >= required:
-            decision = PermissionDecision(
-                action=action,
-                required_level=required,
-                granted_level=granted,
-                decision=AuditDecision.ALLOW,
-                reason="active grant covers the required level",
-            )
+        matching = _matching_grants(_active_grants(session, user_id), action)
+        granted = max((grant.level for grant in matching), default=PermissionLevel.READ)
+        if required == PermissionLevel.AUTO:
+            scope_ok = scope_validator or _default_scope_ok
+            auto_grants = [
+                grant
+                for grant in matching
+                if grant.level == PermissionLevel.AUTO and scope_ok(grant.scope)
+            ]
+            if auto_grants:
+                decision = PermissionDecision(
+                    action=action,
+                    required_level=required,
+                    granted_level=PermissionLevel.AUTO,
+                    decision=AuditDecision.ALLOW,
+                    reason="active level-3 grant with matching scope",
+                )
+            else:
+                decision = PermissionDecision(
+                    action=action,
+                    required_level=required,
+                    granted_level=granted,
+                    decision=AuditDecision.REQUIRE_CONFIRMATION,
+                    reason="no active scoped level-3 grant; confirmation required",
+                )
         else:
             decision = PermissionDecision(
                 action=action,
                 required_level=required,
                 granted_level=granted,
                 decision=AuditDecision.REQUIRE_CONFIRMATION,
-                reason="no active grant; explicit user confirmation required",
+                reason="level-2 actions always require per-action confirmation (D-034)",
             )
 
     if audit:

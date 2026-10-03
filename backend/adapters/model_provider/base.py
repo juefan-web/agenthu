@@ -12,8 +12,8 @@ D-033 §3/§7 constraints that live here for every implementation:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Protocol
+from dataclasses import dataclass, field
+from typing import Any, Protocol
 
 
 @dataclass(frozen=True)
@@ -34,6 +34,39 @@ class ModelProviderUnavailable(ModelProviderError):
     """
 
 
+@dataclass(frozen=True)
+class ProviderCapabilities:
+    """Capability negotiation (D-034 §6.2): the runner asks, never parses
+    natural language to discover what a provider can do."""
+
+    text_generation: bool = True
+    tool_calls: bool = False
+    structured_output: bool = False
+
+
+@dataclass(frozen=True)
+class ToolCall:
+    call_id: str
+    name: str
+    arguments_json: str
+
+
+@dataclass(frozen=True)
+class ToolResult:
+    call_id: str
+    status: str  # "succeeded" | "failed"
+    safe_result_json: str
+
+
+@dataclass(frozen=True)
+class ModelTurn:
+    text: str | None = None
+    tool_calls: list[ToolCall] = field(default_factory=list)
+    usage: dict[str, int] = field(default_factory=dict)
+    provider_request_id: str | None = None
+    finish_reason: str | None = None
+
+
 class ModelProvider(Protocol):
     name: str
 
@@ -44,3 +77,16 @@ class ModelProvider(Protocol):
     def build_responses_request(
         self, model: str, input_text: str, instructions: str | None = None
     ) -> dict[str, object]: ...
+
+    def capabilities(self) -> ProviderCapabilities: ...
+
+    async def generate_with_tools(
+        self,
+        input_text: str,
+        instructions: str | None,
+        tool_schemas: list[dict[str, Any]],
+    ) -> ModelTurn: ...
+
+    async def continue_with_tool_results(
+        self, turn: ModelTurn, results: list[ToolResult]
+    ) -> ModelTurn: ...

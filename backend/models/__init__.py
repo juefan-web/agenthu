@@ -3,9 +3,10 @@
 Alembic autogenerate and ``create_all`` rely on this module being imported.
 """
 
-from backend.models.agent import AgentRun, PendingAction
+from backend.models.agent import AgentRun, PendingAction, PendingActionMutation
 from backend.models.audit import AuditLog
 from backend.models.chat import ChatMessage, ChatSession
+from backend.models.consent import ModelContextConsent
 from backend.models.current_state import CurrentState
 from backend.models.enums import (
     AuditActor,
@@ -50,8 +51,10 @@ __all__ = [
     "Memory",
     "MemoryCorrectionStatus",
     "MemoryLevel",
+    "ModelContextConsent",
     "NotificationPreference",
     "PendingAction",
+    "PendingActionMutation",
     "PermissionGrant",
     "Plan",
     "PlanItem",
