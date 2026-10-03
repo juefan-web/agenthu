@@ -5,9 +5,10 @@ Status: open（2026-10-03 立项，协调人，M3 收口后开跑）。依据：
 数据化）、`HANDOFF/2026-10-01-hermes-memory-prestudy.md` §2 的两条
 「记账 M4」（会话 FTS、前缀稳定排序）、现有 M2/M3 phase-0 模式。
 
-进度：**A 草案已交**（2026-10-03，`TASKS/m4-agent-runtime-audit-contract.md`
-@ `feature/m4-phase0-runtime-contract`，§1 八项全覆盖 + §11 十条评审点
-待 B 裁）。B 草案进行中。
+进度：**A 草案已交 v2**（2026-10-03，`TASKS/m4-agent-runtime-audit-contract.md`
+@ `feature/m4-phase0-runtime-contract`——以重写稿为基并入 A 首稿更优部分，
+§1 八项全覆盖 + §11.2 十二条评审点待 B 裁、§11.1 修订清单可 diff）。
+B 草案进行中。
 
 ## 0. 为什么先文档后动工
 

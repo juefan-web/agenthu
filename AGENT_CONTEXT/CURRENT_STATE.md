@@ -879,15 +879,16 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   拆实施任务（沿用 M2/M3 phase-0 模式）。
 - **A 的《Agent 运行时与审计契约》草案已交（2026-10-03 @
   `feature/m4-phase0-runtime-contract`，worktree `D:\agenthu-wt-m4`）**：
-  `TASKS/m4-agent-runtime-audit-contract.md`——三张契约字段级
-  （agent_runs+steps 状态机与快照复现、工具注册表条目字段+首批 11 工具+
-  planner 兜底、pending_actions 状态机/幂等/TTL/审计事件），五个配套
-  （上下文装配前缀稳定排序+字符预算+D-033 裁剪隔离、provider chat()
-  接口缺口与降级、循环相位落点表——「Agent 观察不是 Event」裁定、
-  触发器接线+打扰预算入 grant scope、会话 FTS）。**10 条评审点显式待 B
-  裁**（§11），其中两条是对既有口径的修订提案：focus.start L1→L2、
-  会话 FTS 用 pg_trgm 而非任务文件预设的 tsvector（CJK 分词事实）。
-  迁移面 = 5 新表 + pg_trgm，零存量表变更。待 B 草案到齐后互审。
+  `TASKS/m4-agent-runtime-audit-contract.md`。**v2（同日晚）**：以重写稿
+  为基并入 A 首稿（PR #50）更优部分——attempt/operation_key/client_request_id
+  幂等与 lease/watchdog 恢复、权限账本同事务 + 递归脱敏（redact 顶层过滤
+  已核实）、**grant 等级收紧**（fnmatch 通配 + granted>=required 越级漏洞
+  已核实：L3 grant 只自动执行 L3 动作）、grant 软撤销、**全局「Agent 模型
+  上下文」同意缺口**（M3 同意只覆盖 chunk，不授权 CurrentState/Memory/chat
+  外发）、`content_revision` 前缀排序（updated_at 受 use 遥测扰动已核实）；
+  并回的部分：pg_trgm FTS 决定（tsvector 对 CJK 无分词）、materials.answer
+  工具、会话近史段入前缀、chat/pending API 形状与默认值。**§11.2 十二条
+  评审点待 B 裁**，§11.1 有相对基底的修订清单。待 B 草案到齐后互审。
 - 流程规则追加：**开 PR 一律两步走——先 `gh pr create` 拿真实编号、
   再单独 `--add-reviewer`，挂完回读 `reviewRequests` 确认生效**
   （三起 reviewer 误挂/静默失败教训：#46/#47/#48 号段竞争 + 命令成功
