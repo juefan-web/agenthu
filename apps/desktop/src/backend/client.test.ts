@@ -295,3 +295,124 @@ describe("BackendClient grounding endpoints (M3 §6)", () => {
     expect(String(filePages.mock.calls[0][0])).toContain("/v1/files?limit=200&offset=0");
   });
 });
+
+describe("BackendClient M4 methods (D-034)", () => {
+  const basis = {
+    basis_version: "v1",
+    summary: "作业临近且当前时段空闲",
+    references: [{ kind: "task", id: "task-1", label: "HW1" }],
+    rule_versions: { planner: "v2" },
+    selected_tool_call_ids: ["call-1"],
+  };
+  const action = {
+    id: "pa-1",
+    version: 3,
+    status: "PENDING",
+    required_level: 2,
+    tool: { name: "task.create", version: "1.0.0", title: "创建任务" },
+    display: {
+      summary: "把「复习第三章」加入任务列表",
+      parameters: [{ label: "标题", value: "复习第三章" }],
+      impact: "任务列表新增一条 todo",
+    },
+    basis,
+    expires_at: "2026-10-04T12:00:00+08:00",
+    retryable: true,
+    created_at: "2026-10-03T12:00:00+08:00",
+    updated_at: "2026-10-03T12:00:00+08:00",
+  };
+  const run = {
+    id: "run-1",
+    status: "SUCCEEDED",
+    invocation_kind: "chat",
+    trigger_ref: { kind: "chat", chat_message_id: "msg-1" },
+    provider: { name: "openai", model: "gpt-x", capability: "none" },
+    created_at: "2026-10-03T12:00:00+08:00",
+    updated_at: "2026-10-03T12:00:05+08:00",
+    started_at: null,
+    finished_at: null,
+    tool_calls: [],
+    decision_basis: null,
+    pending_action_ids: [],
+    usage: null,
+    result: { degraded: true, degrade_code: "provider_unavailable" },
+    failure: null,
+  };
+
+  it("drains pending actions through next_cursor pages", async () => {
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      json({ items: [action], total: null, limit: 200, offset: 0, next_cursor: "cur-1" }));
+    const second = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      json({ items: [{ ...action, id: "pa-2", status: "SUCCEEDED" }], next_cursor: null }));
+    let call = 0;
+    const fetcher2 = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      call += 1;
+      return call === 1 ? fetcher(input, init) : second(input, init);
+    });
+    const client = new BackendClient({ baseUrl: "http://backend", fetcher: fetcher2, getToken: () => "jwt" });
+    const actions = await client.listPendingActions("active");
+    expect(actions.map((item) => item.id)).toEqual(["pa-1", "pa-2"]);
+    expect(String(fetcher2.mock.calls[0][0])).toContain("/v1/pending-actions?status=active&limit=200");
+    expect(String(fetcher2.mock.calls[1][0])).toContain("cursor=cur-1");
+  });
+
+  it("sends expected_version and mutation_id on confirm; 409 carries status", async () => {
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => json({ ...action, status: "CONFIRMED" }));
+    const client = new BackendClient({ baseUrl: "http://backend", fetcher, getToken: () => "jwt" });
+    await client.confirmPendingAction("pa-1", 3, "mut-1");
+    const init = fetcher.mock.calls[0][1] as RequestInit;
+    expect(String(fetcher.mock.calls[0][0])).toContain("/v1/pending-actions/pa-1/confirm");
+    expect(JSON.parse(String(init.body))).toEqual({ expected_version: 3, mutation_id: "mut-1" });
+
+    const conflict = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => json({ error: { code: "conflict", message: "已被结算" } }, 409));
+    const rejected = await new BackendClient({ baseUrl: "http://backend", fetcher: conflict, getToken: () => "jwt" })
+      .confirmPendingAction("pa-1", 3, "mut-1").catch((error) => error);
+    expect(rejected).toBeInstanceOf(BackendHttpError);
+    expect((rejected as BackendHttpError).status).toBe(409);
+  });
+
+  it("reads agent runs with the tool_calls mirror", async () => {
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => json(run));
+    const parsed = await new BackendClient({ baseUrl: "http://backend", fetcher, getToken: () => "jwt" }).getAgentRun("run-1");
+    expect(parsed.result?.degraded).toBe(true);
+    expect(String(fetcher.mock.calls[0][0])).toContain("/v1/agent/runs/run-1");
+  });
+
+  it("creates sessions, sends messages (202), deletes messages and sessions (204)", async () => {
+    const session = { id: "s-1", title: "会话", created_at: "2026-10-03T10:00:00+08:00", updated_at: "2026-10-03T10:00:00+08:00", archived_at: null };
+    const creator = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => json(session));
+    const client = new BackendClient({ baseUrl: "http://backend", fetcher: creator, getToken: () => "jwt" });
+    await client.createChatSession({ title: "会话", clientRequestId: "req-1" });
+    const createInit = creator.mock.calls[0][1] as RequestInit;
+    expect(String(creator.mock.calls[0][0])).toContain("/v1/chat/sessions");
+    expect(JSON.parse(String(createInit.body))).toEqual({ title: "会话", client_request_id: "req-1" });
+
+    const sender = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => json({ run_id: "run-9", user_message_id: "msg-9" }, 202));
+    await new BackendClient({ baseUrl: "http://backend", fetcher: sender, getToken: () => "jwt" })
+      .sendChatMessage("s-1", "把作业加进日程", "cmsg-1");
+    const sendInit = sender.mock.calls[0][1] as RequestInit;
+    expect(String(sender.mock.calls[0][0])).toContain("/v1/chat/sessions/s-1/messages");
+    expect(JSON.parse(String(sendInit.body))).toEqual({ content: "把作业加进日程", client_message_id: "cmsg-1" });
+
+    const deleter = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(null, { status: 204 }));
+    await new BackendClient({ baseUrl: "http://backend", fetcher: deleter, getToken: () => "jwt" }).deleteChatMessage("msg-9");
+    await new BackendClient({ baseUrl: "http://backend", fetcher: deleter, getToken: () => "jwt" }).deleteChatSession("s-1");
+    expect(String(deleter.mock.calls[0][0])).toContain("/v1/chat/messages/msg-9");
+    expect(String(deleter.mock.calls[1][0])).toContain("/v1/chat/sessions/s-1");
+  });
+
+  it("patches notification preferences with expected_version", async () => {
+    const preferences = {
+      version: 5, timezone: "Asia/Shanghai", enabled_categories: ["deadline"],
+      quiet_hours_start: "22:00", quiet_hours_end: "07:00", daily_budget: 3,
+      sent_count: 1, budget_date: "2026-10-03", last_sent_at: null,
+    };
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => json(preferences));
+    await new BackendClient({ baseUrl: "http://backend", fetcher, getToken: () => "jwt" })
+      .updateNotificationPreferences({ daily_budget: 5 }, 5);
+    const init = fetcher.mock.calls[0][1] as RequestInit;
+    expect(init.method).toBe("PATCH");
+    expect(String(fetcher.mock.calls[0][0])).toContain("/v1/notification-preferences");
+    expect(JSON.parse(String(init.body))).toEqual({ daily_budget: 5, expected_version: 5 });
+  });
+});
