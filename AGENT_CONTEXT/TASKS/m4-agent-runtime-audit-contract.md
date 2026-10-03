@@ -1,8 +1,9 @@
 # M4-A 草案：Agent 运行时与审计契约
 
-状态：**draft v2，待 B 互审**（2026-10-03）。本文件是
-`m4-phase0-prereq-docs.md` 的 A 侧产出。v2 以重写稿为基，并入 A 首稿
-（PR #50）中经代码核实更优的部分，相对基底的修订清单见 §11.1。它冻结
+状态：**draft v3，待 B 终轮确认**（2026-10-03）。本文件是
+`m4-phase0-prereq-docs.md` 的 A 侧产出。v2 以重写稿为基并入 A 首稿更优部分；
+**v3 落协调人裁定 A1/A2/B4②、确认 B4①、执行 A4 终裁（pg_trgm），并吸收
+A 评审 B 草案 r2 的跨契约对齐项**（清单见 §11.1 第 10 条起）。它冻结
 实施前需要达成一致的数据边界和行为，而不是实施说明；评审通过后再登记
 DECISIONS 并拆迁移、API、worker 和测试任务。
 
@@ -66,11 +67,11 @@ fixtures；也不将 Hermes、AutoGen、Letta 或 LangGraph 作为服务端运�
 | `invocation_kind` | `chat`, `proactive_trigger`, `pending_action_resume`, `retry`；不接受客户端任意字符串。 |
 | `trigger_ref` | `{kind, event_id?, trigger_signature?, chat_message_id?}`。事件触发使用稳定 signature；同一用户、同一 signature 的活跃 run 去重。 |
 | `parent_run_id`, `operation_key`, `attempt_no` | `operation_key` 是一条逻辑工作流的服务端键，retry 不变；`attempt_no` 从 1 递增，且 `(user_id, operation_key, attempt_no)` 唯一。每个 retry 是新 run row，保留旧 attempt 的终态。 |
-| `client_request_id` | 仅 Chat / 明确客户端启动可传 UUID；`(user_id, client_request_id)` partial unique，使响应丢失后的重发返回同一个首 attempt。主动 trigger 使用 `(user_id, trigger_signature)` 的活跃 partial unique，而不假装有客户端键。 |
+| `client_request_id` | 仅 Chat / 明确客户端启动存在；`(user_id, client_request_id)` partial unique，使响应丢失后的重发返回同一个首 attempt。chat 入口取值冻结为 `chat:{session_id}:{client_message_id}`（**A2 裁定**，2026-10-03）——客户端只生成消息级 `client_message_id`（UUID），去重由 `(session_id, client_message_id)` 在 chat_messages 上的唯一约束承担，run 键由服务端按公式派生。主动 trigger 使用 `(user_id, trigger_signature)` 的活跃 partial unique，而不假装有客户端键。 |
 | `runner_version`, `tool_registry_version`, `prompt_version` | 所用本地 runner、工具集和提示模板的不可变版本；便于回放和回滚。 |
 | `provider` | `{name, model, capability: "tools"\|"text_only"\|"none", data_scope, consent_version?}`。`none` 表示确定性降级，不伪造模型调用。 |
 | `context_snapshot` | 见 §6：CurrentState 内容版本和快照、Goal / Memory / 文档 chunk 的 id+版本或 checksum、会话近史 id 列表、选择顺序、渲染模板版本、预算和 `rendered_context_hash`。不复制聊天全文、资料原文或秘密。 |
-| `decision_basis` | 面向解释的结构化引用和规则结果：`basis_version`, `summary`, `references`, `rule_versions`, `selected_tool_call_ids`。不存模型隐藏推理。 |
+| `decision_basis` | 面向解释的结构化引用和规则结果：`basis_version`, `summary`, `references`, `rule_versions`, `selected_tool_call_ids`。`references[].kind` 枚举冻结为 `event / memory / goal / plan / task / material / chat_message / current_state`（后两项 **B4①/B4② 裁定**，2026-10-03）：`chat_message` 只带 message id + occurred_at 定位、不带正文；`current_state` 带投影 `version`（与 D-027 版本语义一致），派生数字只进 references 不重复进 summary。不存模型隐藏推理。 |
 | `tool_calls` | 有序 JSON 数组，每项为 `{call_id, tool_name, tool_version, args_hash, input_redaction_version, status, started_at, ended_at, result_ref?, error_code?}`，`(agent_run_id, call_id)` 唯一（runner 是唯一写者，由 lease 单写者纪律保证；跨 run 工具统计成为真实需求时再升独立子表，评审点 10）。参数正文留在受控 action/业务表，不混入一般审计详情。 |
 | `lease` | `{claim_token, claimed_by, lease_expires_at, heartbeat_at}`；RUNNING 的 worker 必须续租，过期后才能被回收。 |
 | `budget` / `usage` | `{input_tokens, output_tokens, tool_tokens, reserved_total, actual_total}`；未调用 provider 时 usage 为零并标识降级原因。 |
@@ -114,9 +115,19 @@ RUNNING row 直接重置为 RUNNING，更不能并发执行两个 attempt。
 脱敏**：禁止保存 credential、authorization、cookie、token、`Set-Cookie`、
 资料正文、聊天正文和精确位置；不能仅依赖键名的顶层过滤。
 
-读面 API：`GET /v1/agent/runs?cursor=` 与 `GET /v1/agent/runs/{id}`（含
-tool_calls 与 decision_basis）为 Level 0，供「为什么」面板与审计查阅；分页
-沿用 D-029 的 events 口径（`Page.next_cursor`）。
+读面 API：`GET /v1/agent/runs?cursor=` 与 `GET /v1/agent/runs/{id}` 为
+Level 0，供「为什么」面板与审计查阅；分页沿用 D-029 的 events 口径
+（`Page.next_cursor`）。`AgentRunRead` 字段级形状（权威源，B 侧 Zod 镜像
+同形）：`{id, status, invocation_kind, trigger_ref, created_at, updated_at,
+started_at?, finished_at?, provider{name, model, capability}, decision_basis?,
+tool_calls[]{call_id, tool_name, tool_version, status, started_at?,
+ended_at?, error_code?}, pending_action_ids[], usage{input_tokens,
+output_tokens, tool_tokens}?, result{summary?, degraded, degrade_code?}?,
+failure?}`——不含 context_snapshot、工具参数正文、prompt 或
+chain-of-thought（复现审计走服务端快照域）。**`tool_calls[]` 进读面是评审
+点 6 的成立条件**（协调人裁定附加：审计面必须能 join 出 run 的工具调用
+序列，否则 L0 审计降噪落空）——B 草案 r2 的 `AgentRunRead` 现缺该数组，
+互审要求补齐（见 `HANDOFF/2026-10-03-a-review-m4-b-contract.md`）。
 
 ## 4. 工具注册表和执行边界
 
@@ -171,7 +182,7 @@ Grant。Level 0/1 不创建待确认动作。
 | `execution_lease` | `{claim_token, claimed_by, lease_expires_at, heartbeat_at}`；worker 必须原子 claim 并续租，过期才可恢复。 |
 | `grant_snapshot` | Level 3 只存 grant id、scope hash、检查时间，实际执行前再次查询有效 grant。 |
 | `confirmed_at`, `ignored_at`, `executed_at`, `finished_at` | 时间和操作者均服务端写入。 |
-| `attempt_count`, `last_error`, `result_ref` | 只存安全错误码/摘要和业务结果 id，不存原文响应。 |
+| `attempt_count`, `last_error`, `result` | `result` 为动作级结构化三元组 `{summary, resource_type?, resource_id?}`（**B1 命名分层**：动作级 `result`、工具调用级 `tool_calls[].result_ref`、run 级 `result`，三层不混名）；只存安全摘要和业务结果 id，不存原文响应。 |
 
 状态机为：
 
@@ -184,8 +195,11 @@ PENDING --confirm--> CONFIRMED --dispatch--> EXECUTING --success--> SUCCEEDED
 FAILED_RETRYABLE --retry (same args/hash/key)--> CONFIRMED
 ```
 
-`PENDING` 只能确认一次；确认、过期和忽略在一条加锁事务中比较 `version` 与
-`expires_at`，先成功者获胜，其余得到 409 和服务器当前状态。worker dispatch
+`PENDING` 只能确认一次；确认与忽略在一条加锁事务中比较 `version`，先成功者
+获胜，其余得到 409 和服务器当前状态。**过期只在 `PENDING` 态结算（A1 裁定，
+2026-10-03）：`CONFIRMED` 起不再过期**——确认即用户意图结算，不被时间撤回；
+确认后的执行终有终态（§5.2 恢复 worker 持续 claim `CONFIRMED` 行），不需要
+过期兜底，UI 的「即将到期」提示只针对 `PENDING`。worker dispatch
 使用 `SELECT ... FOR UPDATE SKIP LOCKED` 原子 claim `CONFIRMED` 行，并与
 `pending_action.dispatched` audit 在同一事务写入。客户端重发同一 confirm 请求
 携带同一 `expected_version`：若 action 已由该次确认推进，服务端返回当前行而非
@@ -413,8 +427,12 @@ Chat 需要 `chat_sessions` 与 `chat_messages`，不是把消息塞入 AuditLog
   `WHERE deleted_at IS NULL`；ASCII 词 + CJK bigram 归一复用 M3 keyword lane
   的同套工具函数。基底稿的「tsvector（中文配置另行验证）」经核实不可行：
   `simple` 配置对 CJK 无分词（整段连续汉语成单 token，检索失效），可用的
-  zhparser 不在 `pgvector/pg16` 镜像、引入即新基础设施；这同时是对任务文件
-  §1.8「PG tsvector」预设的修订建议。检索返回原消息和定位信息，**不先做
+  zhparser 不在 `pgvector/pg16` 镜像、引入即新基础设施。**协调人已终裁
+  （2026-10-03，A4 改裁）：pg_trgm 口径成立**，取代 tsvector+bigram 案与
+  任务文件 §1.8「PG tsvector」预设，冻结时进 DECISIONS 注记；随裁两条件：
+  ① <3 字符（短于 trigram 最小匹配）的查询走索引外过滤，属可接受降级；
+  ② 实施时 conftest 预装 `pg_trgm` 扩展（沿用 #35 对 vector 扩展的同款
+  处理）。检索返回原消息和定位信息，**不先做
   LLM 摘要**；摘要会丢失用户可核的具体经历，且成为第二份不透明记忆。
 - 聊天内容不进普通 audit 或 run snapshot；用户删除消息时从 FTS 和后续检索
   同步移除（`deleted_at` 置位与 FTS 失效同事务）。M5 的全局删除/导出将沿
@@ -423,18 +441,21 @@ Chat 需要 `chat_sessions` 与 `chat_messages`，不是把消息塞入 AuditLog
 Chat / run 的客户端 API 形状（v2 补，B 的 UI 契约消费；评审点 5）：
 
 ```text
-POST /v1/chat/sessions                      {} → ChatSessionRead
-GET  /v1/chat/sessions?q=&cursor=           # q 走 trigram 过滤（标题+可见消息）
+POST /v1/chat/sessions                      {title?, client_request_id?} → ChatSessionRead（title 缺省=首条用户消息截断的确定性生成）
+GET  /v1/chat/sessions?cursor=              # 会话 cursor 页（检索走 /v1/chat/search，不在列表挂 q）
 GET  /v1/chat/sessions/{id}                 # 含最近消息窗口
+GET  /v1/chat/sessions/{id}/messages?cursor= # ChatMessageRead cursor 页（decision_basis?/pending_action_id? 经 agent_run_id join 投影，A5 裁定，不落第二份存储）
 DELETE /v1/chat/sessions/{id}               # 先失效 FTS/检索资格，再级联内容行（§5.3 顺序）
-POST /v1/chat/sessions/{id}/messages        {content, client_request_id?} → 202 {run_id, user_message_id}
+DELETE /v1/chat/messages/{id}               # 204；deleted_at 置位与 FTS 失效同事务，关联引用改标 source_deleted
+GET  /v1/chat/search?q=&cursor=             # 只返回仍可见的原消息+会话定位（不摘要；B 草案口径）
+POST /v1/chat/sessions/{id}/messages        {content, client_message_id?} → 202 {run_id, user_message_id}
 ```
 
 POST messages 语义：同事务创建 user 消息 + `QUEUED` run（`invocation_kind=
-chat`，`client_request_id` 幂等），执行在 worker（lease 见 §3）；assistant
-消息在 run 终态时落行，客户端经会话读取或 run 轮询取回。同步长轮询是备选
-（4 model turns × 60s 超时的最坏情形下，同步 HTTP 不可靠）——本稿取异步，
-B 若 UI 需要同步语义在互审时提出。
+chat`）；幂等按 **A2**：`(session_id, client_message_id)` 消息级唯一，run 的
+`client_request_id` 由服务端按公式派生（§3.1）。执行在 worker（lease 见
+§3）；assistant 消息在 run 终态时落行，客户端经会话读取或 run 轮询取回。
+异步 202+轮询已按评审点 5 双方冻结（B 草案 r2 同口径）。
 
 ## 9. 建议实施切片与验收
 
@@ -493,17 +514,35 @@ pending TTL 与 lease 过期 sweep 收敛。
 9. §9 回归集补五项（逐字节装配、断供 e2e 出口、同意关零调用、chat 幂等
    重发、TTL/lease sweep）。
 
+v3（2026-10-03 晚，协调人裁定落案 + A 评审 B 草案 r2 的吸收）：
+
+10. **A1**（§5.1）：CONFIRMED 起不再过期，EXPIRED 仅可自 PENDING 进入；
+    恢复 worker 持续 claim 保证确认后终有终态。
+11. **A2**（§3.1/§8）：`run.client_request_id := "chat:{session_id}:{client_message_id}"`；
+    §8 请求字段名统一为 `client_message_id`，幂等下沉到消息级唯一。
+12. **B4②**（§3.1）：references kind 衚举补 `current_state`（带投影
+    version，派生数字不重复进 summary）；**B4①**（`chat_message`）A 确认
+    无异议——引用是定位不是正文，删除走 source_deleted 不复活。
+13. **A4 终裁执行**（§8）：pg_trgm 成立（<3 字符索引外过滤降级 + conftest
+    预装扩展两条件入文），DECISIONS 注记待冻结时记。
+14. 跨契约对齐（A 评审 B 草案 r2 的结论，详见
+    `HANDOFF/2026-10-03-a-review-m4-b-contract.md`）：采纳 `/v1/chat/search`
+    独立检索端点（会话列表撤 q）、消息级 `DELETE /v1/chat/messages/{id}`、
+    会话 title 可选+确定性回退、`AgentRunRead` 字段级权威形状入 §3.2
+    （**含 `tool_calls[]`**——评审点 6 成立条件，B 草案 r2 需补齐）、
+    `pending_actions.result` 按 B1 改为动作级三元组命名。
+
 ### 11.2 评审点清单（B 逐条裁）
 
 | # | 议题 | 本稿立场 |
 | --- | --- | --- |
-| 1 | §2.5 grant 等级收紧：L3 grant 只自动执行 L3 动作、L2 永远逐次确认（通配越级已核实为真漏洞） | 采纳；「精确 action 的 L3 grant 提升 L2」留 revisit |
-| 2 | 全局「Agent 模型上下文」同意：实施前单独冻结，默认关 | 采纳；形状镜像 grounding_consents |
-| 3 | 会话 FTS：pg_trgm vs 任务文件预设 tsvector | pg_trgm（`simple` 对 CJK 无分词；zhparser 不在镜像） |
+| 1 | §2.5 grant 等级收紧：L3 grant 只自动执行 L3 动作、L2 永远逐次确认（通配越级已核实为真漏洞） | 采纳；「精确 action 的 L3 grant 提升 L2」留 revisit（协调人倾向维持收紧） |
+| 2 | 全局「Agent 模型上下文」同意：实施前单独冻结，默认关 | 采纳；形状镜像 grounding_consents（协调人倾向：须先于任何携带 CurrentState/Memory/chat 的 provider 调用冻结） |
+| 3 | 会话 FTS：pg_trgm vs 任务文件预设 tsvector | **已终裁：pg_trgm**（协调人 A4，含 <3 字符降级与 conftest 预装两条件，§8） |
 | 4 | 上下文预算单位：token（基底）vs 字符（A 首稿） | token 对齐供应商硬限；确定性由 rendered_context_hash 断言保证 |
-| 5 | chat 异步 202+轮询 vs 同步响应 | 异步（最坏 4×60s 下同步 HTTP 不可靠）；B 的 UI 按异步冻结 |
-| 6 | L0 读工具是否逐条进 audit_logs | 不进（run 行已 append-only 可查） |
-| 7 | `focus.start` L1→L2 | 升 L2（§4 已定） |
+| 5 | chat 异步 202+轮询 vs 同步响应 | **已裁定：异步**（B 侧同口径冻结，双方 §8/§5 已对齐） |
+| 6 | L0 读工具是否逐条进 audit_logs | 不进；协调人支持，条件=审计面可 join 工具序列——已由 `AgentRunRead.tool_calls[]` 兑现（§3.2），B 草案 r2 待补该数组 |
+| 7 | `focus.start` L1→L2 | 升 L2（§4 已定；B 复核代码事实属实） |
 | 8 | 默认值集：TTL 24h(min 5min)/lease 5min/max_attempts 3/4 turns/8 calls/近史 N=10/chunk 2000 chars/预算 3·22:00–07:00·cooldown 60min | 采纳为 settings 可覆写初值 |
 | 9 | `content_revision` 载体：memories 无此列 | 内容 hash 或版本链序，实施第一刀定；禁用 `updated_at`（use 遥测扰动已核实） |
 | 10 | tool_calls 行内 JSONB vs 独立子表 | 行内（上限 8 调用 + lease 单写者）；跨 run 统计成为需求再升表 |
