@@ -935,6 +935,15 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   ① `ZOD_TO_OPENAPI` 映射条目随 A1 登记（现在加会因组件缺失红 CI）；
   ② `searchChat` 未实现——搜索结果形状未在冻结文本字段级定义，归
   B2 与 A1 OpenAPI 对齐时补。
+- **B1 自修 + A1（#52）交叉评审（2026-10-03）**：评审 A1 时发现 B1 缺陷
+  ——`ORMModel` 不 exclude_none，None 投影列以显式 null 下发，仅
+  `.optional()` 会拒收；`2e484c0` 改三投影列为 `.nullable().optional()`
+  （包 + 镜像 + 回归测试，145/14/tsc/drift 全绿）。#52 内容核验通过
+  （schemas 与 B1 逐字段一致、迁移/软撤销/政策行/读面路径全对），但
+  request-changes：除映射键改名外，**A1 写入 fixture 的整份 staged 副本
+  （+203 行）须删除**——与 B1 镜像同锚点，rebase 必冲突且四个同名
+  schema 双声明；title 先例不适用于 B1 已在库的批次。正式 approve 按
+  序列落 rebase 后绿 head（head 绑定）。
 - 流程规则不变：分支从 main 拉出；跨边界先冻结；PR 互审（A=rotcar07，
   B=juefan-web）；**并行会话各用独立 worktree**（2026-10-01 混合提交事故
   后的新规则）；**openapi.json 冲突一律 rebase 后 `--write` 重导**——CI
