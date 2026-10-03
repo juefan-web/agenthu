@@ -50,11 +50,13 @@ ZOD_TO_OPENAPI: dict[str, str] = {
     "PlanItemSchema": "ClientPlanItem",
     "PlanSchema": "ClientPlan",
     "FocusSessionSchema": "ClientFocusSession",
-    # M4 agent contract (D-034, slice A1): staged backend-side, B1 mirrors
-    # the same names in packages/contracts.
+    # M4 agent contract (D-034, slice A1). Keys verified against B1's
+    # actual exports on feature/m4-b1-contract-zod (PR #51): B1 exports
+    # PendingActionReadSchema / AgentRunReadSchema — NOT the shorter names
+    # first staged here (batch-coordination defect caught in review).
     "DecisionBasisSchema": "DecisionBasis",
-    "PendingActionSchema": "PendingActionRead",
-    "AgentRunSchema": "AgentRunRead",
+    "PendingActionReadSchema": "PendingActionRead",
+    "AgentRunReadSchema": "AgentRunRead",
     "ChatSessionSchema": "ChatSessionRead",
     "ChatMessageSchema": "ChatMessageRead",
     "NotificationPreferencesSchema": "NotificationPreferencesRead",
@@ -78,8 +80,8 @@ ZOD_DIRECTION: dict[str, str] = {
     "PlanSchema": "response",
     "FocusSessionSchema": "response",
     "DecisionBasisSchema": "response",
-    "PendingActionSchema": "response",
-    "AgentRunSchema": "response",
+    "PendingActionReadSchema": "response",
+    "AgentRunReadSchema": "response",
     "ChatSessionSchema": "response",
     "ChatMessageSchema": "response",
     "NotificationPreferencesSchema": "response",
