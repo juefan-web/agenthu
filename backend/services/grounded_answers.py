@@ -29,7 +29,7 @@ import re
 import time
 import uuid
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from backend.adapters.model_provider import ModelProvider
@@ -108,6 +108,8 @@ async def retrieve_chunks(
 ) -> list[RetrievedChunk]:
     """Hybrid retrieval: vector + keyword lanes, RRF-fused (§3.1/§3.7)."""
 
+    # Timing is split so the HNSW decision (§3.7) gets DB-scan latency that
+    # is not inflated by the provider embed roundtrip.
     started = time.perf_counter()
     base_conditions = [
         MaterialChunk.user_id == user_id,
@@ -119,6 +121,8 @@ async def retrieve_chunks(
     # Vector lane: exact cosine scan (no index yet); missing embeddings are
     # simply outside this lane — the keyword lane still covers them.
     embed = await provider.embed_texts([question])
+    embed_ms = (time.perf_counter() - started) * 1000
+    scan_started = time.perf_counter()
     question_vec = embed.vectors[0] if embed.vectors else None
     vector_rank: dict[uuid.UUID, int] = {}
     vector_rows: dict[uuid.UUID, tuple[MaterialChunk, FileObject]] = {}
@@ -134,8 +138,12 @@ async def retrieve_chunks(
             vector_rank[chunk.id] = rank
             vector_rows[chunk.id] = (chunk, file_obj)
 
-    # Keyword lane: ILIKE over normalized content, stable order. The tokens
-    # come from the question; more hits rank first (crude but deterministic).
+    # Keyword lane: ILIKE over normalized content, ANY-token semantics (OR) —
+    # a question almost always carries function words absent from the corpus,
+    # so ANDing the tokens zeroes this lane for real questions (found in the
+    # M3 acceptance round: keyword_candidates=0 while the corpus contained
+    # the content tokens). Stable order by (file_id, chunk_index); ranking
+    # pressure comes from RRF fusion, not per-lane hit counts.
     tokens = _keyword_tokens(question)
     keyword_rank: dict[uuid.UUID, int] = {}
     keyword_rows: dict[uuid.UUID, tuple[MaterialChunk, FileObject]] = {}
@@ -144,7 +152,7 @@ async def retrieve_chunks(
         stmt = (
             select(MaterialChunk, FileObject)
             .join(*join)
-            .where(and_(*base_conditions, and_(*like_clauses)))
+            .where(and_(*base_conditions, or_(*like_clauses)))
             .order_by(MaterialChunk.file_id, MaterialChunk.chunk_index)
             .limit(_TOP_K_PER_LANE * 4)
         )
@@ -163,15 +171,17 @@ async def retrieve_chunks(
         return score
 
     selected = sorted(rows, key=lambda cid: (-rrf(cid), str(cid)))[:_FINAL_CONTEXT_CHUNKS]
-    elapsed_ms = (time.perf_counter() - started) * 1000
-    # HNSW decision data (§3.7): candidate counts per lane + total latency.
+    elapsed_ms = (time.perf_counter() - scan_started) * 1000
+    # HNSW decision data (§3.7): candidate counts per lane; scan_ms is the
+    # DB-side portion only (embed_ms excluded — it is provider roundtrip).
     logger.info(
         "Grounding hybrid retrieval",
         extra={
             "vector_candidates": len(vector_rows),
             "keyword_candidates": len(keyword_rows),
             "selected": len(selected),
-            "latency_ms": round(elapsed_ms, 1),
+            "scan_ms": round(elapsed_ms, 1),
+            "embed_ms": round(embed_ms, 1),
         },
     )
     return [

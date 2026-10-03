@@ -13,7 +13,9 @@ provider is always fake — nothing here can touch a real vendor.
 from __future__ import annotations
 
 import hashlib
+import re
 import uuid
+from collections.abc import Callable
 
 import pytest
 from sqlalchemy import select
@@ -44,6 +46,10 @@ class FakeGroundingProvider:
     def __init__(self) -> None:
         self.calls: list[tuple[str, object]] = []
         self.scripted = ""
+        # 顺序无关脚本：以 build_context 的产物为入参构造回答——引用从
+        # 上下文原位提取，不锁 RRF 融合后的块次序（验收轮教训：任何把
+        # 排序写死的 scripted 都会在检索语义修正时假性翻红）。
+        self.scripted_fn: Callable[[str], str] | None = None
         self.generate_error: Exception | None = None
 
     async def embed_texts(self, texts: list[str]) -> EmbeddingResult:
@@ -58,6 +64,8 @@ class FakeGroundingProvider:
         self.calls.append(("generate", input_text))
         if self.generate_error is not None:
             raise self.generate_error
+        if self.scripted_fn is not None:
+            return self.scripted_fn(input_text)
         return self.scripted
 
     def build_responses_request(
@@ -126,6 +134,14 @@ def _user_id_from_headers(headers: dict[str, str]) -> uuid.UUID:
     return uuid.UUID(decode_access_token(headers["Authorization"].removeprefix("Bearer "))["sub"])
 
 
+def _context_clause(context: str, ref: int) -> str:
+    """上下文里第 ref 个 chunk 的首个句段（句号前）——原位提取，天然逐字，
+    与该 chunk 在融合排序中的位置无关。"""
+    match = re.search(rf"\[{ref}\] （[^）]*）\n(.+?)。", context)
+    assert match is not None, f"context lacks chunk [{ref}]:\n{context}"
+    return match.group(1)
+
+
 def test_full_pipeline_grounded_answer(
     db_session, client, auth_headers, storage, no_arq, provider
 ) -> None:
@@ -136,9 +152,9 @@ def test_full_pipeline_grounded_answer(
     asyncio.run(embed_pending_chunks(db_session, provider, user_id, COURSE))
     memory = _add_episode(db_session, user_id, "该生在滤波器作业平均用时 40 分钟")
 
-    provider.scripted = (
-        "定义：「傅里叶变换将时域信号分解为频率分量」[1]。"
-        "采样约束：「采样率至少为信号最高频率的两倍」[2]。"
+    provider.scripted_fn = lambda context: (
+        f"定义：「{_context_clause(context, 1)}」[1]。"
+        f"采样约束：「{_context_clause(context, 2)}」[2]。"
     )
     response = client.post(
         "/v1/material/answers",
@@ -177,8 +193,8 @@ def test_adversarial_fabricated_citations_dropped(
     _file_id, user_id = _seed_course_material(db_session, client, auth_headers, storage)
     _enable_consent(db_session, user_id)
 
-    provider.scripted = (
-        "真实引用：「采样率至少为信号最高频率的两倍」[1]。"
+    provider.scripted_fn = lambda context: (
+        f"真实引用：「{_context_clause(context, 1)}」[1]。"
         "伪造引用：「这段引文完全编造」[2]。"
         "越界引用：「再编一段」[9]。"
     )
@@ -191,7 +207,7 @@ def test_adversarial_fabricated_citations_dropped(
     body = response.json()
     assert body["grounded"] is True  # one survived
     quotes = [c["quote"] for c in body["citations"]]
-    assert quotes == ["采样率至少为信号最高频率的两倍"]
+    assert quotes == [_context_clause(provider.generate_inputs[0], 1)]
     assert "[9]" not in body["answer"]  # dropped markers stripped
     assert "这段引文完全编造" in body["answer"]  # excerpt stays as prose
 
@@ -311,3 +327,32 @@ def test_isolation_and_delete_entry(
         ).json()["total"]
         == 0
     )
+
+
+def test_keyword_lane_is_any_token_and_recalls_embeddingless_chunks(
+    db_session, client, auth_headers, storage, no_arq, provider
+):
+    """关键词通道 = OR 语义（验收轮发现：交付时误写为 AND，含功能词的问题
+    在该通道直接归零）。无 embedding 的 chunk（未同意课程、从未回填）只能
+    靠关键词通道召回——问题里混一个原文 token 与一个不在原文的功能词，
+    通道仍须命中。"""
+    import asyncio
+
+    from backend.services.grounded_answers import retrieve_chunks
+
+    _file_id, user_id = _seed_course_material(db_session, client, auth_headers, storage)
+    _enable_consent(db_session, user_id)
+    db_session.commit()
+
+    retrieved = asyncio.run(
+        retrieve_chunks(
+            db_session,
+            provider,
+            user_id=user_id,
+            course_name=COURSE,
+            # what/does/require 不在课件原文；采样/定理 双元在 PAGE_2。
+            question="What does 采样定理 require?",
+        )
+    )
+    assert retrieved, "关键词通道必须召回无 embedding 的 chunk（OR 语义）"
+    assert any("采样定理" in chunk.content for chunk in retrieved)
