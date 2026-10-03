@@ -57,6 +57,17 @@ class ChatMessage(Base, UUIDPrimaryKeyMixin):
             unique=True,
             postgresql_where=text("client_message_id IS NOT NULL"),
         ),
+        # A3 retrieval: pg_trgm GIN over content accelerates ILIKE substring
+        # matching (CJK included) for in-session search. Queries shorter than
+        # 3 characters form no trigram and degrade to an unindexed filter —
+        # correct results, no index (D-034). The extension itself is created
+        # by the migration and preinstalled in the test database.
+        Index(
+            "ix_chat_messages_content_trgm",
+            "content",
+            postgresql_using="gin",
+            postgresql_ops={"content": "gin_trgm_ops"},
+        ),
     )
 
     session_id: Mapped[uuid.UUID] = mapped_column(
