@@ -1,6 +1,6 @@
 # CURRENT_STATE
 
-Updated: 2026-10-03 · Milestone: **M4（Agent 运行时、Chat 与主动 Agent）——实施阶段（phase-0 契约已冻结 D-034，PR #50 合并 `05330f3`）**。M3 已收口（main `5b381fd`，D-030 口径出口判据「代码 + 真机双证」达成，见 2026-10-03 收口条目）。M2 已关闭（main `e2a80e6`，出口判据「四绿三窗口双人」达成，见 2026-10-02 条目）。M0/M1 已合并（PR #1-#15，round-5 数据闭环验收通过 + e2e 首跑解锁）；对概念基线的完整差距评估见 `HANDOFF/2026-09-30-implementation-evaluation.md`（§8 七子句：4 达成 + 1 部分 + 2 缺失），M2 出口判据即该报告末节的场景化 §8 全句。路线大纲（M2–M8）已经 A/B 确认采纳（**D-030 accepted**，含三处修订：M3 同步产出删除/依赖图设计、TECH_STACK 依赖方已注取代、m2-breakdown 已对齐大纲口径）。
+Updated: 2026-10-03 · Milestone: **M4（Agent 运行时、Chat 与主动 Agent）——实施阶段（D-034 冻结 `05330f3`；B1/A1 契约代码化批次已合：#51 `9ffe10c` + #52 `1bdae73`；A2 已交付在分支待开 PR）**。M3 已收口（main `5b381fd`，D-030 口径出口判据「代码 + 真机双证」达成，见 2026-10-03 收口条目）。M2 已关闭（main `e2a80e6`，出口判据「四绿三窗口双人」达成，见 2026-10-02 条目）。M0/M1 已合并（PR #1-#15，round-5 数据闭环验收通过 + e2e 首跑解锁）；对概念基线的完整差距评估见 `HANDOFF/2026-09-30-implementation-evaluation.md`（§8 七子句：4 达成 + 1 部分 + 2 缺失），M2 出口判据即该报告末节的场景化 §8 全句。路线大纲（M2–M8）已经 A/B 确认采纳（**D-030 accepted**，含三处修订：M3 同步产出删除/依赖图设计、TECH_STACK 依赖方已注取代、m2-breakdown 已对齐大纲口径）。
 · 集成分支 `integration/study-time-m0` 已合并 Backend（`61fcf82`）与客户端
 （`a2693e9`），冲突已解决，双侧 CI 与联合 drift check 全绿（draft PR #1）。
 · **Merge-1 Windows 构建包人工测试结论：不建议转正合并**（见
@@ -976,3 +976,24 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   自动合并结果（#41 竞态教训）；**共享 PR 分支被 rebase force-push 后，
   author 先对齐远端并验证等价性，再决定补推或让位**（#41 竞态教训，
   A 的处置即为范本）。
+- **B1/A1 契约代码化批次合并（2026-10-03，协调人核验与执行）**：#51
+  （B1 共享 Zod + 12 客户端方法；A 评审抓 5 处 nullable 欠缺 → B 全类
+  清扫 26 处 `88f786b`，交叉互查双向起效）合 `9ffe10c`；#52（A1 迁移/
+  政策行/读面；映射键改名对齐 + 206 行 staged 块删除 + rebase `523023a`，
+  B approve 12:24Z）合 `1bdae73`。drift 双源绿闭环（六映射全命中 B1
+  在库导出）；main 双 CI 绿。**流程新规经此批次立起来**：远端 CI 非
+  绿必须披露；同批 PR 名字对齐先于任一侧合并；nullability 缺陷类靠
+  字段级人工互查（drift 对 null 加宽不可见）。**仓库可见性变更记录**：
+  仓库由私有转 public（2026-10-03，Actions 计费封锁后持有人的解决
+  方案；节流 PR #53 据此关闭）——**原排 M5 合规章的 OneTHU BSL 1.1 /
+  LearnX 许可审查因「公开分发」实际已触发，建议提前正式审查**；脱敏
+  纪律（合成 fixtures、验收数据不出本机）继续有效。
+- **A2 已交付在分支（2026-10-03，`feature/m4-a2-agent-runtime` @
+  `fc1a5dc`，31 文件 +5283/−146，未开 PR）**：同意门禁双层强制且测试
+  钉死（`test_m4_runtime.py:301` 同意关 ⇒ provider 零调用）；16 工具
+  注册表（4 个诚实 `tool_not_implemented`）；runner/watchdog/mutations/
+  逐字节装配/递归 redact/chat 202；迁移 `a7d1c93f4e20`。本地 329
+  passed + drift 双源绿；**远端 CI 未跑（无 PR），按披露规则如实记录**。
+  下一步：A rebase 到 `1bdae73` 开 PR（两步挂 reviewer）→ B 交叉审；
+  **B2 依赖面已齐（pending mutations / chat 202 / 偏好 / 同意 GET/PUT），
+  B 可即刻开工**。
