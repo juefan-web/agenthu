@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 import uuid
 from datetime import datetime
 from typing import Any
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text, event, text
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -124,3 +125,17 @@ class Memory(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     # exist before embedding backfill and non-text rows never get one; the
     # writers that fill it arrive with the retrieval slice, not here.
     embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
+    # M4 slice (D-034): immutable content identifier for the agent context
+    # prefix ordering key — (kind, subject_key, content_revision, id). It is
+    # a sha256 of the content precisely because ``updated_at`` CANNOT serve:
+    # the use-telemetry writer bumps it on every decision use, which would
+    # shuffle the prefix and break byte-stable assembly. Never updated after
+    # insert (corrections write new rows); the before_insert listener below
+    # is the single point so no writer can forget it.
+    content_revision: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+@event.listens_for(Memory, "before_insert")
+def _set_content_revision(mapper: object, connection: object, target: Memory) -> None:
+    if not target.content_revision:
+        target.content_revision = hashlib.sha256(target.content.encode("utf-8")).hexdigest()

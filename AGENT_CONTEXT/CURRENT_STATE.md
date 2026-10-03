@@ -935,6 +935,26 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   ① `ZOD_TO_OPENAPI` 映射条目随 A1 登记（现在加会因组件缺失红 CI）；
   ② `searchChat` 未实现——搜索结果形状未在冻结文本字段级定义，归
   B2 与 A1 OpenAPI 对齐时补。
+- **A1 迁移与契约代码化已交付（2026-10-03 深夜 @
+  `feature/m4-a1-contract-codification`，worktree `D:\agenthu-wt-m4`）**：
+  迁移 `b8d3e57a21c4`（5 新表 agent_runs/pending_actions/chat_sessions/
+  chat_messages/notification_preferences + **grant 唯一约束改部分唯一
+  `WHERE revoked_at IS NULL`**——原全量唯一与「再授权铸新行」冲突，
+  属软撤销的完整 DDL 面 + memories.content_revision 列 sha256 回填，
+  before_insert 监听器单点覆盖全部写入方）；ACTION_POLICY +4 行
+  （memory.retrieve/goal.read/replan.evaluate/materials.answer）+
+  **focus.start 校正 L2**；grant DELETE 改软撤销、POST 不复用已撤销行；
+  Pydantic 契约面（PendingActionRead/AgentRunRead 含 tool_calls[]/
+  DecisionBasis/chat/偏好，严格镜像 B r3）+ 8 个读面端点（D-029 游标）；
+  drift 检查器注册 6 新映射 + **anyOf[$ref,null] 下钻**（首个含可空
+  嵌套对象的契约 schema）。快照 staged 块**已按协调人裁定整块删除**
+  （B1 已在库落镜像段，暂存副本成冗余且会制造 rebase 冲突——映射键
+  亦已对齐 B1 实际导出名 `89d29ed`）；CI 保持红至 #51 合入 +
+  本分支 rebase（合并序列见 PR #52 披露评论）。验证：
+  ruff/format/pyright 干净；**309 passed** 1 skipped（S3 env 既有跳过），
+  含迁移 up→down→up + alembic check 与 9 个新测试（隔离 P0/分页/
+  软撤销/修订号不可变/偏好 409 与成对校验）。**待 B1 同批合入后
+  drift 双源全绿 → A2 开工**。
 - **B1 自修 + A1（#52）交叉评审（2026-10-03）**：评审 A1 时发现 B1 缺陷
   ——`ORMModel` 不带 exclude_none，None 投影列以显式 null 下发，仅
   `.optional()` 会拒收；`2e484c0` 改三投影列为 `.nullable().optional()`

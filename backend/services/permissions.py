@@ -46,7 +46,10 @@ ACTION_POLICY: dict[str, tuple[int, str]] = {
     "state.read": (PermissionLevel.READ, "Read current state, tasks and memory."),
     "plan.suggest": (PermissionLevel.SUGGEST, "Propose a study/work plan."),
     "plan.confirm": (PermissionLevel.CONFIRM, "Confirm and activate a plan."),
-    "focus.start": (PermissionLevel.SUGGEST, "Start a focus session."),
+    # D-034 correction: starting a focus session on the user's behalf is a
+    # side effect and may not run at suggest level. User-initiated focus via
+    # the existing API/UI is implicitly authorized and unaffected.
+    "focus.start": (PermissionLevel.CONFIRM, "Start a focus session."),
     "task.create": (PermissionLevel.CONFIRM, "Create a task on the user's behalf."),
     "task.update": (PermissionLevel.CONFIRM, "Modify a task on the user's behalf."),
     "memory.write": (PermissionLevel.CONFIRM, "Write a memory entry."),
@@ -56,6 +59,19 @@ ACTION_POLICY: dict[str, tuple[int, str]] = {
     "file.delete": (PermissionLevel.CONFIRM, "Delete a stored file."),
     "data.delete": (PermissionLevel.CONFIRM, "Delete user data."),
     "notify.push": (PermissionLevel.AUTO, "Send proactive push notifications."),
+    # M4 tool-registry rows (D-034): the read face stays Level 0; the
+    # grounded-answers tool stays behind the D-033 consent gate regardless
+    # of its policy level.
+    "memory.retrieve": (PermissionLevel.READ, "Retrieve memory entries for agent context."),
+    "goal.read": (PermissionLevel.READ, "Read the user's active goals."),
+    "replan.evaluate": (
+        PermissionLevel.SUGGEST,
+        "Evaluate replan triggers and suggestions.",
+    ),
+    "materials.answer": (
+        PermissionLevel.READ,
+        "Answer a question from the user's course materials (D-033 gated).",
+    ),
 }
 DEFAULT_REQUIRED_LEVEL = PermissionLevel.CONFIRM
 

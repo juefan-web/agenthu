@@ -50,6 +50,16 @@ ZOD_TO_OPENAPI: dict[str, str] = {
     "PlanItemSchema": "ClientPlanItem",
     "PlanSchema": "ClientPlan",
     "FocusSessionSchema": "ClientFocusSession",
+    # M4 agent contract (D-034, slice A1). Keys verified against B1's
+    # actual exports on feature/m4-b1-contract-zod (PR #51): B1 exports
+    # PendingActionReadSchema / AgentRunReadSchema — NOT the shorter names
+    # first staged here (batch-coordination defect caught in review).
+    "DecisionBasisSchema": "DecisionBasis",
+    "PendingActionReadSchema": "PendingActionRead",
+    "AgentRunReadSchema": "AgentRunRead",
+    "ChatSessionSchema": "ChatSessionRead",
+    "ChatMessageSchema": "ChatMessageRead",
+    "NotificationPreferencesSchema": "NotificationPreferencesRead",
 }
 
 # Direction of the contract:
@@ -69,6 +79,12 @@ ZOD_DIRECTION: dict[str, str] = {
     "PlanItemSchema": "response",
     "PlanSchema": "response",
     "FocusSessionSchema": "response",
+    "DecisionBasisSchema": "response",
+    "PendingActionReadSchema": "response",
+    "AgentRunReadSchema": "response",
+    "ChatSessionSchema": "response",
+    "ChatMessageSchema": "response",
+    "NotificationPreferencesSchema": "response",
 }
 
 _BRACKETS = {"(": ")", "[": "]", "{": "}"}
@@ -337,10 +353,37 @@ def parse_zod_schemas(source: str) -> dict[str, dict[str, ZType]]:
 # --------------------------------------------------------------------------- #
 
 
+def _single_non_null_branch(node: Any) -> Any | None:
+    """The unique non-null ``anyOf`` branch, when all others are null-typed.
+
+    Pydantic v2 renders ``SomeModel | None`` as ``anyOf: [$ref, {type: null}]``
+    in OpenAPI 3.1; a nullable object reference must still resolve to its
+    component for the nested field comparison (M4 read shapes are the first
+    contract schemas with nullable object members).
+    """
+
+    branches = node.get("anyOf")
+    if not isinstance(branches, list) or not branches:
+        return None
+    non_null = [
+        branch
+        for branch in branches
+        if not (isinstance(branch, dict) and branch.get("type") == "null")
+    ]
+    # Exactly one non-null branch; every other branch is a null type.
+    return non_null[0] if len(non_null) == 1 else None
+
+
 def _resolve(node: Any, schemas: dict[str, Any]) -> Any:
     seen = 0
-    while isinstance(node, dict) and "$ref" in node and seen < 20:
-        node = schemas.get(str(node["$ref"]).rsplit("/", 1)[-1])
+    while isinstance(node, dict) and seen < 20:
+        if "$ref" in node:
+            node = schemas.get(str(node["$ref"]).rsplit("/", 1)[-1])
+        else:
+            branch = _single_non_null_branch(node)
+            if branch is None:
+                break
+            node = branch
         seen += 1
     return node
 

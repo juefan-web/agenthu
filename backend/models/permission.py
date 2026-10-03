@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func, text
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -17,11 +17,22 @@ class PermissionGrant(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     M0 does not ship a complex policy engine. This table exists so the Agent can
     later reuse the same permission layer: an action may only run automatically
     (Level 3) when an active, non-expired grant with ``level >= 3`` exists.
+
+    D-034 soft revoke: revocation stamps ``revoked_at`` and the row stays for
+    audit reference; uniqueness applies to ACTIVE rows only (one live grant per
+    user+action, revoked history may accumulate), so re-granting after a revoke
+    mints a new row instead of reviving the retired one.
     """
 
     __tablename__ = "permission_grants"
     __table_args__ = (
-        UniqueConstraint("user_id", "action", name="uq_permission_grants_user_action"),
+        Index(
+            "uq_permission_grants_user_action",
+            "user_id",
+            "action",
+            unique=True,
+            postgresql_where=text("revoked_at IS NULL"),
+        ),
     )
 
     user_id: Mapped[uuid.UUID] = mapped_column(

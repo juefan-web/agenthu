@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Response, status
 from sqlalchemy import select
@@ -48,9 +49,14 @@ def list_grants(user: CurrentUser, db: DBSession) -> list[PermissionGrant]:
 def create_grant(
     payload: PermissionGrantCreate, user: CurrentUser, db: DBSession
 ) -> PermissionGrant:
+    # D-034 soft-revoke semantics: only the ACTIVE row (revoked_at IS NULL)
+    # may be updated; re-granting after a revoke mints a NEW row so already
+    # dispatched actions and audits keep referencing the revoked grant id.
     grant = db.scalar(
         select(PermissionGrant).where(
-            PermissionGrant.user_id == user.id, PermissionGrant.action == payload.action
+            PermissionGrant.user_id == user.id,
+            PermissionGrant.action == payload.action,
+            PermissionGrant.revoked_at.is_(None),
         )
     )
     if grant is None:
@@ -60,13 +66,15 @@ def create_grant(
     grant.scope = payload.scope
     grant.note = payload.note
     grant.expires_at = payload.expires_at
-    grant.revoked_at = None
     db.flush()
     return grant
 
 
 @router.delete("/grants/{grant_id}", status_code=status.HTTP_204_NO_CONTENT)
 def revoke_grant(grant_id: uuid.UUID, user: CurrentUser, db: DBSession) -> Response:
+    # D-034: revocation is a soft stamp, never a row delete — dispatched
+    # Level 3 actions and their audits must keep resolving the same grant id,
+    # and a revoked row is never revived by a later re-grant.
     grant = db.scalar(
         select(PermissionGrant).where(
             PermissionGrant.id == grant_id, PermissionGrant.user_id == user.id
@@ -74,8 +82,9 @@ def revoke_grant(grant_id: uuid.UUID, user: CurrentUser, db: DBSession) -> Respo
     )
     if grant is None:
         raise NotFoundError("Permission grant not found")
-    db.delete(grant)
-    db.flush()
+    if grant.revoked_at is None:
+        grant.revoked_at = datetime.now(UTC)
+        db.flush()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
