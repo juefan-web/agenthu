@@ -39,10 +39,12 @@ Learning Memory → 同一问题再问，回答不再体现该记忆。
 - **Phase 1（本文件随附，可在当前 main 跑）**：API 造数 + API 断言的
   后端半边。上传走 `POST /v1/files`（multipart）——B 的上传 UI 落地前，
   造数用 API 是协调人允许的口径。
-- **Phase 2（#44 合入 main 后）**：讲解页 UI 交互断言（选课 → 同意门
-  展示后端文案 → 提问 → 引用卡 / 标记跳转 / 失效锚点两态 → 历史删除）。
-  B 的上传 UI（TASKS/m3-materials-upload-ui.md）落地后，把 (a) 的 API
-  上传换成 UI 上传即为完整版。
+- **Phase 2（#44/#46 已合入 main，2026-10-03 交付 spec）**：
+  `e5-m3-exit-ui.spec.ts`（门控 `AGENTHU_E5_UI=1`，构建包 + CDP）覆盖
+  Backend 登录 → 讲解视图 → 同意门 → 提问 → 引用标记/引用卡渲染与跳转
+  高亮 → 删 Memory 同问不再体现 → 历史删除。课件仍由 API 造数；campus
+  真机上传链（验收 1 的「列表出现真实文件」）是验收轮人工项，不在
+  spec 内。
 
 ## 环境与复现（Windows / A 栈）
 
