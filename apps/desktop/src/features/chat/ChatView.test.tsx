@@ -98,6 +98,9 @@ describe("ChatView（契约 §5 骨架）", () => {
 
   it("发送：202 后轮询 run 到终态并刷新消息（fake timers）", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
+    // 结算除消息外还失效 pending-actions：回复行的「查看确认卡片」深链
+    // 不能在 staleTime 窗口内端出旧收件箱（E6 s2 首跑实证的产品缺陷）。
+    const invalidate = vi.spyOn(QueryClient.prototype, "invalidateQueries");
     try {
       getModelContextConsent.mockResolvedValue(consentOn);
       getAgentRun.mockResolvedValueOnce(makeRun({ status: "RUNNING", result: null, finished_at: null }))
@@ -112,12 +115,14 @@ describe("ChatView（契约 §5 骨架）", () => {
       // 第一次轮询：RUNNING → 继续排程
       await vi.advanceTimersByTimeAsync(3_000);
       await waitFor(() => expect(getAgentRun).toHaveBeenCalledTimes(1));
-      // 第二次轮询：SUCCEEDED → 结算 + 刷新消息
+      // 第二次轮询：SUCCEEDED → 结算 + 刷新消息 + 失效收件箱缓存
       await vi.advanceTimersByTimeAsync(3_000);
       await waitFor(() => expect(getAgentRun).toHaveBeenCalledTimes(2));
       await waitFor(() => expect(listChatMessages.mock.calls.length).toBeGreaterThanOrEqual(2));
+      await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ["pending-actions"] }));
       expect(screen.queryByText(/模型处理中/)).toBeNull();
     } finally {
+      invalidate.mockRestore();
       vi.useRealTimers();
     }
   });

@@ -197,6 +197,10 @@ export function PendingActionsView({ backend, focusActionId, onFocusHandled }: {
     queryKey: ["pending-actions", tab],
     queryFn: () => backend!.listPendingActions(tab),
     enabled: !!backend,
+    // 收件箱是「现在有什么待我决定」面：进场必取新，不吃 staleTime 窗口内
+    // 的旧缓存（worker 随时可能新入队动作且无推送失效链；E6 s2/s6 首跑实证
+    // 深链/进场看到旧列表）。与 App 根徽标共用键，重取后徽标同步翻新。
+    refetchOnMount: "always",
   });
 
   useEffect(() => {

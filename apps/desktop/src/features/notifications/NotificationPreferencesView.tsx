@@ -33,6 +33,10 @@ export function NotificationPreferencesView({ backend }: { backend: BackendClien
     queryKey: ["notification-preferences"],
     queryFn: () => backend!.getNotificationPreferences(),
     enabled: !!backend,
+    // 「今天已发送 n/上限 m」是当下账本读数（send 结算在服务端异步落账），
+    // 进场必取新，不吃 staleTime 窗口内的旧计数（E6 s6 首跑实证：触发后
+    // 重进面板端出 0/2 旧值）。表单态由快照 effect 单独管理，不受影响。
+    refetchOnMount: "always",
   });
   const [form, setForm] = useState<FormState | null>(null);
   const [notice, setNotice] = useState<string | null>(null);

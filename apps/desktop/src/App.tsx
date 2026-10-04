@@ -86,11 +86,11 @@ export default function App() {
     } catch (error) {
       setNotice(errorText(error));
     }
-    try {
-      await queryClient.invalidateQueries();
-    } catch (error) {
-      setNotice(errorText(error));
-    }
+    // 退出即忘却：查询缓存是用户作用域的数据，但键上没有用户维度——失效
+    // 只会拿已死 token 立刻重取且错误态保留旧 data，下一个用户登录后在未
+    // 重挂载的视图里会端出前一账号的缓存（E6 s1 首跑实证）。整池清空才
+    // 是「换用户」的诚实语义；登录后各视图按挂载重取。
+    queryClient.clear();
   }
 
   useEffect(() => {

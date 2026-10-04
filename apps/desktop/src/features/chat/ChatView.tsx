@@ -188,6 +188,10 @@ export function ChatView({ backend, onOpenAction }: {
           setRunOutcome(runOutcomeText(run));
           setActiveRun(null);
           void queryClient.invalidateQueries({ queryKey: ["chat-messages", sessionId] });
+          // 结算可能带来待确认动作（如 task.create），而回复行就提供「查看确认
+          // 卡片」深链：不失效收件箱/徽标缓存（与 App 根徽标共用键前缀），用户
+          // 会在 staleTime 窗口内看到没有新卡的旧列表（E6 s2 首跑实证）。
+          void queryClient.invalidateQueries({ queryKey: ["pending-actions"] });
         } else if (activeRun.attempts + 1 >= MAX_RUN_POLLS) {
           setPollNotice("本轮仍在处理：稍后可手动刷新消息，不会重复发送。");
           setActiveRun(null);
