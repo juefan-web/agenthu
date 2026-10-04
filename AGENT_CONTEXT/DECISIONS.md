@@ -802,11 +802,22 @@ matcher 在场而无 args 永不自动放行（fail-closed）；②
 新 head 12/12，评审人自执核验（issuecomment-5975655100）后 approve
 延续至新 head。
 
-## D-035 — Chat 检索契约演进：ChatMessageRead.session_id + 跨会话搜索结果形状（提案，待 A/B 签字）
+## D-035 — Chat 检索契约演进：ChatMessageRead.session_id + 跨会话搜索结果形状
 
-Status: **proposed**（2026-10-04 A 起草，按当日指派「与 B 同批冻结后实施」。
-生效条件 = B 签字（本 PR 评审）+ 协调人采纳；实施随后端/客户端两侧切片，
-冻结前不开工。A3 主动延后项的收口。）
+Status: **accepted**（2026-10-04 A 起草（PR #57 `a4556cc`）；**B 签字完成
+（approve 03:04:55Z，两点显式确认）+ 协调人采纳（`46e8bb5` 合并后本注记）**。
+实施随后端/客户端两侧切片，按下方排序规则同批配对。A3 主动延后项的收口。
+
+**B 的两点确认（采纳记录）**：① 子路径移除 ack——`client.ts` 零消费坐实，
+`?session_id=` 限域完整复现子路径能力且 404 纪律一致，保留双面 = 永久
+双 drift 面与双测试矩阵；② `session_title` 扁平确认——r3 §5 消费需要
+（原消息/时间/会话定位/不摘要）恰好交付，`title` NOT NULL 无 null 陷阱。
+
+**实施排序规则（B 注记，B1/A1 先例的一般化，入流程纪律）**：**已映射
+（ZOD_TO_OPENAPI 在册）schema 的必填字段变更，客户端侧必须与 OpenAPI 侧
+同批且在其后或同时落**——`ChatMessageSchema` 在册，B 先加必填
+`session_id` 则 drift 立红；批次门禁 = drift 双源绿；
+`ChatSearchItemSchema` 映射条目等 A 的组件在场再登记。
 
 背景：D-034 冻结文本已声明全局检索面 `GET /v1/chat/search`（「只返回仍
 可见的原消息、会话和定位」），但**结果形状未字段级冻结**——A3 因此只交付了
