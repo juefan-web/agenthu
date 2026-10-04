@@ -1167,3 +1167,18 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   （s1+s6 四个暴露点，单跑 ≈5-7% 假红），修法 A（focus 事件路径，
   `create_event` 同请求 SADD + `_mark_confirmed_plan_items`）/ B
   （无 deadline touch 任务重打脏标）二选一，CHANGES_REQUESTED 已出。
+- **B3 工件交付（2026-10-04，`feature/m4-b3-e6-exit`，任务文件
+  `TASKS/m4-b3-e6-exit.md`）**：`e6-m4-exit-ui.spec.ts` 六场景 serial
+  （门控 `AGENTHU_E6_UI=1`，playwright --list 过、tsc 绿）+ `e6-replay.mjs`
+  三模式 provider 假件（grounding 兼容 E5 / chat-tools 首
+  轮 function_call→续轮文本 / unavailable 503；`POST /__mode` 控制，
+  本地自测三模式过）+ README「E6 栈」手册。**两件事如实上报**：
+  ① **首跑环境受阻**——B 机无 docker/PostgreSQL/Redis（多路径核实），
+  E6 栈拉不起来；运行手册已沉淀，首跑待栈机（A 的 E5 栈先例）或本地
+  安装决策。② **缺口矩阵三件（B3 准备期确诊，均 A 侧产出面）**：
+  Plan.basis.agent_decision 无写入者（A 契约 §7 说 planner/replan 写
+  references——建议 basis 仍是 legacy 弱类型）；reference 失效态
+  （source_deleted/version_mismatch）全后端无发射点（B 契约 §5 删消息
+  置失效未实现）；chat_message kind 无运行时产出者。S1/S3 已按实现现实
+  断言（run 级 basis 核验 + 单测钉 UI 路径），缺口闭合后补两处活链断言
+  （spec 留有注释锚点）。
