@@ -53,6 +53,32 @@ describe("BasisPanel（D-031 §1「为什么」面板）", () => {
     expect(screen.getByText("打分 · urgency")).toBeTruthy();
     expect(screen.getByText("12")).toBeTruthy();
     expect(screen.getByText("打分 · goal_weight")).toBeTruthy();
+    expect(screen.getByText("3")).toBeTruthy();
+  });
+
+  it("M4 agent_decision：可解析时移交共享 DecisionBasisView，legacy 行保留", () => {
+    render(<BasisPanel basis={{
+      deadline: "2026-10-04T23:59:00+08:00",
+      agent_decision: {
+        basis_version: "v1",
+        summary: "作业临近且当前时段空闲",
+        references: [{ kind: "task", id: "task-1", label: "HW1" }],
+        rule_versions: { planner: "v2" },
+        selected_tool_call_ids: [],
+      },
+    }} />);
+    expect(screen.getByText("截止时间")).toBeTruthy();
+    expect(screen.getByText("作业临近且当前时段空闲")).toBeTruthy();
+    expect(screen.getByText(/规则版本：planner v2/)).toBeTruthy();
+    // 不再以未知字段 JSON 透出
+    expect(screen.queryByText("agent_decision")).toBeNull();
+  });
+
+  it("agent_decision 形状不符：退回未知字段 JSON 透出（形状演进透明）", () => {
+    render(<BasisPanel basis={{ agent_decision: { unexpected: true } }} />);
+    expect(screen.getByText("agent_decision")).toBeTruthy();
+    expect(screen.getByText(JSON.stringify({ unexpected: true }))).toBeTruthy();
+    expect(screen.queryByText(/规则版本/)).toBeNull();
   });
 
   it("未知估时来源显示原始字符串（未来枚举值）", () => {

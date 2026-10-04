@@ -13,14 +13,17 @@ import { ReplanSuggestion } from "./features/plans/ReplanSuggestion";
 import { TaskList } from "./features/tasks/TaskList";
 import { MemoryView } from "./features/memory/MemoryView";
 import { GroundedAnswersView } from "./features/grounding/GroundedAnswersView";
+import { PendingActionsView } from "./features/agent/PendingActions";
+import { ChatView } from "./features/chat/ChatView";
+import { NotificationPreferencesView } from "./features/notifications/NotificationPreferencesView";
 import { errorText } from "./lib/errors";
 import { useSessionStore } from "./state/session";
 import { formatAvailableMinutes } from "./state/format";
 import { useBackendSessionStore } from "./state/backendSession";
 import type { EventSyncCoordinator } from "./sync/coordinator";
 
-type View = "today" | "tasks" | "focus" | "memory" | "explain";
-const VIEW_LABELS: Record<View, string> = { today: "今天", tasks: "任务", focus: "专注", memory: "记忆", explain: "讲解" };
+type View = "today" | "tasks" | "focus" | "memory" | "explain" | "pending" | "chat" | "reminders";
+const VIEW_LABELS: Record<View, string> = { today: "今天", tasks: "任务", focus: "专注", memory: "记忆", explain: "讲解", pending: "确认", chat: "对话", reminders: "提醒" };
 type CollectionStage = "collecting" | "saving" | "syncing" | null;
 
 function syncResultText(result: Awaited<ReturnType<EventSyncCoordinator["flush"]>>): string {
@@ -35,6 +38,9 @@ export default function App() {
   const [services] = useState(() => createAppServices());
   const { backend, backendSession, backendUrl, queue, sync } = services;
   const [view, setView] = useState<View>("today");
+  // Chat → 确认卡片的深链（契约 §3.1：同一 id 只有一张卡，聊天不提供绕过
+  // 确认的快捷执行）
+  const [focusActionId, setFocusActionId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(0);
   const [collectionElapsed, setCollectionElapsed] = useState(0);
@@ -46,6 +52,13 @@ export default function App() {
   const tasks = useQuery({ queryKey: ["tasks"], queryFn: () => backend!.getTasks(), enabled: backendReady });
   const plan = useQuery({ queryKey: ["plan"], queryFn: () => backend!.getTodayPlan(), enabled: backendReady });
   const currentState = useQuery({ queryKey: ["current-state"], queryFn: () => backend!.getCurrentState(), enabled: backendReady });
+  // 「待你决定」徽标（契约 §3.1：应用根部可见）：与 PendingActionsView
+  // 共用 query key，缓存互备。
+  const activeActions = useQuery({
+    queryKey: ["pending-actions", "active"],
+    queryFn: () => backend!.listPendingActions("active"),
+    enabled: backendReady,
+  });
 
   useEffect(() => {
     void campus.restore().then(applySession).catch((error) => setNotice(errorText(error)));
@@ -175,6 +188,7 @@ export default function App() {
           {(Object.keys(VIEW_LABELS) as View[]).map((item) =>
             <button key={item} className={`nav-item ${view === item ? "active" : ""}`} onClick={() => setView(item)}>
               {VIEW_LABELS[item]}
+              {item === "pending" && (activeActions.data?.length ?? 0) > 0 && <span className="nav-badge">{activeActions.data?.length}</span>}
             </button>)}
         </nav>
         <div className="sidebar-footer"><span className={`status-dot ${session.status}`} />{session.status === "ready" ? `${session.username} 已连接` : "校园未连接"}</div>
@@ -210,6 +224,14 @@ export default function App() {
         {view === "focus" && <FocusView tasks={taskList} />}
         {view === "memory" && <MemoryView />}
         {view === "explain" && <GroundedAnswersView />}
+        {view === "pending" && <PendingActionsView
+          backend={backendReady ? backend : null}
+          focusActionId={focusActionId}
+          onFocusHandled={() => setFocusActionId(null)} />}
+        {view === "chat" && <ChatView
+          backend={backendReady ? backend : null}
+          onOpenAction={(actionId) => { setFocusActionId(actionId); setView("pending"); }} />}
+        {view === "reminders" && <NotificationPreferencesView backend={backendReady ? backend : null} />}
       </section>
     </main>
   </AppServicesContext.Provider>;

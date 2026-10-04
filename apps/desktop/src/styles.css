@@ -115,3 +115,66 @@ textarea { resize: vertical; }
 .material-meta { display: grid; gap: 2px; min-width: 0; font-size: 13px; }
 .material-meta strong { font-weight: 600; overflow-wrap: anywhere; }
 .material-meta span { color: #788686; font-size: 12px; }
+/* M4（B2）：待确认动作、共享 basis、对话骨架、提醒偏好 */
+.nav-badge { display: inline-block; margin-left: 6px; min-width: 18px; padding: 1px 5px; border-radius: 9px; background: #a03d38; color: #fff; font-size: 11px; text-align: center; }
+.pending-actions-view { max-width: 720px; display: grid; gap: 10px; }
+.pending-actions-tabs { display: flex; gap: 8px; }
+.pending-action-list { display: grid; gap: 12px; }
+.pending-action-card { display: grid; gap: 8px; border: 1px solid #e0e6e4; border-left: 3px solid #2f6b3c; border-radius: 8px; padding: 12px 14px; background: #fff; }
+.pending-action-card.status-failed, .pending-action-card.status-failed_retryable { border-left-color: #a03d38; }
+.pending-action-card.status-expired, .pending-action-card.status-ignored { border-left-color: #b7c2c0; }
+.pending-action-card.deep-link-focus { outline: 2px solid #2f6b3c; }
+.pending-action-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.pending-action-head h3 { margin: 0; font-size: 15px; }
+.pending-action-level { color: #677879; font-size: 12px; white-space: nowrap; }
+.pending-action-params { margin: 0; display: grid; gap: 4px; }
+.pending-action-params div { display: grid; grid-template-columns: max-content 1fr; gap: 8px; }
+.pending-action-params dt { color: #677879; font-size: 12px; }
+.pending-action-params dd { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
+.pending-action-impact, .pending-action-risk, .pending-action-expiry, .pending-action-result { margin: 0; font-size: 13px; }
+.pending-action-risk { color: #a03d38; }
+.pending-action-expiry { color: #677879; }
+.pending-action-error { margin: 0; font-size: 13px; color: #a03d38; }
+.pending-action-error.user-caused { color: #677879; }
+.pending-action-unknown { display: grid; gap: 6px; border: 1px dashed #d9b44a; border-radius: 6px; padding: 8px 10px; }
+.pending-action-unknown p { margin: 0; font-size: 13px; }
+.pending-action-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.pending-action-status { margin-left: auto; color: #677879; font-size: 12px; }
+.pending-action-why { all: unset; cursor: pointer; color: #2f6b3c; font-size: 13px; font-weight: 600; }
+.decision-basis { display: grid; gap: 6px; border: 1px solid #e0e6e4; border-radius: 6px; padding: 8px 10px; background: #f9fbfa; }
+.basis-summary { margin: 0; font-size: 13px; }
+.basis-note { margin: 0; color: #9aa7a5; font-size: 11px; }
+.basis-references { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
+.basis-reference-kind { color: #677879; font-size: 12px; }
+.basis-reference-badge { color: #a03d38; font-size: 12px; }
+.basis-reference-stale .basis-reference-label { color: #9aa7a5; text-decoration: line-through; }
+.basis-rules { margin: 0; color: #677879; font-size: 12px; }
+.chat-view { display: grid; gap: 10px; }
+.chat-workspace { display: grid; grid-template-columns: 200px 1fr; gap: 12px; }
+.chat-sessions { display: grid; gap: 6px; align-content: start; border: 1px solid #e0e6e4; border-radius: 8px; padding: 10px; }
+.chat-session-row { display: flex; gap: 4px; align-items: center; }
+.chat-session-row.active button:first-child { font-weight: 600; }
+.chat-session-delete { margin-left: auto; }
+.chat-main { display: grid; gap: 8px; align-content: start; min-width: 0; }
+.chat-messages { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.chat-message { border: 1px solid #e0e6e4; border-radius: 8px; padding: 8px 10px; display: grid; gap: 4px; background: #fff; }
+.chat-message.from-user { background: #f2f7f3; }
+.chat-message-head { display: flex; gap: 8px; align-items: baseline; font-size: 12px; color: #677879; }
+.chat-message-delete, .chat-session-delete { all: unset; cursor: pointer; color: #9aa7a5; font-size: 12px; }
+.chat-message-delete:hover, .chat-session-delete:hover { color: #a03d38; }
+.chat-message-content { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; }
+.chat-message-why { all: unset; cursor: pointer; color: #2f6b3c; font-size: 12px; font-weight: 600; }
+.chat-action-row { display: flex; gap: 8px; align-items: center; border: 1px dashed #2f6b3c; border-radius: 6px; padding: 6px 8px; font-size: 13px; }
+.chat-input { display: grid; gap: 6px; }
+.chat-input textarea { resize: vertical; }
+.chat-run-status, .chat-run-outcome, .chat-failed-send p { font-size: 13px; }
+.chat-failed-send { display: grid; gap: 6px; border: 1px dashed #d9b44a; border-radius: 6px; padding: 8px 10px; }
+.notification-preferences-view { max-width: 640px; display: grid; gap: 10px; }
+.notification-preferences-form { display: grid; gap: 12px; }
+.notification-preferences-form fieldset { display: grid; gap: 8px; border: 1px solid #e0e6e4; border-radius: 8px; }
+.category-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.category-chip { display: inline-flex; align-items: center; gap: 4px; border: 1px solid #cfe0d4; border-radius: 12px; padding: 2px 8px; font-size: 13px; }
+.category-chip button { all: unset; cursor: pointer; color: #9aa7a5; }
+.category-chip button:hover { color: #a03d38; }
+.category-add { display: flex; gap: 6px; }
+.chat-delete-error { margin: 0; font-size: 12px; color: #a03d38; }
