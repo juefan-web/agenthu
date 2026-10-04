@@ -781,3 +781,23 @@ Decision 要点：
 
 Revisit：M4 出口 e2e（E6）落地后复核轮询口径与打扰预算默认值；
 HNSW/检索重做桶 backlog 不变（触发条件 = 语料规模数据）。
+
+## D-034 §5.3 实现注记 — L3 grant scope 值级匹配（2026-10-04，协调人裁定，随 PR #56 落地）
+
+A2 实现的 `strict_scope_validator` 只验 scope 形状（categories 非空即过），
+`categories: ["deadline"]` 的 grant 会自动执行 `category: "replan"` 的推送。
+裁定：这不是 A2 语义变更，而是**补齐冻结文本**——§5.3 原文即
+`scope_matches(grant.scope, normalized_args)` 且「空 scope 不是通配」，
+值级包含匹配（`args.category ∈ grant.scope.categories`）才是冻结本意；
+A2 的形状校验系实现欠账，钉住形状行为的测试钉的是欠账本身。落地
+（PR #56 head `2abe56c`）：① 三个真实执行点（工具环 / dispatch 复验 /
+主动结算）全部值级，经 `evaluate_permission` 的 `_value_scope_ok` 收口，
+matcher 在场而无 args 永不自动放行（fail-closed）；②
+`validate_registry` 双闸注册强制——L3 工具缺 `scope_validator` 或
+`scope_matcher` 即注册失败，未来新 L3 工具结构上无法退回形状校验；
+③ 不匹配 ≠ 失败：落 PENDING 待用户确认（grant_snapshot 为空），确认
+后照常执行与结算。附带要求（挂起）：grant 授予界面文案须写明类别
+清单——客户端尚无 grant 管理面，该要求随 grant 面落地生效（B backlog）。
+批准延续协议首次实践：rebase 后零代码 delta + CURRENT_STATE 并集 +
+新 head 12/12，评审人自执核验（issuecomment-5975655100）后 approve
+延续至新 head。

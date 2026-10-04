@@ -1,6 +1,6 @@
 # CURRENT_STATE
 
-Updated: 2026-10-03 · Milestone: **M4（Agent 运行时、Chat 与主动 Agent）——实施阶段（D-034 冻结 `05330f3`；B1/A1 已合 `1bdae73`；在途 PR：#54 A2 运行时、#55 B2 视图族）**。M3 已收口（main `5b381fd`，D-030 口径出口判据「代码 + 真机双证」达成，见 2026-10-03 收口条目）。M2 已关闭（main `e2a80e6`，出口判据「四绿三窗口双人」达成，见 2026-10-02 条目）。M0/M1 已合并（PR #1-#15，round-5 数据闭环验收通过 + e2e 首跑解锁）；对概念基线的完整差距评估见 `HANDOFF/2026-09-30-implementation-evaluation.md`（§8 七子句：4 达成 + 1 部分 + 2 缺失），M2 出口判据即该报告末节的场景化 §8 全句。路线大纲（M2–M8）已经 A/B 确认采纳（**D-030 accepted**，含三处修订：M3 同步产出删除/依赖图设计、TECH_STACK 依赖方已注取代、m2-breakdown 已对齐大纲口径）。
+Updated: 2026-10-04 · Milestone: **M4（Agent 运行时、Chat 与主动 Agent）——出口验证期：实施切片全部合入（#51-#56：契约代码化 / A2 运行时 / B2 视图族 / A3 检索与主动接线），仅剩 B3 = E6 出口 e2e**。M3 已收口（main `5b381fd`，D-030 口径出口判据「代码 + 真机双证」达成，见 2026-10-03 收口条目）。M2 已关闭（main `e2a80e6`，出口判据「四绿三窗口双人」达成，见 2026-10-02 条目）。M0/M1 已合并（PR #1-#15，round-5 数据闭环验收通过 + e2e 首跑解锁）；对概念基线的完整差距评估见 `HANDOFF/2026-09-30-implementation-evaluation.md`（§8 七子句：4 达成 + 1 部分 + 2 缺失），M2 出口判据即该报告末节的场景化 §8 全句。路线大纲（M2–M8）已经 A/B 确认采纳（**D-030 accepted**，含三处修订：M3 同步产出删除/依赖图设计、TECH_STACK 依赖方已注取代、m2-breakdown 已对齐大纲口径）。
 · 集成分支 `integration/study-time-m0` 已合并 Backend（`61fcf82`）与客户端
 （`a2693e9`），冲突已解决，双侧 CI 与联合 drift check 全绿（draft PR #1）。
 · **Merge-1 Windows 构建包人工测试结论：不建议转正合并**（见
@@ -1094,6 +1094,23 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   passed / 8 skipped（7 深夜窗 + 1 S3）、ruff/format/pyright 0、迁移
   up/down/up + alembic check 绿、OpenAPI 61 路径重导 + drift 双源绿。
   遗留观察（非阻塞）：L3 grant 的 scope 只做形状校验（categories 列
-  非空即过），未与本次调用的 category 做包含性比对——A2 冻结语义如
+  表非空即过），未与本次调用的 category 做包含性比对——A2 冻结语义如
   此，预算门仍在，是否收紧待裁定。服务端细分码（可选项）未做：客户
   端超集方案已覆盖今天的诚实呈现。
+- **#54/#55/#56 合并收口，M4 实施完毕（2026-10-04，协调人核验与执行）**：
+  #54（A2 运行时 + 同意门禁）合 `8d47781`；#55（B2 视图族 + 四裁定
+  rebase 轮 `83c24e9`）合 `baf3667`；#56（A3 + scope 值级匹配
+  `2abe56c`）合 `e4fc297`。**上条的「遗留观察」已裁定并落地**：值级
+  匹配 = D-034 §5.3 冻结语义补齐（非 A2 变更），双闸注册强制 +
+  三执行点收口 + 端到端用例，详见 **DECISIONS D-034 §5.3 实现注记**
+  （含 grant 面文案挂起条件）。**批准延续协议首次实践**：rebase 零
+  代码 delta + CURRENT_STATE 并集 + 12/12，评审人自执核验后 approve
+  延续（issuecomment-5975655100）——head 绑定纪律与例行 rebase 的
+  兼容路径就此定型。main `e4fc297` 双 CI 绿。
+- **下一队列（2026-10-04 指派）**：B = **B3（E6 出口 e2e）**：契约
+  §8 六场景（重排建议依据 → Chat 建议任务 → Level 2 卡片 →「为什么」
+  basis → 并发确认恰一次 → 断供降级 → 预算/免打扰 + L3 grant），构建包
+  /CDP 口径（E5 手册），从 `e4fc297` 拉分支；E6 全绿 = M4 按 D-030
+  口径收口。A = 起草**跨会话搜索契约演进冻结稿**（`ChatMessageRead` +
+  `session_id` + 结果形状，与 B 同批冻结后实施——A3 主动延后项）；
+  grant 面文案要求随 B 侧 grant 管理面 backlog 挂起。
