@@ -1,4 +1,5 @@
-"""Chat read shapes (D-034; mirrors the frozen client Zod).
+"""Chat read shapes (D-034; mirrors the frozen client Zod; D-035 adds
+``session_id`` and the search result item).
 
 ``decision_basis`` / ``pending_action_id`` on messages are JOIN projections
 over ``agent_run_id`` (ruling A5: no second stored copy) — the API layer
@@ -28,6 +29,11 @@ class ChatSessionRead(ORMModel):
 
 
 class ChatMessageRead(ORMModel):
+    # session_id is required and server-always-set (D-035): a message
+    # carries its own session location so search hits and deep links never
+    # depend on out-of-band context. Additive for existing consumers — the
+    # client Zod strips unknown keys until its mirror lands.
+    session_id: uuid.UUID
     id: uuid.UUID
     role: MessageRole
     content: str
@@ -35,6 +41,15 @@ class ChatMessageRead(ORMModel):
     agent_run_id: uuid.UUID | None = None
     decision_basis: DecisionBasis | None = None
     pending_action_id: uuid.UUID | None = None
+
+
+class ChatSearchItem(ChatMessageRead):
+    """Chat search hit (D-035): the message plus its session's CURRENT
+    title — flat on purpose. A nested ChatSessionRead would repeat four
+    constant fields per hit for zero gain; the client renders
+    "title · time" and deep-links from this one row."""
+
+    session_title: str
 
 
 class ChatSessionCreate(BaseModel):

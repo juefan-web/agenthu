@@ -2,13 +2,16 @@
 
 A3's faces: chat DELETEs (soft, idempotent-204, session archive cascades
 message soft-deletes — retrieval eligibility drops in the same
-transaction); in-session search (CJK substring via pg_trgm GIN, sub-3-char
-degrade still correct, wildcards literal, keyset stable); proactive run
-queueing (one run per trigger signature, ever) and its deterministic
-settlement (zero provider calls; notify.push pending action — grant →
-auto-execute, no grant → PENDING card); the §6/§8 disturbance budget
-(category gate -> quiet hours -> per-local-day budget, midnight-crossing
-windows legal, suppression is honest policy, not failure).
+transaction); chat search — D-035's single global face ``GET /v1/chat/search``
+with optional ``session_id`` scoping (the A3 in-session sub-path never
+shipped a consumer and was removed; CJK substring via pg_trgm GIN,
+sub-3-char degrade still correct, wildcards literal, keyset stable,
+per-hit session titles); proactive run queueing (one run per trigger
+signature, ever) and its deterministic settlement (zero provider calls;
+notify.push pending action — grant → auto-execute, no grant → PENDING
+card); the §6/§8 disturbance budget (category gate -> quiet hours ->
+per-local-day budget, midnight-crossing windows legal, suppression is
+honest policy, not failure).
 """
 
 from __future__ import annotations
@@ -65,10 +68,12 @@ def _messages(client, headers, session_id: str) -> list[dict]:
     return listed.json()["items"]
 
 
-def _search(client, headers, session_id: str, q: str, **params) -> dict:
+def _search(client, headers, q: str, session_id: str | None = None, **params) -> dict:
+    """The D-035 global face; ``session_id`` scopes it to one live session."""
+
     found = client.get(
-        f"/v1/chat/sessions/{session_id}/messages/search",
-        params={"q": q, **params},
+        "/v1/chat/search",
+        params={"q": q, **({"session_id": session_id} if session_id is not None else {}), **params},
         headers=headers,
     )
     assert found.status_code == 200, found.text
@@ -163,7 +168,7 @@ def test_delete_message_drops_retrieval_eligibility(
     _send(client, auth_headers, session["id"], "二次方程的解法复习")
     _send(client, auth_headers, session["id"], "英语单词背诵计划")
     assert len(_messages(client, auth_headers, session["id"])) == 2
-    assert len(_search(client, auth_headers, session["id"], "解法")["items"]) == 1
+    assert len(_search(client, auth_headers, "解法", session_id=session["id"])["items"]) == 1
 
     target = _messages(client, auth_headers, session["id"])[0]
     assert (
@@ -176,8 +181,11 @@ def test_delete_message_drops_retrieval_eligibility(
 
     remaining = _messages(client, auth_headers, session["id"])
     assert [m["content"] for m in remaining] == ["英语单词背诵计划"]
-    assert _search(client, auth_headers, session["id"], "解法")["items"] == []
-    assert len(_search(client, auth_headers, session["id"], "单词")["items"]) == 1
+    assert _search(client, auth_headers, "解法", session_id=session["id"])["items"] == []
+    assert len(_search(client, auth_headers, "单词", session_id=session["id"])["items"]) == 1
+    # Eligibility drops on EVERY retrieval domain (D-035): the global face
+    # never resurrects a soft-deleted message either.
+    assert _search(client, auth_headers, "解法")["items"] == []
 
     # Cross-user isolation stays a 404, not a 403 (existence is not leaked).
     other = auth_factory()
@@ -197,7 +205,8 @@ def test_delete_session_archives_and_cascades_soft_delete(client, auth_headers, 
         client.delete(f"/v1/chat/sessions/{session['id']}", headers=auth_headers).status_code == 204
     )
 
-    # Gone from the user's view everywhere at once.
+    # Gone from the user's view everywhere at once: the scoped search face
+    # 404s on the archived session, and the global face returns nothing.
     listed = client.get("/v1/chat/sessions", headers=auth_headers).json()["items"]
     assert all(s["id"] != session["id"] for s in listed)
     assert client.get(f"/v1/chat/sessions/{session['id']}", headers=auth_headers).status_code == 404
@@ -207,12 +216,13 @@ def test_delete_session_archives_and_cascades_soft_delete(client, auth_headers, 
     )
     assert (
         client.get(
-            f"/v1/chat/sessions/{session['id']}/messages/search",
-            params={"q": "消息"},
+            "/v1/chat/search",
+            params={"q": "消息", "session_id": session["id"]},
             headers=auth_headers,
         ).status_code
         == 404
     )
+    assert _search(client, auth_headers, "消息")["total"] == 0
 
     # The cascade really soft-deleted both messages in the same transaction
     # — no retrieval path can resurrect them.
@@ -236,65 +246,109 @@ def test_search_cjk_substring_short_degrade_wildcards_keyset(client, auth_header
     ):
         _send(client, auth_headers, session["id"], content)
 
-    # 3+ chars: trgm-indexable substring, newest-first.
-    hits = _search(client, auth_headers, session["id"], "线性代数")
+    # The A3 sub-path is gone (D-035 endpoint unification) — one face only.
+    assert (
+        client.get(
+            f"/v1/chat/sessions/{session['id']}/messages/search",
+            params={"q": "线性代数"},
+            headers=auth_headers,
+        ).status_code
+        == 404
+    )
+
+    # 3+ chars: trgm-indexable substring, newest-first. Every hit carries
+    # its own session location (D-035) and the session's current title.
+    hits = _search(client, auth_headers, "线性代数", session_id=session["id"])
     assert hits["total"] == 2
-    assert [m["content"] for m in hits["items"]] == [
-        "线性代数习题课笔记",
-        "线性代数第三章重点",
+    assert [(m["content"], m["session_title"]) for m in hits["items"]] == [
+        ("线性代数习题课笔记", "搜索测试"),
+        ("线性代数第三章重点", "搜索测试"),
     ]
+    assert all(m["session_id"] == session["id"] for m in hits["items"])
 
     # 1 char: no trigram, degrades to an unindexed filter — still correct.
-    assert _search(client, auth_headers, session["id"], "线")["total"] == 2
+    assert _search(client, auth_headers, "线", session_id=session["id"])["total"] == 2
 
     # Wildcards are literal (autoescape), not patterns.
-    assert _search(client, auth_headers, session["id"], "100%")["total"] == 1
-    assert _search(client, auth_headers, session["id"], "%线性%")["total"] == 0
+    assert _search(client, auth_headers, "100%", session_id=session["id"])["total"] == 1
+    assert _search(client, auth_headers, "%线性%", session_id=session["id"])["total"] == 0
 
     # Keyset pagination is stable under the newest-first ordering.
-    page1 = _search(client, auth_headers, session["id"], "线性代数", limit=1)
+    page1 = _search(client, auth_headers, "线性代数", session_id=session["id"], limit=1)
     assert len(page1["items"]) == 1 and page1["next_cursor"] is not None
     page2 = _search(
         client,
         auth_headers,
-        session["id"],
         "线性代数",
+        session_id=session["id"],
         limit=1,
         cursor=page1["next_cursor"],
     )
     assert len(page2["items"]) == 1
     assert {page1["items"][0]["id"], page2["items"][0]["id"]} == {m["id"] for m in hits["items"]}
 
-    # Malformed queries fail closed.
+    # Malformed queries fail closed (before any scope resolution).
     assert (
-        client.get(
-            f"/v1/chat/sessions/{session['id']}/messages/search",
-            params={"q": "   "},
-            headers=auth_headers,
-        ).status_code
-        == 422
+        client.get("/v1/chat/search", params={"q": "   "}, headers=auth_headers).status_code == 422
     )
     assert (
+        client.get("/v1/chat/search", params={"q": "x" * 201}, headers=auth_headers).status_code
+        == 422
+    )
+
+
+def test_search_global_face_cross_session_titles_and_keyset(client, auth_headers) -> None:
+    """The D-035 global face proper: hits across sessions, newest-first
+    across the whole history, each row self-locating with its session's
+    current title."""
+
+    alpha = _session(client, auth_headers, title="线性代数答疑")
+    beta = _session(client, auth_headers, title="概率论答疑")
+    _send(client, auth_headers, alpha["id"], "线性代数行列式展开")
+    _send(client, auth_headers, beta["id"], "线性代数在概率中的应用")
+    _send(client, auth_headers, alpha["id"], "一条无关消息")
+
+    hits = _search(client, auth_headers, "线性代数")
+    assert hits["total"] == 2
+    assert [(m["session_id"], m["session_title"], m["content"]) for m in hits["items"]] == [
+        (beta["id"], "概率论答疑", "线性代数在概率中的应用"),
+        (alpha["id"], "线性代数答疑", "线性代数行列式展开"),
+    ]
+
+    # Keyset discipline holds across sessions, not just within one.
+    page1 = _search(client, auth_headers, "线性代数", limit=1)
+    assert len(page1["items"]) == 1 and page1["next_cursor"] is not None
+    page2 = _search(client, auth_headers, "线性代数", limit=1, cursor=page1["next_cursor"])
+    assert {page1["items"][0]["id"], page2["items"][0]["id"]} == {m["id"] for m in hits["items"]}
+
+
+def test_search_scoped_unknown_session_is_404(client, auth_headers) -> None:
+    assert (
         client.get(
-            f"/v1/chat/sessions/{session['id']}/messages/search",
-            params={"q": "x" * 201},
+            "/v1/chat/search",
+            params={"q": "任意", "session_id": str(uuid.uuid4())},
             headers=auth_headers,
         ).status_code
-        == 422
+        == 404
     )
 
 
 def test_search_other_users_session_is_404(client, auth_headers, auth_factory) -> None:
     session = _session(client, auth_headers)
     _send(client, auth_headers, session["id"], "隔离检查")
+    # Scoped into someone else's session: 404, not 403 (existence is not
+    # leaked) — same discipline as the message flow.
     assert (
         client.get(
-            f"/v1/chat/sessions/{session['id']}/messages/search",
-            params={"q": "隔离"},
+            "/v1/chat/search",
+            params={"q": "隔离", "session_id": session["id"]},
             headers=auth_factory(),
         ).status_code
         == 404
     )
+    # Global face: another user's content is simply not in scope.
+    assert _search(client, auth_headers, "隔离")["total"] == 1
+    assert _search(client, auth_factory(), "隔离")["total"] == 0
 
 
 # ------------------------------------------------------- proactive wiring --

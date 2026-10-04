@@ -7398,30 +7398,20 @@
         }
       }
     },
-    "/v1/chat/sessions/{session_id}/messages/search": {
+    "/v1/chat/search": {
       "get": {
         "tags": [
           "chat"
         ],
-        "summary": "Search Messages",
-        "description": "In-session substring search over message content (A3).\n\nMatching is a case-insensitive literal substring filter\n(``%needle%`` with autoescaped wildcards). The pg_trgm GIN index\naccelerates it for needles of 3+ characters; shorter needles form no\ntrigram and degrade to an unindexed filter that still returns correct\nresults (D-034's 过滤降级). Results are newest-first with the same\n``(created_at, id)`` keyset as the session listing, so pagination stays\nstable across edits; deleted messages never match.",
-        "operationId": "search_messages_v1_chat_sessions__session_id__messages_search_get",
+        "summary": "Search Chat",
+        "description": "Cross-session chat search (D-035): ONE retrieval face over the\nwhole history, optionally scoped to a single live session via\n``session_id`` (unknown / other-user's / archived sessions are a 404,\nthe same discipline as the message flow — this replaces A3's in-session\nsub-path, which never shipped a consumer).\n\nMatching is A3-identical: a case-insensitive literal substring filter\n(``%needle%`` with autoescaped wildcards). The pg_trgm GIN index\naccelerates needles of 3+ characters; shorter needles form no trigram\nand degrade to an unindexed filter that still returns correct results.\nResults are newest-first on the same ``(created_at, id)`` keyset as the\nsession listing, so pagination stays stable across edits. Soft-deleted\nmessages and archived sessions never match. Each hit carries its\nsession's CURRENT title so the client renders \"title · time\" and\ndeep-links without a second fetch.",
+        "operationId": "search_chat_v1_chat_search_get",
         "security": [
           {
             "OAuth2PasswordBearer": []
           }
         ],
         "parameters": [
-          {
-            "name": "session_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "title": "Session Id"
-            }
-          },
           {
             "name": "q",
             "in": "query",
@@ -7431,6 +7421,23 @@
               "minLength": 1,
               "maxLength": 200,
               "title": "Q"
+            }
+          },
+          {
+            "name": "session_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Session Id"
             }
           },
           {
@@ -7468,7 +7475,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Page_ChatMessageRead_"
+                  "$ref": "#/components/schemas/Page_ChatSearchItem_"
                 }
               }
             }
@@ -8405,6 +8412,11 @@
       },
       "ChatMessageRead": {
         "properties": {
+          "session_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Session Id"
+          },
           "id": {
             "type": "string",
             "format": "uuid",
@@ -8464,6 +8476,7 @@
         },
         "type": "object",
         "required": [
+          "session_id",
           "id",
           "role",
           "content",
@@ -8514,6 +8527,86 @@
         ],
         "title": "ChatMessageSendResponse",
         "description": "202 body (B1 Zod mirror): poll the run or the session for the\nassistant reply."
+      },
+      "ChatSearchItem": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Session Id"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "assistant"
+            ],
+            "title": "Role"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "agent_run_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Run Id"
+          },
+          "decision_basis": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DecisionBasis"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pending_action_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pending Action Id"
+          },
+          "session_title": {
+            "type": "string",
+            "title": "Session Title"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "id",
+          "role",
+          "content",
+          "created_at",
+          "session_title"
+        ],
+        "title": "ChatSearchItem",
+        "description": "Chat search hit (D-035): the message plus its session's CURRENT\ntitle — flat on purpose. A nested ChatSessionRead would repeat four\nconstant fields per hit for zero gain; the client renders\n\"title · time\" and deep-links from this one row."
       },
       "ChatSessionCreate": {
         "properties": {
@@ -11510,6 +11603,55 @@
           "offset"
         ],
         "title": "Page[ChatMessageRead]"
+      },
+      "Page_ChatSearchItem_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ChatSearchItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[ChatSearchItem]"
       },
       "Page_ChatSessionRead_": {
         "properties": {
