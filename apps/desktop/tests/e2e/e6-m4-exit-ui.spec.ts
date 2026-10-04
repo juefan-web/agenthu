@@ -131,7 +131,7 @@ async function seedDeadlineExemption(api: Api) {
  *  `_mark_confirmed_plan_items` 把确认计划项置 COMPLETED、actual 累计 100
  *  > planned 75 → focus_overrun。手工 PATCH 计划项是 A 上轮的简化捷径，
  *  已按二轮裁定（修法 A）移除。 */
-async function seedOverrun(api: Api, title: string) {
+async function seedOverrun(api: Api, title: string): Promise<string> {
   const task = (await api.post("/v1/tasks", { title, estimated_duration_minutes: 75 })).body;
   const plan = (await api.post("/v1/plans", {
     title: `计划 · ${title}`,
@@ -140,6 +140,7 @@ async function seedOverrun(api: Api, title: string) {
   await api.post(`/v1/plans/${plan.id}/confirm`);
   const focus = (await api.post("/v1/focus-sessions", { task_id: task.id })).body;
   await api.post(`/v1/focus-sessions/${focus.id}`, { status: "completed", actual_minutes: 100, deviation_note: "超时" }, "PATCH");
+  return task.id as string;
 }
 
 async function countSuggestedTasks(api: Api): Promise<number> {
@@ -161,28 +162,34 @@ async function loginInApp(page: Page) {
 
 test.describe.configure({ mode: "serial" });
 
-test("e6-s1: 超时 Focus → Level 1 重排建议（应用内免费，不耗预算）", async ({ app }) => {
+test("e6-s1: 超时 Focus → Level 1 重排建议（依据活链：agent_decision 引用超时任务）", async ({ app }) => {
   const { page } = app;
   const api = await registerAndLogin();
   await seedDeadlineExemption(api); // 首个计划 confirm 之前种（限流豁免）
-  await seedOverrun(api, "线性代数作业");
+  const seededTaskId = await seedOverrun(api, "线性代数作业");
 
   // 触发引擎经 worker cron（≤30s）产出 DRAFT 建议；UI 60s 轮询——上界内等
-  await waitFor("重排建议落库", async () =>
-    (await api.get("/v1/plans?status=draft&limit=10&offset=0")) as { items: Array<{ replaces_plan_id: string | null }> },
+  const drafts = await waitFor("重排建议落库", async () =>
+    (await api.get("/v1/plans?status=draft&limit=10&offset=0")) as { items: Array<{ id: string; replaces_plan_id: string | null; basis?: Record<string, unknown> }> },
     (body) => body.items.some((plan) => plan.replaces_plan_id !== null));
+  const suggestion = drafts.items.find((plan) => plan.replaces_plan_id !== null)!;
+
+  // 活链（#59 缺口闭合后摘锚）：建议 plan 级 basis.agent_decision 引用超时任务
+  const agentDecision = suggestion.basis?.["agent_decision"] as { references?: Array<{ kind: string; id: string }> } | undefined;
+  expect(agentDecision).toBeTruthy();
+  expect(agentDecision!.references?.some((reference) => reference.kind === "task" && reference.id === seededTaskId)).toBe(true);
 
   await loginInApp(page);
   const suggestionBox = page.locator(".replan-suggestion").first();
   await expect(suggestionBox).toBeVisible({ timeout: 120_000 });
   expect(/超时|超了|overrun|重排|调整/i.test((await suggestionBox.textContent()) ?? "")).toBeTruthy();
 
-  // 依据同源（已实现判据）：主动 run 的结构化 basis 带真实 references。
-  // Plan.basis.agent_decision（A 契约 §7）暂无写入者——缺口矩阵 #1。
-  const runs = await api.get("/v1/agent/runs?limit=10") as { items: Array<{ decision_basis: { references: unknown[] } | null }> };
-  const proactive = runs.items.find((run) => run.decision_basis !== null);
-  expect(proactive).toBeTruthy();
-  expect(proactive!.decision_basis!.references.length).toBeGreaterThan(0);
+  // UI 腿：建议的「为什么」展开共享 DecisionBasisView（§8-1「客户端显示
+  // 与 Plan.basis 相同的 Event / Task 依据」）
+  await suggestionBox.getByText("为什么").click(); // <details><summary>：点 summary 切换 open
+  const basis = suggestionBox.locator(".decision-basis").first();
+  await expect(basis).toBeVisible();
+  expect((await basis.textContent()) ?? "").toContain("线性代数作业");
 });
 
 test("e6-s2: Chat 请求「把作业加入日程」→ task.create Level 2 卡片", async ({ app }) => {
@@ -214,17 +221,36 @@ test("e6-s2: Chat 请求「把作业加入日程」→ task.create Level 2 卡�
   await expect(page.locator(".decision-basis").first()).toBeVisible();
 });
 
-test("e6-s3: Chat「为什么」展开与卡片同一份 basis（引用可核）", async ({ app }) => {
+test("e6-s3: Chat「为什么」同一份 basis + 删被引用消息 → 活链失效标注", async ({ app }) => {
   const { page } = app;
+  const api = await registerAndLogin();
   await page.getByRole("button", { name: "对话" }).click();
   const whyButtons = page.getByRole("button", { name: "为什么" });
   await expect(whyButtons.first()).toBeVisible({ timeout: 15_000 });
   await whyButtons.first().click();
   const basis = page.locator(".decision-basis").first();
   await expect(basis).toBeVisible();
-  // 判据：引用真实存在、可定位（kind 标签渲染，定位不是正文）
-  expect((await basis.textContent()) ?? "").toMatch(/(任务|当前状态|计划|事件|记忆|资料)/);
-  // 失效标注活链（删消息 → 关联引用 source_deleted）随缺口矩阵 #2 闭合后补
+  // 判据：引用真实存在、可定位（kind 标签渲染，定位不是正文）——chat run
+  // 引用触发消息（#59 起 chat_message kind 产出者），basis 与确认卡同一 run
+  expect((await basis.textContent()) ?? "").toContain("对话消息");
+
+  // 活链（#59 失效传播闭合后摘锚）：删除被引用的触发消息（API，同事务翻转
+  // run/卡片 basis 的 chat_message 引用）→ 重新进对话视图取新鲜投影 →
+  // 「为什么」里的该引用显示失效标注，不改指同名对象（契约 §4/§5）
+  const sessions = await api.get("/v1/chat/sessions?limit=10&offset=0") as { items: Array<{ id: string }> };
+  const sessionId = sessions.items[0]!.id;
+  const messages = await api.get(`/v1/chat/sessions/${sessionId}/messages?limit=50&offset=0`) as { items: Array<{ id: string; role: string }> };
+  const triggerMessage = messages.items.find((message) => message.role === "user")!;
+  await api.post(`/v1/chat/messages/${triggerMessage.id}`, undefined, "DELETE");
+  // 服务端核账：读面投影已翻 source_deleted
+  await waitFor("引用翻转", async () =>
+    (await api.get(`/v1/chat/sessions/${sessionId}/messages?limit=50&offset=0`)) as { items: Array<{ decision_basis?: { references?: Array<{ kind: string; state?: string }> } | null }> },
+    (body) => body.items.some((message) => message.decision_basis?.references?.some((reference) => reference.kind === "chat_message" && reference.state === "source_deleted")));
+  // UI 腿：remount 重取投影，展开「为什么」见失效标注
+  await page.getByRole("button", { name: "今天", exact: true }).click();
+  await page.getByRole("button", { name: "对话" }).click();
+  await page.getByRole("button", { name: "为什么" }).first().click();
+  await expect(page.getByText(/来源已删除或不可用/).first()).toBeVisible();
 });
 
 test("e6-s4: 确认恰一次（UI 防双击 + API 并发只结算一个任务）", async ({ app }) => {

@@ -80,6 +80,10 @@ export const PlanSchema = z.object({
   items: z.array(PlanItemSchema),
   confirmation_required: z.boolean(),
   status: z.enum(["draft", "confirmed", "active", "completed", "superseded"]),
+  // Plan 级弱类型依据（服务端 ClientPlan.basis 恒发对象；#59 起
+  // generate_plan 写入结构化 agent_decision 子键）。与 item basis 同口径：
+  // 形状可演进不锁契约，UI 经 BasisPanel 兼容层检出转交共享渲染器。
+  basis: z.record(z.unknown()).optional(),
   // D-031 §2：重排建议形状。普通计划服务端序列化显式 null——必须
   // .nullable()（optional 只容缺失不容 null，B 评审修订）。
   replaces_plan_id: z.string().nullable().optional(),

@@ -235,6 +235,17 @@ describe("M4 frozen contract (D-034)", () => {
     expect(page.next_cursor).toBeNull();
   });
 
+  it("parses the plan-level weak basis carrying the structured agent_decision (#59 起)", () => {
+    const plan = PlanSchema.parse({
+      id: "plan-1", generated_at: "2026-10-04T10:00:00+08:00",
+      items: [], confirmation_required: false, status: "draft",
+      basis: { strategy: "slots_v2", agent_decision: { basis_version: "v1", summary: "作业临近", references: [], rule_versions: {}, selected_tool_call_ids: [] } },
+    });
+    expect(plan.basis?.["agent_decision"]).toBeTruthy();
+    // 缺省（旧形状/无依据）仍可解析
+    expect(PlanSchema.parse({ id: "plan-2", generated_at: "2026-10-04T10:00:00+08:00", items: [], confirmation_required: false, status: "confirmed" }).basis).toBeUndefined();
+  });
+
   it("accepts explicit nulls on every backend-emitted nullable field (no exclude_none)", () => {
     // 服务端 ORMModel/嵌套 Pydantic 均不带 exclude_none：X | None 字段以
     // 显式 null 下发（顶层与嵌套同理）。仅 .optional() 拒收 null——本测试
