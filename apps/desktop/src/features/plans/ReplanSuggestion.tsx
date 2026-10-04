@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Plan } from "@agenthu/contracts";
 import { errorText } from "../../lib/errors";
+import { BasisPanel } from "./BasisPanel";
 import { useServices } from "../../app/services";
 
 /** 一条重排建议 = DRAFT + replaces_plan_id 非空（D-031 §2，Level 1 语义）。
@@ -59,6 +60,10 @@ export function ReplanSuggestion({ currentPlan }: { currentPlan: Plan | undefine
   return <section className="replan-suggestion" role="status">
     <div className="section-heading"><h2>重排建议</h2><span className="section-meta">Level 1 · 不会改动当前计划，接受后生效</span></div>
     <p className="replan-reason">{latest.replan_reason}</p>
+    {/* 契约 §4：重排建议与计划/确认卡/Chat 复用同一 basis 渲染——plan 级
+        basis 的 agent_decision 子键（#59 起 generate_plan 写入）由 BasisPanel
+        检出后转交共享 DecisionBasisView；legacy 弱类型键照旧透出。 */}
+    <BasisPanel basis={latest.basis} />
     <ul className="replan-diff">
       {diff.moved.map((item) => <li key={`m:${item.title}`}>调整 {item.title}：{item.from} → {item.to}</li>)}
       {diff.added.map((item) => <li key={`a:${item.task_id}`}>新增 {item.title}（{timeOf(item)} 起）</li>)}

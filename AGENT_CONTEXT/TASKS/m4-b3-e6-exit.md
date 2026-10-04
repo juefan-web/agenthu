@@ -1,8 +1,8 @@
 # M4-B3 任务：E6 出口 e2e（契约 §8 六场景，构建包/CDP）
 
-Status: **工件交付（2026-10-04）；首跑待栈机**——B 机无 docker/PostgreSQL/
-Redis（多路径核实），E6 栈无法本地拉起；运行手册见 §4，首跑按协调人分派
-（A 的 E5 栈先例或本地安装决策后 B 自跑）。
+Status: **工件在 main + S1/S3 活链断言已升级（2026-10-04，缺口切片 #59
+合入后摘锚）；首跑待栈机**——B 机无 docker/PostgreSQL/Redis（多路径核
+实）；运行手册见 §4，首跑由 A 在 E5 栈执行（M3 先例），B 出核账报告。
 
 ## 1. 目标 / 输入 / 输出
 
@@ -19,9 +19,9 @@ Redis（多路径核实），E6 栈无法本地拉起；运行手册见 §4，�
 
 | # | 契约 §8 场景 | spec 断言 |
 | --- | --- | --- |
-| 1 | 超时 Focus → L1 重排建议 | API：DRAFT `replaces_plan_id` 落库（worker 30s cron）；UI：重排建议卡 + 超时理由；依据同源以 **run 级结构化 basis references** 核验 |
+| 1 | 超时 Focus → L1 重排建议 | API：DRAFT `replaces_plan_id` 落库（worker 30s cron）且 **plan 级 `basis.agent_decision.references` 引用超时任务**（#59 活链）；UI：建议卡 + 超时理由 + 「为什么」展开共享 DecisionBasisView（任务引用可见，PlanSchema 弱类型 basis 落地后 UI 腿成活链） |
 | 2 | Chat 请求 → `task.create` L2 卡片 | 同意门（读文案→开启）→ 202 → 助手回复 + 动作行 → 深链卡片：安全参数（标题值）/Level 2/**动作确认截止的绝对时间 + 倒计时**（`PendingActionRead.expires_at`；replay 提案不带任务 due date，契约 §8 的「绝对到期时间」即此字段）/basis |
-| 3 | 「为什么」同一份 basis | 卡片与消息展开的是同一 run basis；kind 标签渲染、定位不是正文 |
+| 3 | 「为什么」同一份 basis | 卡片与消息展开同一 run basis（含 chat_message 触发引用，#59 起）；**活链**：API 删被引用消息 → 服务端同事务翻转 `state=source_deleted`（读面核验）→ UI remount 后「为什么」显示失效标注，不改指同名对象 |
 | 4 | 确认恰一次 | UI 防双击（连点两次）+ API 并发双 `mutation_id` confirm → 双 200、任务数恰 +1 |
 | 5 | 断供明确失败 | replay `unavailable`（/v1/responses 503）→ Chat 明确失败面；今天计划/重排建议/专注仍可操作 |
 | 6 | 预算/免打扰 + L3 grant | 偏好面设 replan + 上限 2 → 触发①无 grant PENDING→确认送达 1/2 → grant（值级 scope）→ 触发②自动送达 2/2 → 触发③预算耗尽如实抑制入历史账本 |

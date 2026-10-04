@@ -90,6 +90,35 @@ describe("ReplanSuggestion（D-031 §2 Level 1 建议 UI）", () => {
     expect(container.childElementCount).toBe(0);
   });
 
+  it("plan 级 agent_decision 经共享渲染器展开（#59 活链，S1 UI 腿）", async () => {
+    const withBasis = makePlan({
+      id: "plan-suggestion",
+      generated_at: "2026-10-01T12:00:00+08:00",
+      status: "draft",
+      replaces_plan_id: "plan-current",
+      replan_reason: "《线性代数》作业 Focus 超时 42 分钟，今日后续安排需要重排",
+      basis: {
+        trigger_signature: "overrun:item-1:100",
+        agent_decision: {
+          basis_version: "v1",
+          summary: "《线性代数》作业 Focus 超时 42 分钟，今日后续安排需要重排",
+          references: [{ kind: "task", id: "task-1", label: "线性代数 HW2" }],
+          rule_versions: { planner: "slots_v2" },
+          selected_tool_call_ids: [],
+        },
+      },
+    });
+    listPlans.mockReset().mockResolvedValue([withBasis]);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const services = { backend: { listPlans } as unknown as AppServices["backend"], backendSession: null, queue: {} as never, focusDraft: {} as never, sync: null, backendUrl: "http://backend", buildTimeBackendUrl: "" };
+    render(<QueryClientProvider client={queryClient}><AppServicesContext.Provider value={services}><ReplanSuggestion currentPlan={currentPlan} /></AppServicesContext.Provider></QueryClientProvider>);
+    // BasisPanel 的「为什么」是 <details><summary>：jsdom 中内容恒在 DOM，
+    // 直接断言共享渲染器输出（e2e 里点 summary 文本切换 open）
+    expect(await screen.findByText(/规则版本：planner slots_v2/)).toBeTruthy();
+    expect(screen.getByText("线性代数 HW2")).toBeTruthy();
+    expect(screen.getByText("任务")).toBeTruthy();
+  });
+
   it("接受走既有 confirm、忽略走既有 cancel", async () => {
     renderSuggestion(currentPlan);
     fireEvent.click(await screen.findByRole("button", { name: "接受建议" }));
