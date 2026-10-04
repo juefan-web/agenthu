@@ -1244,3 +1244,18 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   s6×3 各产一条）。其余各段与预期全符（1a 恰 2、2a 2/2、2b 恰 1 抑制、
   2c 恰 1 L3 grant、3 总计 96、4a/4b/4c 谱全对）。下一步：B 机械核 +
   核账报告 → M4 按 D-030 收口。
+
+- **main 墙钟红修复（2026-10-04 深夜，墙钟类第三例，PR
+  `fix/m4-basis-gaps-late-night-guard`）**：`422545f` 合并跑挂
+  `test_m4_basis_gaps.py::test_replan_suggestion_carries_agent_decision`
+  （北京 23:44：D-027 剩余分钟封顶下「英语听力」30min 单块当日放不进 →
+  task 引用空；#63 合并跑 23:1x 绿、#64 PR 侧 23:2x 惊险绿的时间线吻合，
+  `28c58c4→422545f` delta 纯 markdown 零代码差异）。该测试走
+  `evaluate_replan_triggers`→`generate_plan` 无调用方 start
+  （replan_triggers.py:108），placement 窗口由引擎内部
+  `max(now, 08:00)`+当日剩余封顶，锚不了只能守卫——补
+  `skip_late_night(minutes_needed=45)`（30min 单块 + 建种/求值余量；
+  `_split_blocks` 30≤90 不分块）。**本地 23:56:25+08 复验：恰该用例
+  SKIPPED、其余 6 过**（与案发同时段）。全文件 7 测试 + 1 共享 helper
+  的审计表进 PR 正文（锚定 2 / 免疫 4 / 守卫 1），`422545f` 红跑记录
+  保留为证据、不做午夜后刷绿。

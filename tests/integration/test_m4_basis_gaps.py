@@ -33,6 +33,7 @@ from backend.services.agent_runner import execute_run
 from backend.services.model_consent import set_consent
 from backend.services.planner import generate_plan
 from backend.services.replan_triggers import evaluate_replan_triggers
+from tests.conftest import skip_late_night
 from tests.integration.test_m4_runtime import FakeToolProvider, _send_chat_message
 
 pytestmark = pytest.mark.integration
@@ -90,6 +91,15 @@ def test_generated_plan_carries_agent_decision(client, auth_headers, db_session)
 
 
 def test_replan_suggestion_carries_agent_decision(client, auth_headers, db_session) -> None:
+    # The replan engine owns this test's placement window: evaluate_replan_
+    # triggers calls generate_plan with no caller start (replan_triggers.py
+    # generate_plan call), so planner._free_slots anchors at max(now, 08:00
+    # local) and _available_budget caps by the day's remaining minutes
+    # (D-027). Unlike the _local_day_start-anchored tests above, the caller
+    # cannot pin the window — near local midnight 英语听力 (30 min, one
+    # unsplittable block) no longer fits and the task refs come back empty
+    # (the 2026-10-04 23:44 Beijing main-branch flake). Guard, don't anchor.
+    skip_late_night(minutes_needed=45)
     user_id = _me(client, auth_headers)
     overrun = client.post(
         "/v1/tasks",
