@@ -59,6 +59,7 @@ ZOD_TO_OPENAPI: dict[str, str] = {
     "AgentRunReadSchema": "AgentRunRead",
     "ChatSessionSchema": "ChatSessionRead",
     "ChatMessageSchema": "ChatMessageRead",
+    "ChatSearchItemSchema": "ChatSearchItem",
     "NotificationPreferencesSchema": "NotificationPreferencesRead",
     "ChatMessageSendResponseSchema": "ChatMessageSendResponse",
 }
@@ -85,6 +86,7 @@ ZOD_DIRECTION: dict[str, str] = {
     "AgentRunReadSchema": "response",
     "ChatSessionSchema": "response",
     "ChatMessageSchema": "response",
+    "ChatSearchItemSchema": "response",
     "NotificationPreferencesSchema": "response",
     "ChatMessageSendResponseSchema": "response",
 }

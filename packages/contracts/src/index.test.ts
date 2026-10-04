@@ -9,6 +9,7 @@ import {
   TaskSchema,
   AgentRunReadSchema,
   ChatMessageSchema,
+  ChatSearchItemSchema,
   CursorPageSchema,
   DecisionBasisSchema,
   NotificationPreferencesSchema,
@@ -208,7 +209,7 @@ describe("M4 frozen contract (D-034)", () => {
 
   it("parses chat messages with optional join projections and notification server-only fields", () => {
     const message = ChatMessageSchema.parse({
-      id: "msg-1", role: "user", content: "把作业加进日程", created_at: "2026-10-03T12:00:00+08:00",
+      id: "msg-1", session_id: "sess-1", role: "user", content: "把作业加进日程", created_at: "2026-10-03T12:00:00+08:00",
     });
     expect(message.decision_basis).toBeUndefined();
     expect(() => ChatMessageSchema.parse({ ...message, decision_basis: basis, pending_action_id: "pa-1" })).toBeTruthy();
@@ -225,6 +226,16 @@ describe("M4 frozen contract (D-034)", () => {
       sent_count: 1, budget_date: "2026-10-03", last_sent_at: "2026-10-03T08:00:00+08:00",
     });
     expect(preferences.budget_date).toBe("2026-10-03");
+  });
+
+  it("requires session_id on chat messages and parses search hits with the flat title (D-035)", () => {
+    expect(() => ChatMessageSchema.parse({ id: "m", role: "user", content: "c", created_at: "2026-10-04T10:00:00+08:00" })).toThrow();
+    const hit = ChatSearchItemSchema.parse({
+      id: "msg-9", session_id: "sess-2", role: "assistant", content: "命中原文",
+      created_at: "2026-10-04T10:00:00+08:00", session_title: "第一条",
+    });
+    expect(hit.session_title).toBe("第一条");
+    expect(() => ChatSearchItemSchema.parse({ id: "m", session_id: "s", role: "user", content: "c", created_at: "2026-10-04T10:00:00+08:00" })).toThrow();
   });
 
   it("cursor pages assert items + next_cursor only (null = last page)", () => {

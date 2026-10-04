@@ -416,6 +416,26 @@ describe("BackendClient M4 methods (D-034)", () => {
     expect(JSON.parse(String(init.body))).toEqual({ daily_budget: 5, expected_version: 5 });
   });
 
+  it("searches chat messages across sessions with scoped/limit/cursor params (D-035)", async () => {
+    const page = {
+      items: [
+        { id: "msg-8", session_id: "sess-2", role: "user", content: "把作业加进日程", created_at: "2026-10-04T09:00:00+08:00", session_title: "第一条" },
+      ],
+      next_cursor: "cur-2",
+    };
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => json(page));
+    const parsed = await new BackendClient({ baseUrl: "http://backend", fetcher, getToken: () => "jwt" })
+      .searchChatMessages({ q: "作业", sessionId: "sess-2" }, "cur-1");
+    const url = String(fetcher.mock.calls[0][0]);
+    expect(url).toContain("/v1/chat/search?");
+    expect(url).toContain("q=%E4%BD%9C%E4%B8%9A"); // URL-编码的「作业」
+    expect(url).toContain("session_id=sess-2");
+    expect(url).toContain("limit=50");
+    expect(url).toContain("cursor=cur-1");
+    expect(parsed.items[0]!.session_title).toBe("第一条");
+    expect(parsed.next_cursor).toBe("cur-2");
+  });
+
   // 同意门活接口（A2 合入后 main 现端面）：GET 形状 = ModelContextConsentRead
   // 四字段（backend/schemas/consent.py），PUT 回显 consent_text_version。
   it("gets the model-context consent with the frozen read shape", async () => {

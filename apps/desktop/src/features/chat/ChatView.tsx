@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { AgentRunRead, ChatMessage, ChatSession } from "@agenthu/contracts";
+import type { AgentRunRead, ChatMessage, ChatSearchItem, ChatSession } from "@agenthu/contracts";
 import { BackendHttpError, type BackendClient } from "../../backend/client";
 import { errorText } from "../../lib/errors";
 import { DecisionBasisView } from "../agent/DecisionBasisView";
@@ -91,6 +91,11 @@ export function ChatView({ backend, onOpenAction }: {
   const [pollNotice, setPollNotice] = useState<string | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
   const [sessionDeleteError, setSessionDeleteError] = useState<string | null>(null);
+  // D-035 检索（§5：显示原消息、时间与会话定位，不做摘要/高亮）
+  const [searchInput, setSearchInput] = useState("");
+  const [searchResults, setSearchResults] = useState<{ items: ChatSearchItem[]; nextCursor: string | null } | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchBusy, setSearchBusy] = useState(false);
   const openAction = onOpenAction ?? (() => undefined);
 
   const consent = useQuery({
@@ -154,6 +159,22 @@ export function ChatView({ backend, onOpenAction }: {
       setFailedSend(input);
     },
   });
+
+  async function runSearch(cursor?: string) {
+    if (!backend || !searchInput.trim()) return;
+    setSearchBusy(true);
+    setSearchError(null);
+    try {
+      const page = await backend.searchChatMessages({ q: searchInput.trim() }, cursor);
+      setSearchResults((previous) => previous && cursor
+        ? { items: [...previous.items, ...page.items], nextCursor: page.next_cursor }
+        : { items: page.items, nextCursor: page.next_cursor });
+    } catch (error) {
+      setSearchError(errorText(error));
+    } finally {
+      setSearchBusy(false);
+    }
+  }
 
   // 有限轮询（§5：非终态 run 定期查询，封顶 MAX_RUN_POLLS；终态或
   // WAITING_CONFIRMATION 即结算并刷新消息——响应永远以服务端为准）。
@@ -242,6 +263,31 @@ export function ChatView({ backend, onOpenAction }: {
         {sessions.data?.length === 0 && <p className="field-label">还没有会话。</p>}
       </aside>
       <div className="chat-main">
+        <form className="chat-search" onSubmit={(event) => { event.preventDefault(); void runSearch(); }}>
+          <label className="field-label" htmlFor="chat-search">搜索</label>
+          <div className="chat-search-row">
+            <input id="chat-search" value={searchInput} onChange={(event) => setSearchInput(event.target.value)}
+              placeholder="跨会话搜索原消息（命中显示会话与时间，深链进入）" />
+            <button type="submit" disabled={searchBusy || !searchInput.trim()}>搜索</button>
+          </div>
+        </form>
+        {searchError && <p role="alert">搜索失败：{searchError}</p>}
+        {searchResults && <div className="chat-search-results">
+          {searchResults.items.length === 0 && <p className="field-label">没有命中的消息。</p>}
+          <ul>
+            {searchResults.items.map((hit) => <li key={hit.id}>
+              <button type="button" className="chat-search-hit" onClick={() => {
+                setSessionId(hit.session_id);
+                setRunOutcome(null);
+                setSearchResults(null);
+              }}>
+                {hit.session_title} · {new Date(hit.created_at).toLocaleString()}
+              </button>
+              <p className="chat-search-content">{hit.content}</p>
+            </li>)}
+          </ul>
+          {searchResults.nextCursor && <button type="button" disabled={searchBusy} onClick={() => void runSearch(searchResults.nextCursor!)}>加载更多</button>}
+        </div>}
         {!sessionId && <p className="field-label">选择或创建一个会话开始对话。</p>}
         {sessionId && <>
           {messages.isError && <p role="alert">消息加载失败：{errorText(messages.error)}</p>}

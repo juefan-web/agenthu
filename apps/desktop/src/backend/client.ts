@@ -11,6 +11,7 @@ import {
   AgentRunReadSchema,
   ChatMessageSchema,
   ChatMessageSendResponseSchema,
+  ChatSearchItemSchema,
   ChatSessionSchema,
   CursorPageSchema,
   NotificationPreferencesSchema,
@@ -19,6 +20,7 @@ import {
   type AgentRunRead,
   type ChatMessage,
   type ChatMessageSendResponse,
+  type ChatSearchItem,
   type ChatSession,
   type CurrentState,
   type EventBatchRequest,
@@ -328,6 +330,18 @@ export class BackendClient {
       ChatMessageSchema,
       "消息",
     );
+  }
+
+  /** D-035 全局检索（单页 + next_cursor；UI 加载更多逐页取）。q 语义在
+   *  服务端（ILIKE 字面子串 + autoescape、trgm ≥3、<3 过滤降级、strip 空
+   *  422）——调用方先禁空再提交；命中行含扁平 session_title（会话当前值）
+   *  与 session_id 深链。 */
+  async searchChatMessages(input: { q: string; sessionId?: string }, cursor?: string): Promise<{ items: ChatSearchItem[]; next_cursor: string | null }> {
+    const params = new URLSearchParams({ q: input.q, limit: "50" });
+    if (input.sessionId) params.set("session_id", input.sessionId);
+    if (cursor) params.set("cursor", cursor);
+    const data = await this.requestJson(`/v1/chat/search?${params.toString()}`);
+    return CursorPageSchema(ChatSearchItemSchema).parse(data);
   }
 
   /** 异步 202（D-034 评审点 5）：响应体 {run_id, user_message_id}；重发必须
