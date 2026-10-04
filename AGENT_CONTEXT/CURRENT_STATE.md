@@ -1151,3 +1151,19 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   drift 绿、无 schema/迁移/OpenAPI 变更。合并后 B 可摘 S1/S3 注释锚
   （agent_decision 活链 + source_deleted 活链，见
   `HANDOFF/2026-10-04-a-basis-gap-slice.md`）。
+- **D-035 后端切片已交付（2026-10-04，A，`feature/m4-d035-chat-search`
+  自 `72d42a3`）**：`ChatMessageRead` += `session_id`（必发）；全局检索面
+  `GET /v1/chat/search`（`ChatSearchItem` = 消息 + 扁平 `session_title`，
+  限域走 `_session_or_404` 纪律，全局域 = 未归档会话子查询 IN 保持
+  user_id 无 join 隔离）；**A3 会话内子路径移除**（端点收口，B 已 ack）。
+  A3 检索测试全部迁移到全局面并新增跨会话排序/title 加富/未知限域 404/
+  跨用户全局隔离/子路径 404 断言。`openapi.json` 重导（A 先行，
+  drift 为 Zod→OpenAPI 单向故保绿——按 D-035 排序规则，B 的
+  `ChatMessageSchema.session_id` + `ChatSearchItemSchema` + 映射登记
+  同批在后）。本地全量 342 passed / ruff·format·pyright 0 / drift
+  `--require-zod` 绿；零 schema/迁移。**#58 复核注记**：B 的三必改
+  （`c6dfac2`）全对码核实修对，但发现新必改 4——seeding 终点
+  （PATCH 计划项）不打脏标，worker cron SPOP 消费脏集存在竞态窗口
+  （s1+s6 四个暴露点，单跑 ≈5-7% 假红），修法 A（focus 事件路径，
+  `create_event` 同请求 SADD + `_mark_confirmed_plan_items`）/ B
+  （无 deadline touch 任务重打脏标）二选一，CHANGES_REQUESTED 已出。

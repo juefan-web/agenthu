@@ -1,4 +1,4 @@
-"""Chat read face + send/delete/search entries (D-034, M4-A1/A2/A3).
+"""Chat read face + send/delete/search entries (D-034, M4-A1/A2/A3; D-035).
 
 Session/message listing with D-029 keyset pagination;
 ``decision_basis``/``pending_action_id`` on messages are JOIN projections
@@ -6,9 +6,12 @@ over ``agent_run_id`` (ruling A5 — no second stored copy). POST sessions /
 messages (A2) create the user message plus a QUEUED run in one transaction
 and hand execution to the worker. A3 adds the DELETEs (soft, idempotent-204
 like the grant revoke; a session archive cascades message soft-deletes in
-the same transaction so retrieval eligibility drops atomically) and
-in-session search (pg_trgm-accelerated substring filter; sub-3-character
-queries degrade to an unindexed but correct filter, D-034).
+the same transaction so retrieval eligibility drops atomically). D-035
+collapses search into ONE global face — ``GET /chat/search`` with optional
+``session_id`` scoping (the A3 in-session sub-path never shipped a
+consumer and is removed) — with pg_trgm-accelerated substring matching
+(sub-3-character queries degrade to an unindexed but correct filter,
+D-034) and per-hit session titles for one-render deep links.
 """
 
 from __future__ import annotations
@@ -31,6 +34,7 @@ from backend.schemas.chat import (
     ChatMessageRead,
     ChatMessageSend,
     ChatMessageSendResponse,
+    ChatSearchItem,
     ChatSessionCreate,
     ChatSessionRead,
     MessageRole,
@@ -95,6 +99,7 @@ def _message_read(db, message: ChatMessage) -> ChatMessageRead:
                 .limit(1)
             )
     return ChatMessageRead(
+        session_id=message.session_id,
         id=message.id,
         role=cast(MessageRole, message.role),
         content=message.content,
@@ -365,35 +370,53 @@ def delete_message(message_id: uuid.UUID, user: CurrentUser, db: DBSession) -> R
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.get("/sessions/{session_id}/messages/search", response_model=Page[ChatMessageRead])
-def search_messages(
-    session_id: uuid.UUID,
+@router.get("/search", response_model=Page[ChatSearchItem])
+def search_chat(
     user: CurrentUser,
     db: DBSession,
     q: str = Query(min_length=1, max_length=200),
+    session_id: uuid.UUID | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     cursor: str | None = None,
-) -> Page[ChatMessageRead]:
-    """In-session substring search over message content (A3).
+) -> Page[ChatSearchItem]:
+    """Cross-session chat search (D-035): ONE retrieval face over the
+    whole history, optionally scoped to a single live session via
+    ``session_id`` (unknown / other-user's / archived sessions are a 404,
+    the same discipline as the message flow — this replaces A3's in-session
+    sub-path, which never shipped a consumer).
 
-    Matching is a case-insensitive literal substring filter
+    Matching is A3-identical: a case-insensitive literal substring filter
     (``%needle%`` with autoescaped wildcards). The pg_trgm GIN index
-    accelerates it for needles of 3+ characters; shorter needles form no
-    trigram and degrade to an unindexed filter that still returns correct
-    results (D-034's 过滤降级). Results are newest-first with the same
-    ``(created_at, id)`` keyset as the session listing, so pagination stays
-    stable across edits; deleted messages never match.
+    accelerates needles of 3+ characters; shorter needles form no trigram
+    and degrade to an unindexed filter that still returns correct results.
+    Results are newest-first on the same ``(created_at, id)`` keyset as the
+    session listing, so pagination stays stable across edits. Soft-deleted
+    messages and archived sessions never match. Each hit carries its
+    session's CURRENT title so the client renders "title · time" and
+    deep-links without a second fetch.
     """
 
-    _session_or_404(session_id, user, db)
+    if session_id is not None:
+        _session_or_404(session_id, user, db)
+        scope = ChatMessage.session_id == session_id
+    else:
+        # Global scope: the user's live (non-archived) sessions only. A
+        # subquery (not a join) keeps the P0 isolation invariant — every
+        # message filter carries user_id on its own table.
+        scope = ChatMessage.session_id.in_(
+            select(ChatSession.id).where(
+                ChatSession.user_id == user.id,
+                ChatSession.archived_at.is_(None),
+            )
+        )
     needle = q.strip()
     if not needle:
         raise ValidationError("q must contain non-whitespace characters")
     conditions = [
-        ChatMessage.session_id == session_id,
         ChatMessage.user_id == user.id,
         ChatMessage.deleted_at.is_(None),
         ChatMessage.content.icontains(needle, autoescape=True),
+        scope,
     ]
     if cursor is not None:
         created_raw, id_raw = decode_cursor(cursor, 2)
@@ -417,8 +440,24 @@ def search_messages(
         after=true(),
         key_of=lambda row: (row.created_at, str(row.id)),
     )
+    titles: dict[uuid.UUID, str] = {}
+    if rows:
+        titles = dict(
+            db.execute(
+                select(ChatSession.id, ChatSession.title).where(
+                    ChatSession.id.in_({row.session_id for row in rows})
+                )
+            ).all()
+        )
+    items = [
+        ChatSearchItem(
+            **_message_read(db, row).model_dump(),
+            session_title=titles[row.session_id],
+        )
+        for row in rows
+    ]
     return Page(
-        items=[_message_read(db, row) for row in rows],
+        items=items,
         total=count_total(db, stmt) if cursor is None else None,
         limit=limit,
         offset=0,
