@@ -19,6 +19,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -137,6 +138,22 @@ def _default_scope_ok(scope: dict | None) -> bool:
     return isinstance(scope, dict) and len(scope) > 0
 
 
+def _value_scope_ok(
+    scope_matcher: Callable[[dict | None, Any], bool] | None,
+    scope: dict | None,
+    args: Any | None,
+) -> bool:
+    """Value-level §5.3 gate. No matcher supplied (args-less policy checks)
+    keeps the shape-only policy answer; a matcher without concrete args can
+    never value-match, so the action falls to confirmation — fail-closed."""
+
+    if scope_matcher is None:
+        return True
+    if args is None:
+        return False
+    return scope_matcher(scope, args)
+
+
 def evaluate_permission(
     session: Session,
     *,
@@ -146,17 +163,25 @@ def evaluate_permission(
     actor: str = AuditActor.AGENT.value,
     audit: bool = True,
     scope_validator: Callable[[dict | None], bool] | None = None,
+    scope_matcher: Callable[[dict | None, Any], bool] | None = None,
+    args: Any | None = None,
 ) -> PermissionDecision:
-    """Tightened D-034 §2.5 semantics.
+    """Tightened D-034 §2.5/§5.3 semantics.
 
     - Level 0/1: allowed outright (read/suggest cannot mutate).
     - Level 2: ALWAYS ``REQUIRE_CONFIRMATION`` — per-action user confirmation,
       every time. A Level 3 grant does not elevate a Level 2 tool (the
       M0-era ``granted >= required`` shortcut is retired).
     - Level 3: ``ALLOW`` only with an active, unrevoked, unexpired matching
-      grant whose level is exactly 3 and whose scope passes validation
-      (``scope_validator`` when the caller has one, else the non-empty
-      default). Otherwise require confirmation.
+      grant whose level is exactly 3, whose scope passes shape validation
+      (``scope_validator``, else the non-empty default) AND — when the
+      caller supplies the tool's ``scope_matcher`` — whose scope covers
+      THIS call's ``args`` values (coordinator ruling 2026-10-04: a
+      "deadline"-scoped grant must not auto-run a "replan" push). Without
+      concrete ``args`` a value-scoped action never auto-allows here; the
+      args-less ``/permissions/check`` face therefore stays policy-level
+      (shape) while the runner and dispatch paths are value-level.
+      Otherwise require confirmation.
     """
 
     required = required_level if required_level is not None else required_level_for(action)
@@ -185,7 +210,9 @@ def evaluate_permission(
             auto_grants = [
                 grant
                 for grant in matching
-                if grant.level == PermissionLevel.AUTO and scope_ok(grant.scope)
+                if grant.level == PermissionLevel.AUTO
+                and scope_ok(grant.scope)
+                and _value_scope_ok(scope_matcher, grant.scope, args)
             ]
             if auto_grants:
                 decision = PermissionDecision(
@@ -193,7 +220,7 @@ def evaluate_permission(
                     required_level=required,
                     granted_level=PermissionLevel.AUTO,
                     decision=AuditDecision.ALLOW,
-                    reason="active level-3 grant with matching scope",
+                    reason="active level-3 grant with scope covering this call",
                 )
             else:
                 decision = PermissionDecision(
@@ -201,7 +228,7 @@ def evaluate_permission(
                     required_level=required,
                     granted_level=granted,
                     decision=AuditDecision.REQUIRE_CONFIRMATION,
-                    reason="no active scoped level-3 grant; confirmation required",
+                    reason="no level-3 grant whose scope covers this call; confirm",
                 )
         else:
             decision = PermissionDecision(

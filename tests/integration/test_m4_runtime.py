@@ -27,6 +27,7 @@ from backend.models.audit import AuditLog
 from backend.models.enums import MemoryCorrectionStatus, MemoryKind
 from backend.models.memory import Memory
 from backend.models.task import Task
+from backend.services import agent_tools
 from backend.services.agent_runner import (
     create_pending_action,
     dispatch_confirmed_action,
@@ -207,13 +208,20 @@ def test_notify_push_scope_matrix(db_session, client, auth_headers) -> None:
 
     tool = get_tool("notify.push")
     assert tool is not None and tool.scope_validator is not None
+    assert tool.scope_matcher is not None  # §5.3 fail-closed registry rule
 
-    def decide() -> PermissionDecision:
+    def decide(category: str | None = "replan") -> PermissionDecision:
         return evaluate_permission(
             db_session,
             user_id=user_id,
             action="notify.push",
             scope_validator=tool.scope_validator,
+            scope_matcher=tool.scope_matcher,
+            args=(
+                agent_tools.NotifyPushArgs(category=category, title="重排建议")
+                if category is not None
+                else None
+            ),
         )
 
     assert decide().requires_confirmation  # no grant
@@ -225,28 +233,53 @@ def test_notify_push_scope_matrix(db_session, client, auth_headers) -> None:
     db_session.flush()
     assert decide().requires_confirmation  # empty scope is not a wildcard
 
+    # §5.3 value-level (ruling 2026-10-04): a well-formed grant only
+    # auto-covers the categories it names. The shape-only ALLOW that A2
+    # shipped here was the implementation debt this rewrite pins away.
     grant.scope = {"categories": ["deadline"], "channels": ["web"]}
     db_session.flush()
-    assert decide().allowed
+    assert decide("replan").requires_confirmation  # category not in grant scope
+    assert decide("deadline").allowed  # value covered
+
+    # A matcher without concrete args can never value-match — fail-closed.
+    no_args = evaluate_permission(
+        db_session,
+        user_id=user_id,
+        action="notify.push",
+        scope_validator=tool.scope_validator,
+        scope_matcher=tool.scope_matcher,
+        args=None,
+    )
+    assert no_args.requires_confirmation
 
     grant.revoked_at = utcnow()
     db_session.flush()
-    assert decide().requires_confirmation  # revoked never auto-executes
+    assert decide("deadline").requires_confirmation  # revoked never auto-executes
 
     grant.revoked_at = None
     grant.expires_at = utcnow() - timedelta(minutes=1)
     db_session.flush()
-    assert decide().requires_confirmation  # expired
+    assert decide("deadline").requires_confirmation  # expired
 
     grant.expires_at = None
     grant.scope = {"categories": ["*"], "channels": ["web"]}
     db_session.flush()
-    assert decide().requires_confirmation  # wildcard scope denies
+    assert decide("deadline").requires_confirmation  # wildcard scope denies
 
     strict = strict_scope_validator(
         frozenset({"categories", "channels"}), list_keys=frozenset({"categories", "channels"})
     )
     assert strict({"categories": ["x"], "channels": ["y"], "unknown": 1}) is False
+    # The value-level matcher itself: dict form (dispatch path) and model
+    # form (runner path) agree, and an un-named category never matches.
+    assert agent_tools._notify_scope_matches({"categories": ["deadline"]}, {"category": "deadline"})
+    assert not agent_tools._notify_scope_matches(
+        {"categories": ["deadline"]}, {"category": "replan"}
+    )
+    assert agent_tools._notify_scope_matches(
+        {"categories": ["deadline"]},
+        agent_tools.NotifyPushArgs(category="deadline", title="t"),
+    )
 
 
 # ------------------------------------------------------------ consent API --

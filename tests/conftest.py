@@ -90,6 +90,9 @@ def engine() -> Iterator[Engine]:
     # migrations create it in their own databases via op.execute).
     with test_engine.connect().execution_options(isolation_level="AUTOCOMMIT") as c:
         c.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+        # A3 retrieval: the chat trgm GIN index's opclass needs pg_trgm at
+        # create_all time (same per-database rule as pgvector, #35 precedent).
+        c.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
     Base.metadata.create_all(test_engine)
     yield test_engine
     Base.metadata.drop_all(test_engine)

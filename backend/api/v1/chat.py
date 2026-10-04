@@ -1,11 +1,14 @@
-"""Chat read face + send entry (D-034, M4-A1/A2).
+"""Chat read face + send/delete/search entries (D-034, M4-A1/A2/A3).
 
 Session/message listing with D-029 keyset pagination;
 ``decision_basis``/``pending_action_id`` on messages are JOIN projections
 over ``agent_run_id`` (ruling A5 — no second stored copy). POST sessions /
 messages (A2) create the user message plus a QUEUED run in one transaction
-and hand execution to the worker; DELETEs land with the A3 retrieval slice
-(deleted_at + FTS invalidation in the same transaction).
+and hand execution to the worker. A3 adds the DELETEs (soft, idempotent-204
+like the grant revoke; a session archive cascades message soft-deletes in
+the same transaction so retrieval eligibility drops atomically) and
+in-session search (pg_trgm-accelerated substring filter; sub-3-character
+queries degrade to an unindexed but correct filter, D-034).
 """
 
 from __future__ import annotations
@@ -15,11 +18,12 @@ import uuid
 from datetime import datetime
 from typing import cast
 
-from fastapi import APIRouter, Query, status
-from sqlalchemy import select, true
+from fastapi import APIRouter, Query, Response, status
+from sqlalchemy import select, true, update
 
 from backend.api.deps import CurrentUser, DBSession
 from backend.core.errors import ConflictError, NotFoundError, ValidationError
+from backend.db.base import utcnow
 from backend.models.agent import AgentRun, PendingAction
 from backend.models.chat import ChatMessage, ChatSession
 from backend.schemas.agent import DecisionBasis
@@ -42,9 +46,23 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
+def chat_operation_key(session_id: uuid.UUID, client_message_id: str) -> str:
+    """Ruling-A2 client_request_id formula — one definition for the dedup
+    lookup and the run creation (202 review note: no duplicated literal)."""
+
+    return f"chat:{session_id}:{client_message_id}"
+
+
 def _session_or_404(session_id: uuid.UUID, user, db) -> ChatSession:
+    """Read/send face lookup: an archived session is gone from the user's
+    view (DELETE is idempotent-204 and uses its own unfiltered lookup)."""
+
     row = db.scalar(
-        select(ChatSession).where(ChatSession.id == session_id, ChatSession.user_id == user.id)
+        select(ChatSession).where(
+            ChatSession.id == session_id,
+            ChatSession.user_id == user.id,
+            ChatSession.archived_at.is_(None),
+        )
     )
     if row is None:
         raise NotFoundError("Chat session not found")
@@ -93,7 +111,7 @@ def list_sessions(
     limit: int = Query(default=50, ge=1, le=200),
     cursor: str | None = None,
 ) -> Page[ChatSessionRead]:
-    conditions = [ChatSession.user_id == user.id]
+    conditions = [ChatSession.user_id == user.id, ChatSession.archived_at.is_(None)]
     if cursor is not None:
         updated_raw, id_raw = decode_cursor(cursor, 2)
         if updated_raw is None or id_raw is None:
@@ -227,7 +245,7 @@ async def send_message(
             select(AgentRun)
             .where(
                 AgentRun.user_id == user.id,
-                AgentRun.operation_key == f"chat:{session_id}:{payload.client_message_id}",
+                AgentRun.operation_key == chat_operation_key(session_id, payload.client_message_id),
             )
             .order_by(AgentRun.attempt_no.desc())
             .limit(1)
@@ -257,7 +275,7 @@ async def send_message(
     if chat_session is not None and not chat_session.title:
         chat_session.title = payload.content[:120]
 
-    operation_key = f"chat:{session_id}:{payload.client_message_id}"
+    operation_key = chat_operation_key(session_id, payload.client_message_id)
     run = AgentRun(
         user_id=user.id,
         status="QUEUED",
@@ -279,6 +297,117 @@ async def send_message(
     db.refresh(message)
     db.refresh(run)
     return ChatMessageSendResponse(run_id=run.id, user_message_id=message.id)
+
+
+@router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_session(session_id: uuid.UUID, user: CurrentUser, db: DBSession) -> Response:
+    """Archive the session and soft-delete its live messages in ONE
+    transaction (A3): retrieval eligibility (reads, search, agent history
+    faces) drops atomically with the user-visible deletion. Idempotent-204
+    like the grant revoke; rows remain for audit lineage — the runs and
+    pending actions that cite these messages keep resolving."""
+
+    session = db.scalar(
+        select(ChatSession).where(ChatSession.id == session_id, ChatSession.user_id == user.id)
+    )
+    if session is None:
+        raise NotFoundError("Chat session not found")
+    if session.archived_at is None:
+        now = utcnow()
+        session.archived_at = now
+        session.updated_at = now
+        db.execute(
+            update(ChatMessage)
+            .where(
+                ChatMessage.session_id == session_id,
+                ChatMessage.user_id == user.id,
+                ChatMessage.deleted_at.is_(None),
+            )
+            .values(deleted_at=now)
+        )
+        db.flush()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete("/messages/{message_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_message(message_id: uuid.UUID, user: CurrentUser, db: DBSession) -> Response:
+    """Soft-delete one message; reads and search exclude it from this
+    transaction on (no separate FTS index to invalidate — eligibility is a
+    WHERE clause over ``deleted_at``). Idempotent-204."""
+
+    message = db.scalar(
+        select(ChatMessage).where(
+            ChatMessage.id == message_id,
+            ChatMessage.user_id == user.id,
+        )
+    )
+    if message is None:
+        raise NotFoundError("Chat message not found")
+    if message.deleted_at is None:
+        message.deleted_at = utcnow()
+        db.flush()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/sessions/{session_id}/messages/search", response_model=Page[ChatMessageRead])
+def search_messages(
+    session_id: uuid.UUID,
+    user: CurrentUser,
+    db: DBSession,
+    q: str = Query(min_length=1, max_length=200),
+    limit: int = Query(default=50, ge=1, le=200),
+    cursor: str | None = None,
+) -> Page[ChatMessageRead]:
+    """In-session substring search over message content (A3).
+
+    Matching is a case-insensitive literal substring filter
+    (``%needle%`` with autoescaped wildcards). The pg_trgm GIN index
+    accelerates it for needles of 3+ characters; shorter needles form no
+    trigram and degrade to an unindexed filter that still returns correct
+    results (D-034's 过滤降级). Results are newest-first with the same
+    ``(created_at, id)`` keyset as the session listing, so pagination stays
+    stable across edits; deleted messages never match.
+    """
+
+    _session_or_404(session_id, user, db)
+    needle = q.strip()
+    if not needle:
+        raise ValidationError("q must contain non-whitespace characters")
+    conditions = [
+        ChatMessage.session_id == session_id,
+        ChatMessage.user_id == user.id,
+        ChatMessage.deleted_at.is_(None),
+        ChatMessage.content.icontains(needle, autoescape=True),
+    ]
+    if cursor is not None:
+        created_raw, id_raw = decode_cursor(cursor, 2)
+        if created_raw is None or id_raw is None:
+            raise ValidationError("created_at/id must be present in the cursor")
+        anchor = datetime.fromisoformat(created_raw)
+        row_id = uuid.UUID(id_raw)
+        conditions.append(
+            (ChatMessage.created_at < anchor)
+            | ((ChatMessage.created_at == anchor) & (ChatMessage.id < row_id))
+        )
+    stmt = (
+        select(ChatMessage)
+        .where(*conditions)
+        .order_by(ChatMessage.created_at.desc(), ChatMessage.id.desc())
+    )
+    rows, next_cursor = keyset_page(
+        db,
+        stmt,
+        limit=limit,
+        after=true(),
+        key_of=lambda row: (row.created_at, str(row.id)),
+    )
+    return Page(
+        items=[_message_read(db, row) for row in rows],
+        total=count_total(db, stmt) if cursor is None else None,
+        limit=limit,
+        offset=0,
+        next_cursor=next_cursor,
+    )
 
 
 async def _enqueue_run(run_id: uuid.UUID) -> None:

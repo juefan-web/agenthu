@@ -40,11 +40,12 @@ from backend.db.base import utcnow
 from backend.models.agent import AgentRun, PendingAction, PendingActionMutation
 from backend.models.chat import ChatMessage
 from backend.models.enums import AuditActor, AuditDecision
+from backend.models.plan import Plan
 from backend.schemas.agent import pending_action_read
 from backend.services import agent_tools
 from backend.services.agent_tools import ExecContext
 from backend.services.audit import record_audit, redact_allowlist
-from backend.services.context_assembly import assemble_context
+from backend.services.context_assembly import PROMPT_VERSION, assemble_context
 from backend.services.permissions import (
     PermissionLevel,
     evaluate_permission,
@@ -145,6 +146,152 @@ def audit_run_queued(session: Session, run: AgentRun) -> None:
         resource_id=str(run.id),
         details={"invocation_kind": run.invocation_kind, "attempt": run.attempt_no},
     )
+
+
+def queue_proactive_run(
+    session: Session,
+    *,
+    user_id: uuid.UUID,
+    trigger_kind: str,
+    trigger_signature: str,
+) -> AgentRun | None:
+    """Queue a proactive run for a fired replan trigger (A3).
+
+    Dedup is structural: ``operation_key = trigger:{signature}`` is unique
+    per (user, operation_key, attempt_no) FOREVER — the trigger engine only
+    re-fires a signature until its suggestion lands, and once a run exists
+    for it this returns None, so a trigger never produces two runs. The
+    active-trigger partial unique (``uq_agent_runs_active_trigger``) is the
+    belt-and-braces for concurrent writers. Single-writer per user (the
+    cron drain is sequential), so the pre-check suffices without racing a
+    flush-IntegrityError through the caller's transaction.
+    """
+
+    operation_key = f"trigger:{trigger_signature}"
+    existing = session.scalar(
+        select(AgentRun.id).where(
+            AgentRun.user_id == user_id, AgentRun.operation_key == operation_key
+        )
+    )
+    if existing is not None:
+        return None
+    run = AgentRun(
+        user_id=user_id,
+        status="QUEUED",
+        invocation_kind="proactive_trigger",
+        trigger_ref={"kind": trigger_kind, "trigger_signature": trigger_signature},
+        operation_key=operation_key,
+        attempt_no=1,
+        runner_version=RUNNER_VERSION,
+        tool_registry_version=TOOL_REGISTRY_VERSION,
+        prompt_version=PROMPT_VERSION,
+    )
+    session.add(run)
+    session.flush()
+    audit_run_queued(session, run)
+    return run
+
+
+async def _execute_proactive_run(session: Session, *, run: AgentRun) -> AgentRun:
+    """Proactive trigger settlement (A3): deterministic BY DESIGN — no
+    provider call is ever made, so the global model-context consent gate is
+    never engaged. The trigger engine already created the DRAFT suggestion;
+    this run's single job is the Level-3 notification surface: a
+    ``notify.push`` pending action (re-verified scoped grant -> CONFIRMED
+    and dispatched immediately, budget settling at execution; no grant ->
+    PENDING card for explicit confirmation). L1/L3 split per contract §6:
+    the suggestion itself is free and user-visible via the plan faces; only
+    the push consumes the disturbance budget."""
+
+    signature = run.trigger_ref.get("trigger_signature")
+    suggestion = (
+        session.scalar(
+            select(Plan)
+            .where(
+                Plan.user_id == run.user_id,
+                Plan.generated_by == "replan_trigger",
+                Plan.basis.contains({"trigger_signature": signature}),
+            )
+            .order_by(Plan.created_at.desc())
+        )
+        if isinstance(signature, str)
+        else None
+    )
+    title = (suggestion.replan_reason if suggestion is not None else None) or "重排建议已生成"
+    args = agent_tools.NotifyPushArgs(
+        category=agent_tools.NOTIFY_CATEGORY_REPLAN,
+        title=title[:200],
+    )
+    tool = get_tool("notify.push")
+    assert tool is not None
+
+    started = utcnow()
+    grant = _level3_grant(session, run.user_id, tool, args)
+    references: list[dict[str, Any]] = [
+        {
+            "kind": "current_state",
+            "id": str(run.user_id),
+            "label": "CurrentState",
+            "state": None,
+        }
+    ]
+    if suggestion is not None:
+        references.append(
+            {
+                "kind": "plan",
+                "id": str(suggestion.id),
+                "label": "重排建议",
+                "state": None,
+            }
+        )
+    action = create_pending_action(
+        session,
+        run=run,
+        tool=tool,
+        args=args,
+        decision_summary=title,
+        references=references,
+        level3_grant=grant,
+    )
+    if grant is not None:
+        await dispatch_confirmed_action(session, action_id=action.id, provider=None)
+    tool_calls = [
+        _tool_call_row(
+            "det-1",
+            tool,
+            args,
+            "succeeded",
+            started,
+            result_ref={"pending_action_id": str(action.id)},
+        )
+    ]
+    run.tool_calls = tool_calls
+    run.provider = {"name": "deterministic", "model": "none", "capability": "none"}
+    run.decision_basis = {
+        "basis_version": "v1",
+        "summary": title[:1000],
+        "references": references,
+        "rule_versions": {
+            "tool_registry": TOOL_REGISTRY_VERSION,
+            "runner": RUNNER_VERSION,
+            "replan_triggers": "d-031",
+        },
+        "selected_tool_call_ids": ["det-1"],
+    }
+    _settle_run(
+        session,
+        run,
+        status="WAITING_CONFIRMATION",
+        result={"summary": title[:1000], "degraded": False},
+    )
+    run.budget = {
+        "reserved_total": settings.agent_context_reserved_tokens,
+        "actual_total": 0,
+    }
+    session.commit()
+    final = session.get(AgentRun, run.id)
+    assert final is not None
+    return final
 
 
 # ------------------------------------------------------- pending creation --
@@ -269,12 +416,21 @@ def _tool_call_row(
     return row
 
 
-def _level3_grant(session: Session, user_id: uuid.UUID, tool: ToolDefinition) -> Any | None:
+def _level3_grant(
+    session: Session, user_id: uuid.UUID, tool: ToolDefinition, args: Any | None = None
+) -> Any | None:
+    """Shape- AND value-scoped Level-3 grant for THIS call (§5.3, ruling
+    2026-10-04). ``args`` are the validated tool arguments; a grant whose
+    scope does not cover them yields None — the caller falls back to a
+    PENDING confirmation card instead of auto-execution."""
+
     decision = evaluate_permission(
         session,
         user_id=user_id,
         action=tool.name,
         scope_validator=tool.scope_validator,
+        scope_matcher=tool.scope_matcher,
+        args=args,
     )
     if decision.allowed:
         from backend.models.permission import PermissionGrant
@@ -411,9 +567,16 @@ async def dispatch_confirmed_action(
             "retryable": False,
             "safe_message": "Tool is no longer registered",
         }
-    elif row.required_level == PermissionLevel.AUTO:
-        # §5.1: the grant is re-verified at the moment of execution.
-        grant = _level3_grant(session, row.user_id, tool)
+    elif row.required_level == PermissionLevel.AUTO and row.grant_snapshot is not None:
+        # §5.1: a GRANT-based confirmation re-verifies the standing grant at
+        # the moment of execution (snapshot written only on that path). A
+        # user-confirmed action (``grant_snapshot`` NULL) carries its own
+        # explicit per-action authorization — the confirm endpoint settled
+        # that intent, so dispatch must not re-demand a grant.
+        # ``row.args`` (raw dict) here: the validated ``args`` model is only
+        # built below once the grant gate passes; the scope matcher accepts
+        # both shapes.
+        grant = _level3_grant(session, row.user_id, tool, row.args)
         if grant is None:
             failure = {
                 "code": "permission_denied",
@@ -521,6 +684,12 @@ async def execute_run(
     if run is None:
         return None
     assert run is not None  # claim_run already returned for the miss case
+
+    if run.invocation_kind == "proactive_trigger":
+        # A3: proactive trigger runs are deterministic by design — they
+        # never touch a provider, so they route to their own settlement
+        # (notify.push pending action citing the trigger's suggestion).
+        return await _execute_proactive_run(session, run=run)
 
     tool_calls: list[dict[str, Any]] = []
     pending_ids: list[uuid.UUID] = []
@@ -749,7 +918,7 @@ async def execute_run(
                             summary_parts.append(exec_result["summary"])
                     else:
                         grant = (
-                            _level3_grant(session, run.user_id, tool)
+                            _level3_grant(session, run.user_id, tool, args)
                             if tool.required_level == PermissionLevel.AUTO
                             else None
                         )

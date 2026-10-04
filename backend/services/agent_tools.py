@@ -36,7 +36,6 @@ from backend.models.goal import Goal
 from backend.models.memory import Memory
 from backend.models.plan import Plan
 from backend.models.task import Task
-from backend.services.audit import record_audit
 from backend.services.current_state import get_or_create_state
 from backend.services.focus import create_focus_session
 from backend.services.grounded_answers import (
@@ -46,6 +45,7 @@ from backend.services.grounded_answers import (
 from backend.services.lookup import get_task
 from backend.services.memory_retrieval import retrieve_memories
 from backend.services.model_consent import active_consent_version
+from backend.services.notification_delivery import settle_and_deliver
 from backend.services.planner import generate_plan
 from backend.services.replan_triggers import evaluate_replan_triggers
 from backend.services.tool_registry import (
@@ -156,6 +156,22 @@ class NotifyPushArgs(_StrictModel):
     category: str = Field(min_length=1, max_length=50)
     title: str = Field(min_length=1, max_length=200)
     body: str | None = Field(default=None, max_length=1000)
+
+
+# Server-defined category vocabulary (contract §6: the client renders the
+# words, the server defines them). A3 wires exactly one producer — replan
+# suggestions surfaced by the trigger engine.
+NOTIFY_CATEGORY_REPLAN = "replan"
+
+
+def _notify_scope_matches(scope: dict | None, args: Any) -> bool:
+    """§5.3 value-level match (ruling 2026-10-04): the grant must name this
+    call's category — a "deadline"-scoped grant never auto-runs a "replan"
+    push. Accepts the validated args model (runner loop, proactive
+    settlement) or the stored args dict (dispatch re-verification)."""
+
+    category = args.get("category") if isinstance(args, dict) else getattr(args, "category", None)
+    return isinstance(scope, dict) and category in scope.get("categories", [])
 
 
 class _PlaceholderArgs(_StrictModel):
@@ -381,21 +397,23 @@ async def _exec_focus_start(ctx: ExecContext, args: FocusStartArgs) -> dict[str,
 
 async def _exec_notify_push(ctx: ExecContext, args: NotifyPushArgs) -> dict[str, Any]:
     # Level 3 dispatch: the grant re-verification happens in the runner
-    # immediately before this executes (§5.1). The delivery channel and the
-    # §8 disturbance budget settle with the A3 proactive wiring; recording
-    # the notification honestly is all this executor may claim.
-    record_audit(
+    # immediately before this executes (§5.1). A3 delivery: the §6/§8
+    # disturbance budget settles atomically here — category gate, quiet
+    # hours (user-local, midnight-crossing legal) and the per-local-day
+    # budget. Suppression is policy working as intended, not a failure:
+    # the pending action settles SUCCEEDED with an honest suppressed
+    # summary, and the audit ledger carries the reason.
+    outcome = settle_and_deliver(
         ctx.session,
-        action="notification.recorded",
-        actor="agent",
         user_id=ctx.user_id,
-        resource_type="notification",
-        resource_id=str(ctx.pending_action_id) if ctx.pending_action_id else None,
-        details={"category": args.category, "title_chars": len(args.title)},
+        category=args.category,
+        pending_action_id=ctx.pending_action_id,
     )
     return {
-        "summary": "Notification recorded; delivery channel lands with A3 wiring",
+        "summary": outcome["summary"],
         "resource_type": "notification",
+        "delivered": outcome["delivered"],
+        "suppressed_reason": outcome["reason"],
     }
 
 
@@ -691,6 +709,9 @@ register_tool(
             frozenset({"categories", "channels", "local_time_window"}),
             list_keys=frozenset({"categories", "channels"}),
         ),
+        # §5.3 value-level: shape validation above plus this call's category
+        # must be inside the grant's categories list (ruling 2026-10-04).
+        scope_matcher=_notify_scope_matches,
         display_builder=lambda a: _display(
             f"发送通知（{a.category}）",
             [

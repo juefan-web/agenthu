@@ -609,11 +609,15 @@ def test_empty_draft_reused_when_nothing_placeable(client, auth_headers) -> None
     When the day's remaining budget/slots cannot fit ANY pending task, the
     honest plan is empty — and repeated today reads must REUSE that empty
     draft instead of generating a fresh one per refresh (the churn the
-    late-night flaky class projected). Forced deterministically: two schedule
-    entries cover the whole working day, so nothing is placeable at any hour.
+    late-night flaky class projected). Forced deterministically: schedule
+    entries cover the whole calendar day 00:00-23:59, so nothing is
+    placeable at any hour — including the 00:00-08:00 Beijing window where
+    the original 08:00-start fixture left a placeable early gap (the flake
+    the A3 CI run caught at 00:03 local).
     """
 
     _make_task(client, auth_headers, title="HW", days=1)
+    _schedule_entry(client, auth_headers, "凌晨值守", "00:00", "08:00")
     _schedule_entry(client, auth_headers, "全天课A", "08:00", "16:00")
     _schedule_entry(client, auth_headers, "全天课B", "16:00", "23:59")
 

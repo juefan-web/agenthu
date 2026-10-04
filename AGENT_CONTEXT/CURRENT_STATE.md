@@ -1035,7 +1035,6 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   下一步：A rebase 到 `1bdae73` 开 PR（两步挂 reviewer）→ B 交叉审；
   **B2 依赖面已齐（pending mutations / chat 202 / 偏好 / 同意 GET/PUT），
   B 可即刻开工**。
-<<<<<<< HEAD
 - **勘误（协调人，2026-10-03）**：上条「B2 依赖面已齐……全在 main」
   **不成立**——pending mutations / chat 202 / 同意 GET/PUT 在 A2 未合并
   分支上，main 实际只有读面 + 偏好 PATCH + M3 同意门（B 开工前独立
@@ -1075,3 +1074,26 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   未获授权，需你处理」，历史已授权派发 = 「已授权自动执行」；④不可达
   403 分支防御性保留。同意门两 client 方法对 main openapi 现端面补
   path/body/解析用例。A 于新 head 重新出绑定 approve 后合入。
+- **A2 已合 + A3 交付在分支（2026-10-03 深夜）**：#54 合并 `8d47781`
+  （B 绑定 approve 14:47Z，四关注点带行号坐实）；#55 等 B rebase 轮
+  （A 的 APPROVED 绑 `769df09` + 四条非阻塞裁定意见在案，新 head 需
+  A 重新绑定）。**A3 = `feature/m4-a3-retrieval-wiring`**（自 `8d47781`）：
+  pg_trgm 迁移 `c4f2a8e01d73` + conftest 预装；chat DELETE 双端点
+  （幂等 204；会话归档级联消息软删，检索资格同事务丧失）+ 会话内
+  搜索（ILIKE 子串 + trgm GIN，<3 字符无 trigram 退化为无索引过滤
+  结果仍正确，通配符字面化，newest-first keyset）；触发引擎接线主动
+  run（`trigger:{signature}` 永久去重 + `uq_agent_runs_active_trigger`
+  双保险；drain 后直接 enqueue，sweep 兜底）；主动结算确定性无
+  provider 调用（L1 建议免费走计划面，L3 notify.push 消耗预算——分流
+  落地）；打扰预算结算 `notification_delivery.settle_and_deliver`
+  （类别→免打扰→本地日预算三重门，跨午夜窗口合法，抑制=SUCCEEDED
+  如实文案 + 审计记因，无 prefs 行=工厂态全关且不为此建行）。**修复
+  A2 缝隙一处**：dispatch 的 L3 grant 复验现仅作用于 grant 确认路径
+  （`grant_snapshot` 非空），用户逐次确认的 L3 动作不再被错误拒绝
+  （A3 回归钉死：无 grant PENDING→确认→真实投递结算）。验证：331
+  passed / 8 skipped（7 深夜窗 + 1 S3）、ruff/format/pyright 0、迁移
+  up/down/up + alembic check 绿、OpenAPI 61 路径重导 + drift 双源绿。
+  遗留观察（非阻塞）：L3 grant 的 scope 只做形状校验（categories 列
+  非空即过），未与本次调用的 category 做包含性比对——A2 冻结语义如
+  此，预算门仍在，是否收紧待裁定。服务端细分码（可选项）未做：客户
+  端超集方案已覆盖今天的诚实呈现。

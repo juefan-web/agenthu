@@ -29,6 +29,7 @@ from backend.models.agent import AgentRun
 from backend.models.file import FileObject
 from backend.services.agent_runner import (
     execute_run,
+    queue_proactive_run,
     reclaim_expired_runs,
     recover_pending_actions,
     sweep_pending_actions,
@@ -116,21 +117,53 @@ async def recover_pending_actions_by_session() -> int:
 
 
 async def drain_trigger_evaluation(ctx: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Evaluate replan triggers for every dirty user (cron, every 30s)."""
+    """Evaluate replan triggers for every dirty user (cron, every 30s).
+
+    A3: a fired trigger ALSO queues a proactive agent run
+    (``invocation_kind=proactive_trigger``; one run per trigger signature,
+    ever). The direct enqueue below is best-effort — the runtime sweep
+    re-claims any QUEUED run whose enqueue was lost (60s grace), so a Redis
+    hiccup delays the notification but never drops it."""
 
     users = drain_dirty_users()
     suggestions: list[str] = []
+    queued_runs: list[str] = []
     for user_id in users:
         try:
             with session_scope() as session:
                 suggestion = evaluate_replan_triggers(session, user_id=uuid.UUID(user_id))
-            if suggestion is not None:
+                if suggestion is None:
+                    continue
                 suggestions.append(str(suggestion.id))
+                signature = suggestion.basis.get("trigger_signature")
+                if not isinstance(signature, str):
+                    continue
+                run = queue_proactive_run(
+                    session,
+                    user_id=uuid.UUID(user_id),
+                    trigger_kind="replan_trigger",
+                    trigger_signature=signature,
+                )
+                if run is not None:
+                    queued_runs.append(str(run.id))
         except Exception:
             # One user's failure must not block the rest; the dirty marker is
             # already consumed, so recovery waits for that user's next event.
             logger.exception("Trigger evaluation failed", extra={"user_id": user_id})
-    return {"evaluated": len(users), "suggestions": suggestions}
+    # After commit: hand the runs to a worker now instead of waiting out the
+    # sweep's grace window. ctx["redis"] is the worker's own ArqRedis pool.
+    pool = ctx.get("redis") if ctx is not None else None
+    if pool is not None:
+        for run_id in queued_runs:
+            try:
+                await pool.enqueue_job("execute_agent_run", run_id)
+            except Exception:  # pragma: no cover - sweep is the net
+                logger.warning("Proactive run enqueue failed; sweep will claim it")
+    return {
+        "evaluated": len(users),
+        "suggestions": suggestions,
+        "proactive_runs": queued_runs,
+    }
 
 
 async def extract_material(ctx: dict[str, Any] | None, file_id: str) -> dict[str, Any]:
