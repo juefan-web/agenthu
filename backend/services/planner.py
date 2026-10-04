@@ -25,10 +25,13 @@ from backend.config import get_settings
 from backend.core.errors import ConflictError, NotFoundError
 from backend.db.base import utcnow
 from backend.models.enums import PlanStatus, TaskStatus
+from backend.models.event import Event
 from backend.models.goal import Goal
+from backend.models.memory import Memory
 from backend.models.plan import Plan, PlanItem
 from backend.models.task import Task
 from backend.services.current_state import (
+    _SCHEDULE_LOOKBACK,
     _overlap_minutes,
     _task_remaining_minutes,
     _today_schedule_entries,
@@ -124,6 +127,20 @@ def generate_plan(
     # client_view (the basis is the record, the reason is a view).
     items, used_memory_ids = _generate_v2_items(session, user_id=user_id, tasks=tasks, start=start)
     plan.items.extend(items)
+    # A contract §7: the deterministic decision itself is citable — structured
+    # basis under the frozen agent_decision sub-key, beside the legacy keys
+    # BasisPanel already reads. The plan row is new, so mutating the dict
+    # before flush needs no mutation tracking.
+    plan.basis["agent_decision"] = _plan_agent_decision(
+        session,
+        user_id=user_id,
+        goal_id=goal_id,
+        items=items,
+        used_memory_ids=used_memory_ids,
+        state_version=state.version,
+        replan_reason=replan_reason,
+        now=start,
+    )
     # Decision telemetry (task doc §8a.2): the rows whose estimates landed in
     # this plan's basis entered a decision context — once per row per plan,
     # committed atomically with it.
@@ -132,6 +149,94 @@ def generate_plan(
     session.add(plan)
     session.flush()
     return plan
+
+
+def _schedule_event_references(
+    session: Session, user_id: uuid.UUID, now: datetime
+) -> list[dict[str, object]]:
+    """Cite today's schedule events the placement drew on (§7: 输入 Event).
+
+    Mirrors the projection's dedupe rule — latest revision per upstream —
+    so a moved class is cited once, by its newest row.
+    """
+
+    rows = session.execute(
+        select(Event.id, Event.provenance, Event.data, Event.timestamp)
+        .where(
+            Event.user_id == user_id,
+            Event.type == "time.schedule.entry",
+            Event.timestamp >= now - _SCHEDULE_LOOKBACK,
+        )
+        .order_by(Event.timestamp.desc())
+    ).all()
+    cited: dict[str, dict[str, object]] = {}
+    for event_id, provenance, data, timestamp in rows:
+        upstream = provenance.get("upstream_id") if isinstance(provenance, dict) else None
+        if not isinstance(upstream, str) or upstream in cited or not isinstance(data, dict):
+            continue
+        label = str(data.get("course_name") or "课程")
+        location = data.get("location")
+        if location:
+            label = f"{label} · {location}"
+        cited[upstream] = {
+            "kind": "event",
+            "id": str(event_id),
+            "label": label,
+            "locator": {"occurred_at": timestamp.isoformat()},
+        }
+    return list(cited.values())
+
+
+def _plan_agent_decision(
+    session: Session,
+    *,
+    user_id: uuid.UUID,
+    goal_id: uuid.UUID | None,
+    items: list[PlanItem],
+    used_memory_ids: list[uuid.UUID],
+    state_version: int,
+    replan_reason: str | None,
+    now: datetime,
+) -> dict[str, object]:
+    """Structured DecisionBasis for a deterministic plan (A contract §7).
+
+    Cites what the placement actually consumed: the placed tasks, the goal
+    (if any), today's schedule events, the memory rows behind the estimates,
+    and the CurrentState projection version at decision time.
+    """
+
+    references: list[dict[str, object]] = [
+        {"kind": "task", "id": str(item.task_id), "label": item.title}
+        for item in items
+        if item.task_id is not None
+    ]
+    if goal_id is not None:
+        goal = session.get(Goal, goal_id)
+        if goal is not None:
+            references.append({"kind": "goal", "id": str(goal.id), "label": goal.title})
+    references.extend(_schedule_event_references(session, user_id, now))
+    for memory_id in used_memory_ids:
+        row = session.get(Memory, memory_id)
+        if row is not None:
+            references.append({"kind": "memory", "id": str(row.id), "label": row.content[:48]})
+    references.append(
+        {
+            "kind": "current_state",
+            "id": str(user_id),
+            "label": "CurrentState",
+            "locator": {"state_version": state_version},
+        }
+    )
+    summary = replan_reason or (
+        f"已排入 {len(items)} 个任务块" if items else "本轮无可排入的任务块"
+    )
+    return {
+        "basis_version": "v1",
+        "summary": summary,
+        "references": references,
+        "rule_versions": {"planner": STRATEGY_V2},
+        "selected_tool_call_ids": [],
+    }
 
 
 # --------------------------------------------------------------------------- #

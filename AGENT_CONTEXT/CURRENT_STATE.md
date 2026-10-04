@@ -1134,3 +1134,20 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   首跑**（#58 合后，E5 手册 + B 的 E6 手册）；② B = D-035 客户端切片
   （按排序规则与 A 同批）+ E6 核账报告（镜像 M3 角色对账）；③ 缺口
   切片合 → S1/S3 活链断言 → E6 全绿 → **M4 按 D-030 收口**。
+- **A 的缺口切片交付（2026-10-04，`feature/m4-basis-gap-slice` 自
+  `e537068`，协调人裁定 1 三件合一）**：①`generate_plan` 写
+  `Plan.basis.agent_decision`（冻结 DecisionBasis 外层；引用排入任务/
+  goal/当日课表事件/估时 Memory/CurrentState locator.state_version；
+  legacy 键原位不动；全部调用方一次覆盖）；②新服务
+  `reference_invalidation`：删消息/归档会话同事务翻转
+  `agent_runs.decision_basis` 与 `pending_actions.basis` 中的
+  `chat_message` 引用为 `source_deleted`（幂等，flag_modified）；③
+  chat run basis 引用触发消息（id+occurred_at locator 不带正文，L2
+  action 继承引用）+ current_state 的 version 挪进 locator（B4② 形状）。
+  **附带修复 A2 真缝隙**：`_chat_context` 按消息主键查
+  `client_message_id` 恒查空——消息正文从未经该路径进上下文（此前靠
+  会话近史段兜住）；改按 (session_id, client_message_id) 查。验证：
+  新增 7 用例 + 全量 346 passed/1 skipped、ruff/format/pyright 0、
+  drift 绿、无 schema/迁移/OpenAPI 变更。合并后 B 可摘 S1/S3 注释锚
+  （agent_decision 活链 + source_deleted 活链，见
+  `HANDOFF/2026-10-04-a-basis-gap-slice.md`）。

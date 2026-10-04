@@ -652,9 +652,12 @@ async def dispatch_confirmed_action(
 # ------------------------------------------------------------ the run ------
 
 
-def _chat_context(session: Session, run: AgentRun) -> tuple[uuid.UUID | None, str | None]:
-    """Chat runs derive (session_id, user message) from the frozen
-    client_request_id formula ``chat:{session_id}:{client_message_id}``."""
+def _chat_context(session: Session, run: AgentRun) -> tuple[uuid.UUID | None, ChatMessage | None]:
+    """Chat runs derive (session_id, user message row) from the frozen
+    client_request_id formula ``chat:{session_id}:{client_message_id}`` —
+    the third segment is the CLIENT idempotency key, not the message PK
+    (looking up by PK always missed; the message content only reached
+    context through the session-history segment)."""
 
     if run.invocation_kind != "chat" or not run.client_request_id:
         return None, None
@@ -664,13 +667,16 @@ def _chat_context(session: Session, run: AgentRun) -> tuple[uuid.UUID | None, st
     _, session_id_raw, message_id_raw = parts
     try:
         session_id = uuid.UUID(session_id_raw)
-        message_id = uuid.UUID(message_id_raw)
     except ValueError:
         return None, None
     message = session.scalar(
-        select(ChatMessage).where(ChatMessage.id == message_id, ChatMessage.user_id == run.user_id)
+        select(ChatMessage).where(
+            ChatMessage.session_id == session_id,
+            ChatMessage.client_message_id == message_id_raw,
+            ChatMessage.user_id == run.user_id,
+        )
     )
-    return session_id, (message.content if message is not None else None)
+    return session_id, message
 
 
 async def execute_run(
@@ -704,17 +710,31 @@ async def execute_run(
             session,
             user_id=run.user_id,
             chat_session_id=chat_session_id,
-            user_message=user_message,
+            user_message=user_message.content if user_message is not None else None,
         )
         run.context_snapshot = assembled.manifest
         run.prompt_version = assembled.manifest["prompt_version"]
+        # B4①: chat runs cite their triggering message — id + occurred_at
+        # locator only, never the content (frozen reference schema).
+        if user_message is not None:
+            references.append(
+                {
+                    "kind": "chat_message",
+                    "id": str(user_message.id),
+                    "label": "对话消息",
+                    "locator": {
+                        "message_id": str(user_message.id),
+                        "occurred_at": user_message.created_at.isoformat(),
+                    },
+                }
+            )
         references.append(
             {
                 "kind": "current_state",
                 "id": str(run.user_id),
                 "label": "CurrentState",
-                "state": None,
-                "version": str(assembled.manifest["state_version"]),
+                # B4② frozen shape: the projection version rides the locator.
+                "locator": {"state_version": assembled.manifest["state_version"]},
             }
         )
 
