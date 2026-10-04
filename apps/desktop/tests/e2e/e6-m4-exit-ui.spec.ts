@@ -19,7 +19,11 @@ import { test as base, chromium, expect, type BrowserContext, type Page } from "
  *
  * 前置：构建包以 CDP 运行；`AGENTHU_E6_UI=1`；`AGENTHU_TEST_BACKEND_URL`
  * 与构建期 `VITE_BACKEND_URL` 同源；provider = e6-replay.mjs
- * （`AGENTHU_E6_REPLAY_URL`，默认 :9099）。
+ * （`AGENTHU_E6_REPLAY_URL`，默认 :9099）；运行必须加载本目录
+ * playwright.config.ts（180s 用例超时 / workers 1）——用 `pnpm --filter
+ * @agenthu/desktop test:e2e e6-m4-exit-ui`（脚本自带 `-c`）或显式
+ * `--config tests/e2e/playwright.config.ts`；缺省 30s 用例超时会截断
+ * 场景内 60-130s 的等待（首跑第 4-5 轮实证）。
  */
 
 const backendUrl = process.env.AGENTHU_TEST_BACKEND_URL;
@@ -117,11 +121,12 @@ async function setReplayMode(mode: "grounding" | "chat-tools" | "unavailable") {
  *  §2）——六场景的多次 overrun 全在同一 30 分钟窗内，无豁免则 s6 的后续
  *  触发被限流饿死。须在首个计划 confirm 之前种（created_at ≤ confirmed_at，
  *  不抢跑 new_task 触发器；overrun 判据优先级更高，双保险）。 */
-async function seedDeadlineExemption(api: Api) {
-  await api.post("/v1/tasks", {
+async function seedDeadlineExemption(api: Api): Promise<string> {
+  const task = (await api.post("/v1/tasks", {
     title: "已过期豁免项（E6）",
     deadline: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
-  });
+  })).body;
+  return task.id as string;
 }
 
 /** 触发一次真实的计划项 overrun（D-030 出口句原文路径：超时 Focus → 重排
@@ -162,11 +167,11 @@ async function loginInApp(page: Page) {
 
 test.describe.configure({ mode: "serial" });
 
-test("e6-s1: 超时 Focus → Level 1 重排建议（依据活链：agent_decision 引用超时任务）", async ({ app }) => {
+test("e6-s1: 超时 Focus → Level 1 重排建议（依据活链：agent_decision 引用实际重排的任务）", async ({ app }) => {
   const { page } = app;
   const api = await registerAndLogin();
-  await seedDeadlineExemption(api); // 首个计划 confirm 之前种（限流豁免）
-  const seededTaskId = await seedOverrun(api, "线性代数作业");
+  const exemptionTaskId = await seedDeadlineExemption(api); // 首个计划 confirm 之前种（限流豁免）
+  await seedOverrun(api, "线性代数作业");
 
   // 触发引擎经 worker cron（≤30s）产出 DRAFT 建议；UI 60s 轮询——上界内等
   const drafts = await waitFor("重排建议落库", async () =>
@@ -174,15 +179,27 @@ test("e6-s1: 超时 Focus → Level 1 重排建议（依据活链：agent_decisi
     (body) => body.items.some((plan) => plan.replaces_plan_id !== null));
   const suggestion = drafts.items.find((plan) => plan.replaces_plan_id !== null)!;
 
-  // 活链（#59 缺口闭合后摘锚）：建议 plan 级 basis.agent_decision 引用超时任务
-  const agentDecision = suggestion.basis?.["agent_decision"] as { references?: Array<{ kind: string; id: string }> } | undefined;
+  // 活链（#59 缺口闭合后摘锚）。首跑实证修订（2026-10-05，agenthu_e6 库证据）：
+  // 真实 focus 完成链会把超时任务本体也置 COMPLETED（actual 100 / planned 75，
+  // 语义正确——用户确实做完了，只是超时），故它不进 placement references，
+  // 由 replan_reason / agent_decision.summary 点名（人话层）；结构层只引用
+  // 建议实际重排的输入——此处为唯一在池的豁免 touch 任务 + CurrentState 版本。
+  const agentDecision = suggestion.basis?.["agent_decision"] as {
+    references?: Array<{ kind: string; id: string; locator?: { state_version?: number } }>;
+  } | undefined;
   expect(agentDecision).toBeTruthy();
-  expect(agentDecision!.references?.some((reference) => reference.kind === "task" && reference.id === seededTaskId)).toBe(true);
+  expect(agentDecision!.references?.some((reference) => reference.kind === "task" && reference.id === exemptionTaskId)).toBe(true);
+  expect(agentDecision!.references?.some((reference) => reference.kind === "current_state" && typeof reference.locator?.state_version === "number")).toBe(true);
 
   await loginInApp(page);
+  // 登录不动视图：上轮 serial 可能停在对话/确认视图，建议盒挂在「今天」——
+  // 与真实用户一样先进今天再看建议（重挂载即新鲜拉取，不受 staleTime 影响）。
+  await page.getByRole("button", { name: "今天", exact: true }).click();
   const suggestionBox = page.locator(".replan-suggestion").first();
   await expect(suggestionBox).toBeVisible({ timeout: 120_000 });
-  expect(/超时|超了|overrun|重排|调整/i.test((await suggestionBox.textContent()) ?? "")).toBeTruthy();
+  // 登录后失效重取存在竞态：上一账号的旧渲染在重取完成前仍在 DOM（其
+  // reason 同样含「重排」会假过 regex）——等本账号特有的任务名出现。
+  await expect(suggestionBox).toContainText("线性代数作业", { timeout: 30_000 });
 
   // UI 腿：建议的「为什么」展开共享 DecisionBasisView（§8-1「客户端显示
   // 与 Plan.basis 相同的 Event / Task 依据」）
@@ -224,7 +241,11 @@ test("e6-s2: Chat 请求「把作业加入日程」→ task.create Level 2 卡�
 test("e6-s3: Chat「为什么」同一份 basis + 删被引用消息 → 活链失效标注", async ({ app }) => {
   const { page } = app;
   const api = await registerAndLogin();
+  page.on("dialog", (dialog) => void dialog.accept()); // UI 删除的 window.confirm
+  // ChatView 条件渲染：视图切换即重挂载、会话选择是组件态——重进对话视图
+  // 后须重新点入 s2 的会话（真实用户路径；空态文案是已发布行为）。
   await page.getByRole("button", { name: "对话" }).click();
+  await page.getByRole("button", { name: "未命名会话" }).click();
   const whyButtons = page.getByRole("button", { name: "为什么" });
   await expect(whyButtons.first()).toBeVisible({ timeout: 15_000 });
   await whyButtons.first().click();
@@ -234,21 +255,23 @@ test("e6-s3: Chat「为什么」同一份 basis + 删被引用消息 → 活链�
   // 引用触发消息（#59 起 chat_message kind 产出者），basis 与确认卡同一 run
   expect((await basis.textContent()) ?? "").toContain("对话消息");
 
-  // 活链（#59 失效传播闭合后摘锚）：删除被引用的触发消息（API，同事务翻转
-  // run/卡片 basis 的 chat_message 引用）→ 重新进对话视图取新鲜投影 →
-  // 「为什么」里的该引用显示失效标注，不改指同名对象（契约 §4/§5）
+  // 活链（#59 失效传播闭合后摘锚）：经 UI 删除被引用的触发消息（真实用户
+  // 路径；删除 mutation 失效消息缓存即时重取——首跑实证 API 删除 + 立即
+  // remount 会命中 <30s staleTime 的删除前缓存）。服务端核账照旧：读面
+  // 投影同事务翻转 source_deleted（契约 §4/§5，不改指同名对象）。
+  const triggerRow = page.locator("li").filter({ hasText: "把线性代数作业加入今天日程" }).first();
+  await triggerRow.getByRole("button", { name: "删除" }).click();
   const sessions = await api.get("/v1/chat/sessions?limit=10&offset=0") as { items: Array<{ id: string }> };
   const sessionId = sessions.items[0]!.id;
-  const messages = await api.get(`/v1/chat/sessions/${sessionId}/messages?limit=50&offset=0`) as { items: Array<{ id: string; role: string }> };
-  const triggerMessage = messages.items.find((message) => message.role === "user")!;
-  await api.post(`/v1/chat/messages/${triggerMessage.id}`, undefined, "DELETE");
-  // 服务端核账：读面投影已翻 source_deleted
   await waitFor("引用翻转", async () =>
     (await api.get(`/v1/chat/sessions/${sessionId}/messages?limit=50&offset=0`)) as { items: Array<{ decision_basis?: { references?: Array<{ kind: string; state?: string }> } | null }> },
     (body) => body.items.some((message) => message.decision_basis?.references?.some((reference) => reference.kind === "chat_message" && reference.state === "source_deleted")));
-  // UI 腿：remount 重取投影，展开「为什么」见失效标注
+  // 面板仍展开：失效重取后的投影即时重渲染，被删引用带失效标注
+  await expect(page.getByText(/来源已删除或不可用/).first()).toBeVisible();
+  // remount 腿：重进对话视图取挂载投影，展开「为什么」失效标注仍在
   await page.getByRole("button", { name: "今天", exact: true }).click();
   await page.getByRole("button", { name: "对话" }).click();
+  await page.getByRole("button", { name: "未命名会话" }).click();
   await page.getByRole("button", { name: "为什么" }).first().click();
   await expect(page.getByText(/来源已删除或不可用/).first()).toBeVisible();
 });
@@ -257,12 +280,23 @@ test("e6-s4: 确认恰一次（UI 防双击 + API 并发只结算一个任务）
   const { page } = app;
   const api = await registerAndLogin();
 
-  // UI：s2 卡片确认，紧接第二次点击被防双击挡掉（先进「确认」视图挂载卡片）
-  await page.getByRole("button", { name: "确认", exact: true }).click();
-  const confirm = page.getByRole("button", { name: /确认：/ }).first();
+  // UI：s2 的 task.create 卡片确认，紧接第二次点击被防双击挡掉。卡片必须
+  // 按 title 圈定——首跑实证：不圈定的 .first() 在第一张卡确认离场后会
+  // 重解析到下一张卡，把 s1 的 notify.push 也一并确认掉。确认成功即离开
+  // 「待确认」（active 只留 PENDING），终态去「历史账本」看「已完成」。
+  await page.getByRole("button", { name: /^确认(\s\d+)?$/ }).click();
+  const card = page.locator(".pending-action-card", { hasText: SUGGESTED_TASK }).first();
+  await expect(card).toBeVisible({ timeout: 15_000 });
+  const confirm = card.getByRole("button", { name: /确认：/ });
   await confirm.click();
-  await confirm.click().catch(() => undefined);
-  await expect(page.getByText("已完成").first()).toBeVisible({ timeout: 30_000 });
+  // 防双击：第二击必须被挡（按钮禁用或卡片离场）。disabled 元素的点击没有
+  // 默认 action 超时，必须显式有界——被挡即超时吞掉，绝不产生第二次结算。
+  await confirm.click({ timeout: 5_000 }).catch(() => undefined);
+  await expect(card).toBeHidden({ timeout: 30_000 });
+  await page.getByRole("tab", { name: "历史账本" }).click();
+  await expect(
+    page.locator(".pending-action-card", { hasText: SUGGESTED_TASK }).getByText("已完成").first(),
+  ).toBeVisible({ timeout: 30_000 });
 
   // 计数快照移到 UI 确认之后：s2/s3 只到卡片可见未确认（L2 PENDING 不产
   // 任务），before=1 的语义 = 「UI 确认路径恰产一条」
@@ -276,9 +310,9 @@ test("e6-s4: 确认恰一次（UI 防双击 + API 并发只结算一个任务）
     content: "再建一个同样的任务", client_message_id: `e6-conc-${Date.now()}`,
   });
   const action = await waitFor("第二个动作入队", async () =>
-    (await api.get("/v1/pending-actions?status=active&limit=10&offset=0")) as { items: Array<{ id: string; version: number; tool_name: string; status: string }> },
-    (body) => body.items.some((item) => item.status === "PENDING" && item.tool_name === "task.create"));
-  const target = action.items.find((item) => item.status === "PENDING" && item.tool_name === "task.create")!;
+    (await api.get("/v1/pending-actions?status=active&limit=10&offset=0")) as { items: Array<{ id: string; version: number; tool: { name: string }; status: string }> },
+    (body) => body.items.some((item) => item.status === "PENDING" && item.tool.name === "task.create"));
+  const target = action.items.find((item) => item.status === "PENDING" && item.tool.name === "task.create")!;
   const [first, second] = await Promise.all([
     api.post(`/v1/pending-actions/${target.id}/confirm`, { expected_version: target.version, mutation_id: "e6-conc-a" }),
     api.post(`/v1/pending-actions/${target.id}/confirm`, { expected_version: target.version, mutation_id: "e6-conc-b" }),
@@ -294,16 +328,18 @@ test("e6-s5: provider 断供 → Chat 明确失败；计划/重排/Focus 仍可�
   await setReplayMode("unavailable");
 
   await page.getByRole("button", { name: "对话" }).click();
+  // 同 s3：视图重挂载后会话选择归零，新起一个会话再发（断供与所选会话无关）
+  await page.getByRole("button", { name: "新会话" }).click();
   await page.getByLabel("消息").fill("再帮我看一下今天的安排");
   await page.getByRole("button", { name: "发送" }).click();
   // 断供判定（§7 表）：明确失败面，不生成无依据的平滑回答
   await expect(page.getByText(/模型暂不可用|本轮失败/).first()).toBeVisible({ timeout: 130_000 });
 
   // 必须继续可用的路径：确定性计划 / 重排建议 / Focus
-  await page.getByRole("button", { name: "今天" }).click();
+  await page.getByRole("button", { name: "今天", exact: true }).click();
   await expect(page.getByText("今日计划")).toBeVisible({ timeout: 30_000 });
   await page.getByRole("button", { name: "专注" }).click();
-  await expect(page.getByRole("heading", { name: "专注" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "专注", exact: true })).toBeVisible();
 });
 
 test("e6-s6: 预算抑制 + L3 grant 自动派发 + 预算耗尽如实抑制", async ({ app }) => {
@@ -311,12 +347,13 @@ test("e6-s6: 预算抑制 + L3 grant 自动派发 + 预算耗尽如实抑制", a
   page.on("dialog", (dialog) => void dialog.accept());
   const api = await registerAndLogin();
 
-  // 清 s1 遗留的 notify.push PENDING（工厂态偏好 → 确认即抑制，不占预算）
-  await page.getByRole("button", { name: "确认", exact: true }).click();
+  // 清 s1 遗留的 notify.push PENDING（工厂态偏好 → 确认即抑制，不占预算）。
+  // 确认成功即离开「待确认」（同 s4 首跑实证），断离场而非卡上终态文案。
+  await page.getByRole("button", { name: /^确认(\s\d+)?$/ }).click();
   const stale = page.locator(".pending-action-card", { hasText: "通知" }).first();
-  if (await stale.isVisible({ timeout: 5_000 }).catch(() => false)) {
+  if (await stale.isVisible().catch(() => false)) {
     await stale.getByRole("button", { name: /确认：/ }).click();
-    await expect(stale.getByText("已完成").first()).toBeVisible({ timeout: 30_000 });
+    await expect(stale).toBeHidden({ timeout: 30_000 });
   }
 
   // UI 偏好面：类别 replan + 每日上限 2
@@ -331,23 +368,28 @@ test("e6-s6: 预算抑制 + L3 grant 自动派发 + 预算耗尽如实抑制", a
   // 触发 #1（无 grant）：notify.push PENDING（不自动、不耗预算）；确认 → 送达 1/2
   await seedOverrun(api, "概率论作业");
   await waitFor("触发 #1 动作入队", async () =>
-    (await api.get("/v1/pending-actions?status=active&limit=10&offset=0")) as { items: Array<{ tool_name: string; status: string }> },
-    (body) => body.items.some((item) => item.tool_name === "notify.push" && item.status === "PENDING"));
-  await page.getByRole("button", { name: "确认", exact: true }).click();
+    (await api.get("/v1/pending-actions?status=active&limit=10&offset=0")) as { items: Array<{ tool: { name: string }; status: string }> },
+    (body) => body.items.some((item) => item.tool.name === "notify.push" && item.status === "PENDING"));
+  await page.getByRole("button", { name: /^确认(\s\d+)?$/ }).click();
   const card = page.locator(".pending-action-card", { hasText: "通知" }).first();
   await expect(card).toBeVisible({ timeout: 15_000 });
   await card.getByRole("button", { name: /确认：/ }).click();
-  await expect(card.getByText("已完成").first()).toBeVisible({ timeout: 30_000 });
+  await expect(card).toBeHidden({ timeout: 30_000 }); // 确认即离场（同 s4 实证）
   await page.getByRole("button", { name: "提醒" }).click();
   await expect(page.getByText(/今天已发送 1 条 \/ 上限 2 条/)).toBeVisible({ timeout: 15_000 });
 
-  // L3 grant（scope 值级 categories=["replan"]）→ 触发 #2 自动派发送达 2/2
+  // L3 grant（scope 值级，§5.3 fail-closed：categories 与 channels 都必须
+  // 显式——首跑实证缺 channels 即被 strict_scope_validator 拒，自动执行
+  // 不发生；A3 测试同款形状）→ 触发 #2 自动派发送达 2/2
   // （DOM 不自刷新：先 API 等落账，再进视图取新鲜渲染）
-  await api.post("/v1/permissions/grants", { action: "notify.push", level: 3, scope: { categories: ["replan"] }, note: "e6" });
+  await api.post("/v1/permissions/grants", { action: "notify.push", level: 3, scope: { categories: ["replan"], channels: ["web"] }, note: "e6" });
   await seedOverrun(api, "随机过程作业");
   await waitFor("grant 自动送达", async () =>
     (await api.get("/v1/notification-preferences")) as { sent_count: number },
     (prefs) => prefs.sent_count === 2);
+  // 应用仍停在提醒面（1/2 核验后未离开）：先离开再进触发重挂载取新——
+  // 已激活视图的重复点击不会重取（refetchOnMount 只作用于挂载）。
+  await page.getByRole("button", { name: "今天", exact: true }).click();
   await page.getByRole("button", { name: "提醒" }).click();
   await expect(page.getByText(/今天已发送 2 条 \/ 上限 2 条/)).toBeVisible({ timeout: 15_000 });
 
@@ -356,7 +398,7 @@ test("e6-s6: 预算抑制 + L3 grant 自动派发 + 预算耗尽如实抑制", a
   await waitFor("预算耗尽抑制落账", async () =>
     (await api.get("/v1/pending-actions?status=history&limit=10&offset=0")) as { items: Array<{ result: { summary?: string } | null }> },
     (body) => body.items.some((item) => /budget exhausted/i.test(item.result?.summary ?? "")));
-  await page.getByRole("button", { name: "确认", exact: true }).click();
-  await page.getByRole("button", { name: "历史账本" }).click();
+  await page.getByRole("button", { name: /^确认(\s\d+)?$/ }).click();
+  await page.getByRole("tab", { name: "历史账本" }).click();
   await expect(page.getByText(/budget exhausted/i).first()).toBeVisible({ timeout: 15_000 });
 });

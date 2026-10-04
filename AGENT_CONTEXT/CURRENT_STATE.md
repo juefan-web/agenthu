@@ -1197,3 +1197,39 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   cursor?)`（单页 + next_cursor 加载更多）+ ChatView 检索 UI（命中行
   「标题 · 时间」+ 原文、深链进入会话、失败面不伪造空结果）。desktop 184
   绿、contracts 16、tsc/build/drift 双源全绿。
+
+- **E6 首跑完成（2026-10-04 晚，A 栈，21 轮迭代全绿）**：六用例 serial
+  1.9m 全过（真实栈：uvicorn :8010 + arq + e6-replay :9099 + CDP 9222
+  构建包，agenthu_e6 库）。**产品修复四件（客户端，e2e 实证驱动）**：
+  ① ChatView run 结算追加 `["pending-actions"]` 失效——助手回复行就提供
+  「查看确认卡片」深链，不失效则 staleTime 窗口内深链端出旧收件箱（s2）；
+  ② PendingActionsView `refetchOnMount: "always"`——收件箱是「现在待我
+  决定」面，worker 随时入队且无推送失效链（s6）；③ 提醒面同款
+  `refetchOnMount: "always"`——「今天已发送 n/上限 m」是异步落账的当下
+  读数（s6）；④ 退出 Backend 由 invalidate 改 `queryClient.clear()`——
+  查询缓存无用户维度，失效只会拿死 token 重取且错误态保留旧 data，换
+  用户后未重挂载视图会端出前一账号数据（s1，跨账号缓存泄漏）。
+  **spec 修订（全部带库内实证注释）**：s1 断言改为引用实际重排任务 +
+  CurrentState（真实 focus 链会把超时任务置 COMPLETED，不进 placement
+  references）+ 等新账号特有任务名（登录后失效重取竞态）+ 先进今天视图；
+  s3 删消息走 UI 真实路径（API 删 + 立即 remount 命中 <30s 旧缓存）；
+  s4 双击圈定卡片（不圈定的 .first() 会重解析误点下一卡）+ 第二击
+  5s 有界超时（disabled 点击无默认 action 超时会悬到测试超时）+ 终态断
+  历史账本（确认即离场）+ 探针 tool.name 嵌套形（读面无扁平 tool_name）；
+  s5/s6 精确匹配（导航「确认 1」徽标计入可访问名）+ grant scope 补
+  channels（§5.3 fail-closed 双必填，A3 同款形状）+ 已激活视图先离再进
+  （重复点击不重取）。**运行注意**：`pnpm --filter @agenthu/desktop exec
+  playwright test` 的 cwd 在 apps/desktop，配置在 tests/e2e/ 不会被加
+  载——必须 `--config tests/e2e/playwright.config.ts`（否则默认 30s 测试
+  超时与 spec 内 60-130s 等待矛盾）。首跑第 2 轮失败后有人工桌面交互
+  污染一次（已披露，run 产物不受影响）。产物：e6-logs/（uvicorn/worker/
+  replay/playwright 双跑）+ agenthu_e6 库保留不清（最终绿跑账号为审计
+  面），待 B 核账。
+
+- **#63 docs 补丁（2026-10-04 深夜，协调人裁定 docs-only 必修）**：三处
+  裸 `exec playwright test` 命令改 `test:e2e` 形（manual §4 / README
+  E5+E6，命令形已 `--list` 实测解析出 6 用例）+ spec 头「前置」节补
+  config 必载注记（使迭代账第 4-5 轮「命令修正进 spec 注释」成真）+
+  HANDOFF 审计面贴执行态铁证（`66af4d3` + tracked 树干净，B 焦点①收口
+  件）。纯文档 delta，绿跑绑定不受影响；③ 核账查询待 B 的 SQL 清单后在
+  保留栈上执行。
