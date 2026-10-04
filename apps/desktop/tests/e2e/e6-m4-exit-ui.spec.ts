@@ -124,9 +124,13 @@ async function seedDeadlineExemption(api: Api) {
   });
 }
 
-/** 触发一次真实的计划项 overrun（触发引擎先取当前已确认计划，判据是计划项
- *  planned vs actual——A3 集测同款配方，focus 可省：confirm 后直接把计划项
- *  置 COMPLETED + actual 100 > planned 75）。 */
+/** 触发一次真实的计划项 overrun（D-030 出口句原文路径：超时 Focus → 重排
+ *  建议）：任务（75）→ 计划脚手架（items + confirm，触发引擎先取已确认
+ *  计划）→ 真实 focus 完成链收尾——focus.completed Event 同请求内同步跑
+ *  handler 并 SADD 脏标（SADD 在终态之后，SPOP 竞态窗口闭合），
+ *  `_mark_confirmed_plan_items` 把确认计划项置 COMPLETED、actual 累计 100
+ *  > planned 75 → focus_overrun。手工 PATCH 计划项是 A 上轮的简化捷径，
+ *  已按二轮裁定（修法 A）移除。 */
 async function seedOverrun(api: Api, title: string) {
   const task = (await api.post("/v1/tasks", { title, estimated_duration_minutes: 75 })).body;
   const plan = (await api.post("/v1/plans", {
@@ -134,8 +138,8 @@ async function seedOverrun(api: Api, title: string) {
     items: [{ title, task_id: task.id, order_index: 0, planned_minutes: 75 }],
   })).body;
   await api.post(`/v1/plans/${plan.id}/confirm`);
-  const item = plan.items[0];
-  await api.post(`/v1/plans/${plan.id}/items/${item.id}`, { status: "COMPLETED", actual_minutes: 100 }, "PATCH");
+  const focus = (await api.post("/v1/focus-sessions", { task_id: task.id })).body;
+  await api.post(`/v1/focus-sessions/${focus.id}`, { status: "completed", actual_minutes: 100, deviation_note: "超时" }, "PATCH");
 }
 
 async function countSuggestedTasks(api: Api): Promise<number> {
