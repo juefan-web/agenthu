@@ -309,6 +309,9 @@ export const ChatSessionSchema = z.object({
 
 export const ChatMessageSchema = z.object({
   id: z.string(),
+  // D-035：消息自带会话定位（服务端恒发必填）；检索命中与深链不再依赖
+  // 带外上下文。
+  session_id: z.string(),
   // 值域未在冻结文本枚举（服务端权威）；客户端不据此分支。
   role: z.string(),
   content: z.string(),
@@ -319,6 +322,23 @@ export const ChatMessageSchema = z.object({
   agent_run_id: z.string().nullable().optional(),
   decision_basis: DecisionBasisSchema.nullable().optional(),
   pending_action_id: z.string().nullable().optional(),
+});
+
+/** D-035：全局检索命中 = ChatMessageRead（含 session_id）+ 扁平
+ *  session_title（会话当前值）——命中行直接渲染「标题 · 时间」并深链，
+ *  不取嵌套 ChatSessionRead（每行重复四个恒定字段，零收益）。 */
+export const ChatSearchItemSchema = z.object({
+  // 显式 z.object 而非 .extend：drift 解析器只认 z.object 字面量（与库内
+  // 全部既有 schema 同风格）；字段与 ChatMessageSchema 逐一同形 + 加富。
+  id: z.string(),
+  session_id: z.string(),
+  role: z.string(),
+  content: z.string(),
+  created_at: IsoDateTime,
+  agent_run_id: z.string().nullable().optional(),
+  decision_basis: DecisionBasisSchema.nullable().optional(),
+  pending_action_id: z.string().nullable().optional(),
+  session_title: z.string(),
 });
 
 /** D-029 events 口径的 cursor page：只断言 items + next_cursor（缺省/null
@@ -354,6 +374,7 @@ export type AgentRunRead = z.infer<typeof AgentRunReadSchema>;
 export type NotificationPreferences = z.infer<typeof NotificationPreferencesSchema>;
 export type ChatSession = z.infer<typeof ChatSessionSchema>;
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
+export type ChatSearchItem = z.infer<typeof ChatSearchItemSchema>;
 export type CursorPage<T> = { items: T[]; next_cursor: string | null };
 export type PendingActionMutation = z.infer<typeof PendingActionMutationSchema>;
 export type ChatSessionCreate = z.infer<typeof ChatSessionCreateSchema>;

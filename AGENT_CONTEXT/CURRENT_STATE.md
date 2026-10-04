@@ -1182,3 +1182,18 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   置失效未实现）；chat_message kind 无运行时产出者。S1/S3 已按实现现实
   断言（run 级 basis 核验 + 单测钉 UI 路径），缺口闭合后补两处活链断言
   （spec 留有注释锚点）。
+
+- **B 双笔交付（2026-10-04，协调人三线 GO）**：① **E6 S1/S3 摘锚**（PR
+  #61，`8b577ef`）——`PlanSchema` += 弱类型 plan 级 `basis`（服务端
+  `ClientPlan.basis` 恒发、#59 起含 agent_decision，客户端此前 strip）+
+  ReplanSuggestion/PlanView 挂「为什么」（agent_decision 检出转交共享
+  渲染器）+ spec 活链升级（S1 API/UI 双腿断言任务引用；S3 删被引用消息 →
+  读面翻转核验 → UI 失效标注）；desktop 182 绿、drift 即加即绿（OpenAPI
+  属性已在，不触排序规则）。② **D-035 客户端切片**（本笔，
+  `feature/m4-b-d035-chat-search-client`）——`ChatMessageSchema` += 必填
+  `session_id`（排序规则执行：OpenAPI 已先行于 main，同批在后配对）+
+  `ChatSearchItemSchema`（显式 z.object——drift 解析器不认 `.extend`）+
+  双表映射登记（此时两侧俱在，双源绿）+ `searchChatMessages({q, sessionId?},
+  cursor?)`（单页 + next_cursor 加载更多）+ ChatView 检索 UI（命中行
+  「标题 · 时间」+ 原文、深链进入会话、失败面不伪造空结果）。desktop 184
+  绿、contracts 16、tsc/build/drift 双源全绿。

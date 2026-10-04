@@ -18,10 +18,11 @@ const listChatMessages = vi.fn();
 const sendChatMessage = vi.fn();
 const deleteChatMessage = vi.fn();
 const getAgentRun = vi.fn();
+const searchChatMessages = vi.fn();
 
 function backendFixture() {
   return {
-    getModelContextConsent, setModelContextConsent,
+    getModelContextConsent, setModelContextConsent, searchChatMessages,
     listChatSessions, createChatSession, deleteChatSession,
     listChatMessages, sendChatMessage, deleteChatMessage, getAgentRun,
   } as unknown as Parameters<typeof ChatView>[0]["backend"];
@@ -30,9 +31,9 @@ function backendFixture() {
 const consentOff = { enabled: false, consent_text: "开启后，你的当前状态、记忆与对话内容会进入模型上下文（用于生成回复）。", consent_text_version: "v1", consented_at: null };
 const consentOn = { ...consentOff, enabled: true, consented_at: "2026-10-03T12:00:00+08:00" };
 const session: ChatSession = { id: "sess-1", title: "第一条", created_at: "2026-10-03T12:00:00+08:00", updated_at: "2026-10-03T12:00:00+08:00", archived_at: null };
-const userMessage: ChatMessage = { id: "msg-1", role: "user", content: "把作业加进日程", created_at: "2026-10-03T12:01:00+08:00" };
+const userMessage: ChatMessage = { id: "msg-1", session_id: "sess-1", role: "user", content: "把作业加进日程", created_at: "2026-10-03T12:01:00+08:00" };
 const agentMessage: ChatMessage = {
-  id: "msg-2", role: "assistant", content: "建议创建一个任务。", created_at: "2026-10-03T12:01:05+08:00",
+  id: "msg-2", session_id: "sess-1", role: "assistant", content: "建议创建一个任务。", created_at: "2026-10-03T12:01:05+08:00",
   agent_run_id: "run-1", pending_action_id: "pa-1",
   decision_basis: { basis_version: "v1", summary: "作业临近且时段空闲", references: [{ kind: "task", id: "task-1", label: "HW1" }], rule_versions: { planner: "v2" }, selected_tool_call_ids: [] },
 };
@@ -181,6 +182,37 @@ describe("ChatView（契约 §5 骨架）", () => {
     expect(screen.getAllByRole("button", { name: "删除" }).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByTitle("删除会话"));
     expect(await screen.findByText(/会话删除未完成：/)).toBeTruthy();
+  });
+
+  it("跨会话搜索：命中行「标题 · 时间」+ 原文，点击深链进入会话并清空结果（D-035）", async () => {
+    getModelContextConsent.mockResolvedValue(consentOn);
+    searchChatMessages.mockResolvedValueOnce({
+      items: [
+        { id: "msg-8", session_id: "sess-2", role: "user", content: "把作业加进日程", created_at: "2026-10-03T09:00:00+08:00", session_title: "第一条" },
+      ],
+      next_cursor: null,
+    });
+    renderChat();
+    await screen.findByRole("button", { name: "第一条" });
+    fireEvent.change(screen.getByLabelText("搜索"), { target: { value: "作业" } });
+    fireEvent.click(screen.getByRole("button", { name: "搜索" }));
+    await waitFor(() => expect(searchChatMessages).toHaveBeenCalledWith({ q: "作业" }, undefined));
+    expect(await screen.findByText(/第一条 · /)).toBeTruthy();
+    expect(screen.getByText("把作业加进日程")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /第一条 · / }));
+    await waitFor(() => expect(listChatMessages).toHaveBeenCalledWith("sess-2"));
+    expect(screen.queryByText(/第一条 · /)).toBeNull(); // 结果清空，深链进入
+  });
+
+  it("搜索失败如实呈现，不伪造空结果", async () => {
+    getModelContextConsent.mockResolvedValue(consentOn);
+    searchChatMessages.mockRejectedValueOnce(new Error("Backend 不可达"));
+    renderChat();
+    await screen.findByRole("button", { name: "第一条" });
+    fireEvent.change(screen.getByLabelText("搜索"), { target: { value: "作业" } });
+    fireEvent.click(screen.getByRole("button", { name: "搜索" }));
+    expect(await screen.findByText(/搜索失败：/)).toBeTruthy();
+    expect(screen.queryByText("没有命中的消息。")).toBeNull();
   });
 
   it("离线：明确失败面，不渲染会话与输入", () => {
