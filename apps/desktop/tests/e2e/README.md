@@ -41,7 +41,7 @@ E5 走**真实栈**（与 E4 同口径）：compose `db redis s3mock` + 独立�
 ```bash
 AGENTHU_TEST_BACKEND_URL=http://127.0.0.1:8010 \
 AGENTHU_TEST_BACKEND_EMAIL=e5@any AGENTHU_TEST_BACKEND_PASSWORD=any-value \
-AGENTHU_E5_FULL=1 pnpm --filter @agenthu/desktop exec playwright test e5-m3-exit
+AGENTHU_E5_FULL=1 pnpm --filter @agenthu/desktop test:e2e e5-m3-exit
 ```
 
 （EMAIL/PASSWORD 仅作非空门槛——spec 自注册全新账号；worker 启动后确认
@@ -57,8 +57,13 @@ E6 复用 E5 真实栈口径（compose `db redis s3mock` + 独立库 `agenthu_e6
 构建包口径同 E5-UI（`--features tauri/custom-protocol` + CDP 9222）。运行：
 
 ```bash
-AGENTHU_TEST_BACKEND_URL=http://127.0.0.1:8010 AGENTHU_TEST_BACKEND_EMAIL=e6@any AGENTHU_TEST_BACKEND_PASSWORD=any-value AGENTHU_E6_UI=1 pnpm --filter @agenthu/desktop exec playwright test e6-m4-exit-ui
+AGENTHU_TEST_BACKEND_URL=http://127.0.0.1:8010 AGENTHU_TEST_BACKEND_EMAIL=e6@any AGENTHU_TEST_BACKEND_PASSWORD=any-value AGENTHU_E6_UI=1 pnpm --filter @agenthu/desktop test:e2e e6-m4-exit-ui
 ```
+
+（E5/E6 运行命令都走 `test:e2e`——脚本自带 `-c
+tests/e2e/playwright.config.ts`，180s 用例超时 / workers 1；直接
+`exec playwright test` 不带 config 会落 Playwright 默认 30s 超时，截断
+E6 场景内 60-130s 的等待，首跑第 4-5 轮实证。）
 
 六用例 serial 共享构建包内登录态（spec 自注册首账号，API 核账同账号）；
 已知契约-实现缺口与场景↔判据映射见 `AGENT_CONTEXT/TASKS/m4-b3-e6-exit.md`。

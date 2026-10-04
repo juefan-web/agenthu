@@ -1225,3 +1225,11 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   污染一次（已披露，run 产物不受影响）。产物：e6-logs/（uvicorn/worker/
   replay/playwright 双跑）+ agenthu_e6 库保留不清（最终绿跑账号为审计
   面），待 B 核账。
+
+- **#63 docs 补丁（2026-10-04 深夜，协调人裁定 docs-only 必修）**：三处
+  裸 `exec playwright test` 命令改 `test:e2e` 形（manual §4 / README
+  E5+E6，命令形已 `--list` 实测解析出 6 用例）+ spec 头「前置」节补
+  config 必载注记（使迭代账第 4-5 轮「命令修正进 spec 注释」成真）+
+  HANDOFF 审计面贴执行态铁证（`66af4d3` + tracked 树干净，B 焦点①收口
+  件）。纯文档 delta，绿跑绑定不受影响；③ 核账查询待 B 的 SQL 清单后在
+  保留栈上执行。

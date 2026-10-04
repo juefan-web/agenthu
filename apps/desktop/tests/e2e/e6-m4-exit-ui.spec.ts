@@ -19,7 +19,11 @@ import { test as base, chromium, expect, type BrowserContext, type Page } from "
  *
  * 前置：构建包以 CDP 运行；`AGENTHU_E6_UI=1`；`AGENTHU_TEST_BACKEND_URL`
  * 与构建期 `VITE_BACKEND_URL` 同源；provider = e6-replay.mjs
- * （`AGENTHU_E6_REPLAY_URL`，默认 :9099）。
+ * （`AGENTHU_E6_REPLAY_URL`，默认 :9099）；运行必须加载本目录
+ * playwright.config.ts（180s 用例超时 / workers 1）——用 `pnpm --filter
+ * @agenthu/desktop test:e2e e6-m4-exit-ui`（脚本自带 `-c`）或显式
+ * `--config tests/e2e/playwright.config.ts`；缺省 30s 用例超时会截断
+ * 场景内 60-130s 的等待（首跑第 4-5 轮实证）。
  */
 
 const backendUrl = process.env.AGENTHU_TEST_BACKEND_URL;

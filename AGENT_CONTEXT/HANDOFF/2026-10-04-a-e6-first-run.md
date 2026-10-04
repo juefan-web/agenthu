@@ -21,6 +21,18 @@ main = `8d41a0b`（含 #58/#61/#62）+ 本轮修复。
   预算账本三态（notification_preferences 1/2 → 2/2 → 抑制入
   pending_actions history 的 budget exhausted）、抑制入账
   （`result.summary` 含 budget exhausted 的历史动作）。
+- 执行态铁证（2026-10-04T22:14:57+08:00，docs 补丁提交前采集）：两轮
+  绿跑的源代码态即 PR #63 原 head `66af4d3`，其后 tracked 树零改动：
+
+  ```text
+  $ git -C D:/agenthu-wt-a rev-parse HEAD
+  66af4d3c33c96f589d0c3e14dccbea33913a1513
+  $ git -C D:/agenthu-wt-a status --short
+  ?? e6-logs/
+  ?? e6-start-stack.sh
+  ```
+
+  两条 `??` 为本地产物（栈日志目录、起栈脚本），非源码改动。
 
 ## 迭代账（21 轮，全部「工件对码 → 栈日志 → 修订」序）
 

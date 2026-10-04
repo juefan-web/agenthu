@@ -52,8 +52,11 @@ Status: **工件在 main + S1/S3 活链断言已升级（2026-10-04，缺口切�
    `cargo build --features tauri/custom-protocol`（E5-UI 手册 §3.1）；
    `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222` 起包。
 4. 运行：
-   `AGENTHU_TEST_BACKEND_URL=http://127.0.0.1:8010 AGENTHU_E6_UI=1 pnpm --filter @agenthu/desktop exec playwright test e6-m4-exit-ui`
-   （EMAIL/PASSWORD 非空占位；serial 六用例，场景间共享构建包内登录态）。
+   `AGENTHU_TEST_BACKEND_URL=http://127.0.0.1:8010 AGENTHU_E6_UI=1 pnpm --filter @agenthu/desktop test:e2e e6-m4-exit-ui`
+   （EMAIL/PASSWORD 非空占位；serial 六用例，场景间共享构建包内登录态。
+   `test:e2e` 脚本自带 `-c tests/e2e/playwright.config.ts`，config 必须加
+   载：缺省的 Playwright 30s 用例超时会截断场景内 60-130s 等待，E6 首跑
+   第 4-5 轮实证）。
 
 ## 5. 验收标准
 
