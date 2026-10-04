@@ -17,6 +17,7 @@ spec 已按验收反馈修订；**M2 起的验收以本套件为常规工具**�
 | E4（门控） | M2 出口判据全链：避开课表的人话计划 → learned/default 双向估时断言 → 超时 Focus → 重排建议 → 接受即取代 → L1 记忆可修正（superseded-by 链）| `AGENTHU_E4_FULL=1`；依赖 A 侧 planner v2/估时学习/触发引擎/L1 写入者 |
 | E5（门控） | M3 出口后端半边（API 造数）：上传→抽取/嵌入→同意门→提问→引用机械可核（page+quote 对 fixture 原文独立复核）→删 Learning Memory→同问不再体现→删回答 | `AGENTHU_E5_FULL=1`；栈见下方「E5 栈」；场景定义 `TASKS/m3-e5-exit-scenario.md` |
 | E5-UI（门控） | M3 出口 UI 半边（构建包 + CDP）：Backend 登录→讲解视图→同意门→提问→引用标记/引用卡渲染与跳转高亮→删 Memory 同问不再体现→历史删除 | `AGENTHU_E5_UI=1`；构建包 CDP 运行 + `AGENTHU_TEST_BACKEND_URL`（与构建期 `VITE_BACKEND_URL` 同源）；campus 真机上传链不在本 spec（验收轮人工项） |
+| E6（门控） | M4 出口六场景（构建包 + CDP，serial）：超时 Focus → L1 重排建议（run 级 basis 核验）→ Chat 请求 → `task.create` L2 卡片（同意门/202/深链/参数/到期/basis）→「为什么」同一 basis → 确认恰一次（UI 防双击 + API 并发双 mutation_id 任务恰 +1）→ provider 断供明确失败且计划/重排/Focus 仍可用 → 预算抑制 + L3 grant（值级 scope）自动派发 + 预算耗尽如实抑制 | `AGENTHU_E6_UI=1`；E6 栈见下方「E6 栈」；场景与缺口矩阵见 `TASKS/m4-b3-e6-exit.md`；provider 假件 = 本目录 `e6-replay.mjs` |
 
 ## 前置
 
@@ -45,6 +46,22 @@ AGENTHU_E5_FULL=1 pnpm --filter @agenthu/desktop exec playwright test e5-m3-exit
 
 （EMAIL/PASSWORD 仅作非空门槛——spec 自注册全新账号；worker 启动后确认
 日志 `Starting worker for N functions`。）
+
+### E6 栈（门控 `AGENTHU_E6_UI=1`）
+
+E6 复用 E5 真实栈口径（compose `db redis s3mock` + 独立库 `agenthu_e6`
++ uvicorn + arq worker，env 同 E5 栈），provider 假件换 **`e6-replay.mjs`**
+（`node e6-replay.mjs` 起 :9099）：默认 `grounding` 模式与 e5-replay 行为
+一致，spec 经 `POST /__mode` 自行切换 `chat-tools`（首轮 function_call
+`task.create` 提案 + 续轮文本收尾）与 `unavailable`（/v1/responses 503）。
+构建包口径同 E5-UI（`--features tauri/custom-protocol` + CDP 9222）。运行：
+
+```bash
+AGENTHU_TEST_BACKEND_URL=http://127.0.0.1:8010 AGENTHU_TEST_BACKEND_EMAIL=e6@any AGENTHU_TEST_BACKEND_PASSWORD=any-value AGENTHU_E6_UI=1 pnpm --filter @agenthu/desktop exec playwright test e6-m4-exit-ui
+```
+
+六用例 serial 共享构建包内登录态（spec 自注册首账号，API 核账同账号）；
+已知契约-实现缺口与场景↔判据映射见 `AGENT_CONTEXT/TASKS/m4-b3-e6-exit.md`。
 
 ## 启动构建包（带 CDP）
 
