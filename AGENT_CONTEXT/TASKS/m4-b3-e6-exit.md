@@ -20,7 +20,7 @@ Redis（多路径核实），E6 栈无法本地拉起；运行手册见 §4，�
 | # | 契约 §8 场景 | spec 断言 |
 | --- | --- | --- |
 | 1 | 超时 Focus → L1 重排建议 | API：DRAFT `replaces_plan_id` 落库（worker 30s cron）；UI：重排建议卡 + 超时理由；依据同源以 **run 级结构化 basis references** 核验 |
-| 2 | Chat 请求 → `task.create` L2 卡片 | 同意门（读文案→开启）→ 202 → 助手回复 + 动作行 → 深链卡片：安全参数（标题值）/Level 2/绝对到期/basis |
+| 2 | Chat 请求 → `task.create` L2 卡片 | 同意门（读文案→开启）→ 202 → 助手回复 + 动作行 → 深链卡片：安全参数（标题值）/Level 2/**动作确认截止的绝对时间 + 倒计时**（`PendingActionRead.expires_at`；replay 提案不带任务 due date，契约 §8 的「绝对到期时间」即此字段）/basis |
 | 3 | 「为什么」同一份 basis | 卡片与消息展开的是同一 run basis；kind 标签渲染、定位不是正文 |
 | 4 | 确认恰一次 | UI 防双击（连点两次）+ API 并发双 `mutation_id` confirm → 双 200、任务数恰 +1 |
 | 5 | 断供明确失败 | replay `unavailable`（/v1/responses 503）→ Chat 明确失败面；今天计划/重排建议/专注仍可操作 |

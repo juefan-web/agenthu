@@ -113,11 +113,29 @@ async function setReplayMode(mode: "grounding" | "chat-tools" | "unavailable") {
   if (!res.ok) throw new Error(`replay 模式切换失败（${replayUrl}）：HTTP ${res.status}`);
 }
 
-/** 触发一次真实的 focus 超时（触发引擎脏集 → worker 30s cron 评估）。 */
+/** 已过期 pending 任务：deadline at-risk 豁免触发引擎 30 分钟限流（D-031
+ *  §2）——六场景的多次 overrun 全在同一 30 分钟窗内，无豁免则 s6 的后续
+ *  触发被限流饿死。须在首个计划 confirm 之前种（created_at ≤ confirmed_at，
+ *  不抢跑 new_task 触发器；overrun 判据优先级更高，双保险）。 */
+async function seedDeadlineExemption(api: Api) {
+  await api.post("/v1/tasks", {
+    title: "已过期豁免项（E6）",
+    deadline: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+  });
+}
+
+/** 触发一次真实的计划项 overrun（触发引擎先取当前已确认计划，判据是计划项
+ *  planned vs actual——A3 集测同款配方，focus 可省：confirm 后直接把计划项
+ *  置 COMPLETED + actual 100 > planned 75）。 */
 async function seedOverrun(api: Api, title: string) {
   const task = (await api.post("/v1/tasks", { title, estimated_duration_minutes: 75 })).body;
-  const focus = (await api.post("/v1/focus-sessions", { task_id: task.id })).body;
-  await api.post(`/v1/focus-sessions/${focus.id}`, { status: "completed", actual_minutes: 100, deviation_note: "超时" }, "PATCH");
+  const plan = (await api.post("/v1/plans", {
+    title: `计划 · ${title}`,
+    items: [{ title, task_id: task.id, order_index: 0, planned_minutes: 75 }],
+  })).body;
+  await api.post(`/v1/plans/${plan.id}/confirm`);
+  const item = plan.items[0];
+  await api.post(`/v1/plans/${plan.id}/items/${item.id}`, { status: "COMPLETED", actual_minutes: 100 }, "PATCH");
 }
 
 async function countSuggestedTasks(api: Api): Promise<number> {
@@ -142,6 +160,7 @@ test.describe.configure({ mode: "serial" });
 test("e6-s1: 超时 Focus → Level 1 重排建议（应用内免费，不耗预算）", async ({ app }) => {
   const { page } = app;
   const api = await registerAndLogin();
+  await seedDeadlineExemption(api); // 首个计划 confirm 之前种（限流豁免）
   await seedOverrun(api, "线性代数作业");
 
   // 触发引擎经 worker cron（≤30s）产出 DRAFT 建议；UI 60s 轮询——上界内等
@@ -156,7 +175,7 @@ test("e6-s1: 超时 Focus → Level 1 重排建议（应用内免费，不耗预
 
   // 依据同源（已实现判据）：主动 run 的结构化 basis 带真实 references。
   // Plan.basis.agent_decision（A 契约 §7）暂无写入者——缺口矩阵 #1。
-  const runs = await api.get("/v1/agent/runs?limit=10&offset=0") as { items: Array<{ decision_basis: { references: unknown[] } | null }> };
+  const runs = await api.get("/v1/agent/runs?limit=10") as { items: Array<{ decision_basis: { references: unknown[] } | null }> };
   const proactive = runs.items.find((run) => run.decision_basis !== null);
   expect(proactive).toBeTruthy();
   expect(proactive!.decision_basis!.references.length).toBeGreaterThan(0);
@@ -207,8 +226,6 @@ test("e6-s3: Chat「为什么」展开与卡片同一份 basis（引用可核）
 test("e6-s4: 确认恰一次（UI 防双击 + API 并发只结算一个任务）", async ({ app }) => {
   const { page } = app;
   const api = await registerAndLogin();
-  const before = await countSuggestedTasks(api);
-  expect(before).toBe(1); // s2 之前无同名任务；s2 已确认的那张恰产一条
 
   // UI：s2 卡片确认，紧接第二次点击被防双击挡掉（先进「确认」视图挂载卡片）
   await page.getByRole("button", { name: "确认", exact: true }).click();
@@ -217,12 +234,17 @@ test("e6-s4: 确认恰一次（UI 防双击 + API 并发只结算一个任务）
   await confirm.click().catch(() => undefined);
   await expect(page.getByText("已完成").first()).toBeVisible({ timeout: 30_000 });
 
+  // 计数快照移到 UI 确认之后：s2/s3 只到卡片可见未确认（L2 PENDING 不产
+  // 任务），before=1 的语义 = 「UI 确认路径恰产一条」
+  const before = await countSuggestedTasks(api);
+  expect(before).toBe(1);
+
   // API 并发恰一次：再造一个 chat 动作，两个不同 mutation_id 同时 confirm
   await setReplayMode("chat-tools");
   const session = (await api.post("/v1/chat/sessions", {})).body;
-  const sent = (await api.post(`/v1/chat/sessions/${session.id}/messages`, {
+  await api.post(`/v1/chat/sessions/${session.id}/messages`, {
     content: "再建一个同样的任务", client_message_id: `e6-conc-${Date.now()}`,
-  })).body;
+  });
   const action = await waitFor("第二个动作入队", async () =>
     (await api.get("/v1/pending-actions?status=active&limit=10&offset=0")) as { items: Array<{ id: string; version: number; tool_name: string; status: string }> },
     (body) => body.items.some((item) => item.status === "PENDING" && item.tool_name === "task.create"));
@@ -234,8 +256,7 @@ test("e6-s4: 确认恰一次（UI 防双击 + API 并发只结算一个任务）
   // 两次都以服务端状态收口（200：先结算 / 后到重入返回当前行），无 5xx
   expect([first.status, second.status]).toEqual([200, 200]);
   const after = await waitFor("并发结算后任务数稳定", () => countSuggestedTasks(api), (count) => count === before + 1);
-  expect(after).toBe(before + 1); // 恰一次：并发双 confirm 只多一条任务
-  void sent;
+  expect(after).toBe(before + 1); // 恰一次：并发双 confirm 只再多一条任务
 });
 
 test("e6-s5: provider 断供 → Chat 明确失败；计划/重排/Focus 仍可操作", async ({ app }) => {
