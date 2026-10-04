@@ -1114,3 +1114,14 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   口径收口。A = 起草**跨会话搜索契约演进冻结稿**（`ChatMessageRead` +
   `session_id` + 结果形状，与 B 同批冻结后实施——A3 主动延后项）；
   grant 面文案要求随 B 侧 grant 管理面 backlog 挂起。
+- **A 的冻结稿已交（2026-10-04，`feature/m4-chat-search-contract` 自
+  `e537068`）**：**DECISIONS D-035（proposed，待 B 签字 + 协调人采纳）**——
+  ①`ChatMessageRead` += `session_id`（必发，一切出现处）；②全局检索面
+  `GET /v1/chat/search?q=&session_id?=&cursor=` 字段级冻结：结果项
+  `ChatSearchItem` = `ChatMessageRead` + `session_title`（扁平加富，不取
+  嵌套 ChatSessionRead）、A3 同款 keyset/可见性/降级语义、限域 404 纪律
+  与消息流一致；③**端点收口**：A3 会话内子路径被 `?session_id=` 取代并
+  移除——零消费窗口内唯一非加法项，**需 B 在 PR 评审中显式确认**；④零
+  schema 变更（trgm/资格模型已在 main）；⑤纯加法可 revert；⑥实施分侧
+  A=后端+OpenAPI+测试，B=Zod 镜像+客户端方法+UI。非目标：跨域统一检索、
+  相关性排序、服务端分组聚合。冻结前不开实施。

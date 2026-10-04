@@ -801,3 +801,61 @@ matcher 在场而无 args 永不自动放行（fail-closed）；②
 批准延续协议首次实践：rebase 后零代码 delta + CURRENT_STATE 并集 +
 新 head 12/12，评审人自执核验（issuecomment-5975655100）后 approve
 延续至新 head。
+
+## D-035 — Chat 检索契约演进：ChatMessageRead.session_id + 跨会话搜索结果形状（提案，待 A/B 签字）
+
+Status: **proposed**（2026-10-04 A 起草，按当日指派「与 B 同批冻结后实施」。
+生效条件 = B 签字（本 PR 评审）+ 协调人采纳；实施随后端/客户端两侧切片，
+冻结前不开工。A3 主动延后项的收口。）
+
+背景：D-034 冻结文本已声明全局检索面 `GET /v1/chat/search`（「只返回仍
+可见的原消息、会话和定位」），但**结果形状未字段级冻结**——A3 因此只交付了
+会话内子路径 `GET /v1/chat/sessions/{id}/messages/search`
+（`Page[ChatMessageRead]`），全局面与 `ChatMessageRead.session_id` 留待本
+演进；B 侧 `searchChat` 客户端方法自 B2 起一直等待该冻结（至今零消费，
+`apps/desktop/src/backend/client.ts` 无任何检索方法）。
+
+Decision：
+
+1. **`ChatMessageRead` += `session_id: UUID`（必发）**。适用于消息流、检索
+   等一切 `ChatMessageRead` 出现处；消息自此携带自身会话定位，检索命中与
+   深链不再依赖带外上下文。Zod 镜像加必填字段（服务端恒发，与 `id` 同纪律；
+   旧客户端 Zod 默认 strip 未知键，加字段对存量消费者无破坏）。
+2. **全局检索面字段级冻结**：`GET /v1/chat/search?q=&session_id?=&limit=&cursor=`
+   - `q`：1–200 字符，strip 后为空 422；匹配语义与 A3 逐字一致——ILIKE
+     字面子串（通配符字面化 autoescape）、pg_trgm GIN 加速（≥3 字符，
+     CJK 含内）、<3 字符无 trigram 走索引外过滤的已冻结降级。
+   - `session_id` 可选：给出即限域（会话内搜索）；未知/他人会话/已归档
+     会话一律 404（与消息流同纪律）；省略即全局（本人全部未归档会话）。
+   - 结果项 **`ChatSearchItem` = `ChatMessageRead`（含新 `session_id`）+
+     `session_title: string`**——扁平单标量加富：命中行可直接渲染
+     「会话标题 · 时间」并深链入会话，无需二次取会话。不取嵌套
+     `ChatSessionRead`（每行重复四个恒定字段，零收益）。`title` 为服务端
+     当前值（现状无会话重命名面；未来若有，与列表页同源同值）。
+   - 排序/翻页：与 A3 相同的 newest-first `(created_at, id)` keyset +
+     `CursorPage{items, next_cursor}`；**不引入相关性排序**（第二套排序
+     语义冻结排除）。
+   - 可见性：软删消息、已归档会话的全部消息一律不可见（检索资格与删除/
+     归档同事务丧失，A3 已落地并测试钉死）；跨用户隔离由 `user_id` 作用域
+     保证。
+   - 不做摘要/片段/highlight（D-034「不先摘要」维持；客户端可本地加粗，
+     非服务端关注点）。
+3. **端点收口为一个检索面（本提案唯一非加法项，需 B 显式确认）**：A3 的
+   会话内子路径被 `?session_id=` 限域参数**取代并在实施切片中移除**。理由：
+   冻结文本本就只声明一个检索面；子路径是形状未冻结期的实现补位；至今
+   零客户端消费（`searchChat` 从未发布）——**这是移除 OpenAPI 路径的唯一
+   安全窗口**，过窗即需双面共存，故必须在本冻结中定案而非实施时默认。
+4. **零 schema 变更**：trgm GIN 索引、`deleted_at`/归档检索资格模型均已
+   随 A3 在 main；本演进纯 API 形状，无迁移、无回填、无新表。
+5. **兼容与回滚**：对存量面全部为加法（`ChatMessageRead` 加字段、新路径、
+   移除零消费路径）；回滚 = revert 实施切片，无数据依赖。contracts 包
+   minor bump：`ChatMessageSchema` += `session_id`、新增
+   `ChatSearchItemSchema`（复用 `CursorPageSchema`）。
+6. **实施分侧（冻结后）**：A = 后端端点 + 字段 + OpenAPI 重导 + 测试
+   （跨用户隔离 / 归档排除双域 / keyset / title 加富 / 未知限域 404 /
+   `q` 规则）+ 子路径移除；B = Zod 镜像 + 客户端方法（建议名
+   `searchChatMessages({q, sessionId?})`，命名归 B 约定）+ 检索 UI 接线。
+
+非目标（显式延后）：跨域统一检索（tasks/materials 另立其面，不并入本面）、
+相关性排序、按会话分组的服务端聚合（客户端本地分组）、HNSW/检索重做桶
+（触发条件 = 语料规模数据，D-034 Revisit 口径不变）。
