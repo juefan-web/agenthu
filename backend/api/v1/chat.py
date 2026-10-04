@@ -39,6 +39,7 @@ from backend.schemas.common import Page
 from backend.services.agent_runner import RUNNER_VERSION, TOOL_REGISTRY_VERSION, audit_run_queued
 from backend.services.context_assembly import PROMPT_VERSION
 from backend.services.pagination import count_total, decode_cursor, keyset_page
+from backend.services.reference_invalidation import invalidate_chat_message_references
 from backend.worker.queue import get_arq_pool
 
 logger = logging.getLogger(__name__)
@@ -316,6 +317,15 @@ def delete_session(session_id: uuid.UUID, user: CurrentUser, db: DBSession) -> R
         now = utcnow()
         session.archived_at = now
         session.updated_at = now
+        live_ids = set(
+            db.scalars(
+                select(ChatMessage.id).where(
+                    ChatMessage.session_id == session_id,
+                    ChatMessage.user_id == user.id,
+                    ChatMessage.deleted_at.is_(None),
+                )
+            )
+        )
         db.execute(
             update(ChatMessage)
             .where(
@@ -325,6 +335,9 @@ def delete_session(session_id: uuid.UUID, user: CurrentUser, db: DBSession) -> R
             )
             .values(deleted_at=now)
         )
+        # B contract §5: references citing the cascaded messages flip to
+        # source_deleted in the same transaction, not on next render.
+        invalidate_chat_message_references(db, user_id=user.id, message_ids=live_ids)
         db.flush()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -345,6 +358,9 @@ def delete_message(message_id: uuid.UUID, user: CurrentUser, db: DBSession) -> R
         raise NotFoundError("Chat message not found")
     if message.deleted_at is None:
         message.deleted_at = utcnow()
+        # B contract §5: stored references citing this message flip to
+        # source_deleted atomically with the deletion.
+        invalidate_chat_message_references(db, user_id=user.id, message_ids={message.id})
         db.flush()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
