@@ -381,7 +381,10 @@ def matching_barrier(
     account scope conflicts with EVERYTHING for the owner; source/memory
     barriers conflict when the write touches one of the barred target ids
     (target identity matching per family arrives with the P0-3 registry;
-    here the caller passes the ids it is about to write).
+    here the caller passes the ids it is about to write). A scoped write
+    that does not say which ids it touches cannot DISPROVE overlap with a
+    same-scope barrier, so it fails closed (B carry item on #70: None must
+    not bypass a scoped barrier).
     """
 
     barriers = session.scalars(
@@ -393,7 +396,9 @@ def matching_barrier(
     for barrier in barriers:
         if barrier.scope == DataBarrierScope.ACCOUNT and scope is not None:
             return barrier
-        if barrier.scope == scope and target_ids is not None:
+        if barrier.scope == scope:
+            if target_ids is None:
+                return barrier
             barred = {str(value) for value in (barrier.target or {}).get("ids", [])}
             if barred & target_ids:
                 return barrier

@@ -159,7 +159,7 @@ REGISTRY: tuple[DataResource, ...] = (
         "memories",
         "memories",
         "user_id",
-        ("content", "source", "source_event_ids", "evidence", "subject_key"),
+        ("content", "source", "source_event_ids", "evidence", "embedding", "subject_key"),
         Classification.USER_CONTENT,
         "Forgetting follows the supersedes closure; source deletion "
         "invalidates then recomputes from remaining evidence; independent "

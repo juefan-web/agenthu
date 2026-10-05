@@ -299,6 +299,17 @@ class TestBarriers:
             db_session, owner_handle=handle, scope=DataBarrierScope.SOURCE, target_ids={"c"}
         )
 
+    def test_scoped_barrier_fails_closed_when_targets_unspecified(self, db_session, handle):
+        # A same-scope write that does not say which ids it touches cannot
+        # disprove overlap with the barrier, so it conflicts (B carry item
+        # on #70: None must not bypass a scoped barrier).
+        self._raise(db_session, handle, scope=DataBarrierScope.SOURCE, ids=("a", "b"))
+        with pytest.raises(dl.BarrierConflict):
+            dl.assert_writable(db_session, owner_handle=handle, scope=DataBarrierScope.SOURCE)
+        # A different scope stays provable: no memory barrier exists, so a
+        # memory-scope write is writable even without ids.
+        dl.assert_writable(db_session, owner_handle=handle, scope=DataBarrierScope.MEMORY)
+
     def test_other_owners_are_not_blocked(self, db_session, handle):
         self._raise(db_session, handle, scope=DataBarrierScope.ACCOUNT)
         dl.assert_writable(

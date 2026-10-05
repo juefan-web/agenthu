@@ -1021,3 +1021,15 @@ delta 已核；B→A @581606a）、B 作者身份确认、CI 全绿、协调人�
    回填、统一谓词四读者修复）与 P0-2（B：owner 命名空间、无主队列隔离、
    本地清理面）**即刻并行**；切片 PR 惯例照旧；E7 预期账面随实现同步
    修订，预登记纪律沿用。
+
+## D-036 实现注记 — 列回填范式与表达式型 server_default（2026-10-05，随 #70 落，P0-3 转录）
+
+users.owner_handle 迁移（e6d496a26f09）采用"可空加列 → 迁移内显式
+UPDATE 回填（gen_random_uuid()::text 去连字符）→ 收 NOT NULL → 命名唯一
+约束"，模型侧**不带 server_default**：PG 目录会把表达式型默认值存成
+规范化副本（replace(gen_random_uuid()::text,…) → replace((…)::text,
+'-'::text,''::text)），alembic 文本级比对必然每轮产出同一条 alter_column
+——永久假漂移。范式裁定：M5 后续需要回填的列一律三步显式回填 + 模型侧
+拒绝表达式型 server_default；纯字面量默认（如 data_generation 的
+text("1")，两侧一致）不受影响。往返升降级 + autogenerate 零漂移探针为
+该范式的验收标准（#70 任务书 §3 有双轮探针证据；B 互审已核论证）。

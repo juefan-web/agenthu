@@ -1349,3 +1349,12 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   任务书 §5 待 B 核。#69（B 的 P0-2 切片 1）A 已 RC：换号守卫窗口
   一项必改（多批循环顶部无 assert，A→B 直切可致 A 事件带 B token
   上推）+ 四 advisory；待 B 修复后新头复核。
+
+- **P0-3 开工（A，2026-10-05，基线 main `824ab5a` = #70 合并头）**：#70
+  经 B head-bound approve 合并（B 互审三条 P0-3 携带项 + memories.embedding
+  should-fix + enums 名=值 advisory，产出并入任务书）；#69 修复头
+  `3b97927` A 复核 approve（三道守卫 + 多批测试 + 补交 session 测试），
+  待协调人合并。P0-3 = 删除/导出 API 与执行，切片计划与六项强制携带
+  清单见 TASKS/m5-p0-3-data-api.md；首提交落：embedding 补录、
+  matching_barrier fail-closed、N1 全谓词升级、enums 名=值对齐（零迁移）、
+  DECISIONS 回填范式注记、N2/N3 档位记录。
