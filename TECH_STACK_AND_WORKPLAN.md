@@ -128,6 +128,12 @@
 > 加固）顺延为 M5；新增 M6 多端/Inbox、M7 Exercise/Life、M8 Review。M0/M1
 > 条目保留作历史记录。分歧时以 D-030 与路线大纲为准。
 
+> **[2026-10-05，M5 规划草案]** M4 已随 #66 在 main bf02eeb 收口；
+> M5 的任务边界、A/B 双草、实施排序、五项结转与 E7 方案见
+> [M5 规划指导](AGENT_CONTEXT/TASKS/m5-planning-guidance.md)。
+> 新契约仍待双方互审与协调人裁定；下方“原 M4 Alpha Hardening”
+> 一周安排是历史记录，不代表 M5 新工期或已接受的新技术选型。
+
 ### M0：工程基线（1 周）
 
 - A：Backend 骨架、数据库迁移、健康检查、CI、Docker Compose。

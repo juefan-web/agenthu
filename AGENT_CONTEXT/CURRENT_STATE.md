@@ -1,5 +1,14 @@
 # CURRENT_STATE
 
+**当前队列（2026-10-05 复核）**：M4 已正式收口，最终归档合并 #66，
+main bf02eeb（下文058c512为#65此前产品修复复绿点）。本次已独立核验
+远端合并状态及收口SHA的CI/Client checks双绿，E6/核账只据已归档证据，
+未重跑或访问验收库。M5处于**phase-0规划初稿、待A/B互审与协调人裁定**，
+尚未实施或冻结新决策。入口：[规划指导](TASKS/m5-planning-guidance.md)、
+[双草任务](TASKS/m5-phase0-prereq-docs.md)、
+[状态核验与交接](HANDOFF/2026-10-05-m5-planning-verification.md)。
+E6日志/dump后拆栈、B worktree回main两项运营尾巴本轮未执行/验证。
+
 Updated: 2026-10-05 · Milestone: **M4（Agent 运行时、Chat 与主动 Agent）——已收口（2026-10-05，D-030 双证齐：E6 六用例两轮绿 + B 核账账实相符；main `058c512` 复绿；实施链 #50–#65 全合，见 2026-10-05 收口条目）**。M3 已收口（main `5b381fd`，D-030 口径出口判据「代码 + 真机双证」达成，见 2026-10-03 收口条目）。M2 已关闭（main `e2a80e6`，出口判据「四绿三窗口双人」达成，见 2026-10-02 条目）。M0/M1 已合并（PR #1-#15，round-5 数据闭环验收通过 + e2e 首跑解锁）；对概念基线的完整差距评估见 `HANDOFF/2026-09-30-implementation-evaluation.md`（§8 七子句：4 达成 + 1 部分 + 2 缺失），M2 出口判据即该报告末节的场景化 §8 全句。路线大纲（M2–M8）已经 A/B 确认采纳（**D-030 accepted**，含三处修订：M3 同步产出删除/依赖图设计、TECH_STACK 依赖方已注取代、m2-breakdown 已对齐大纲口径）。
 · 集成分支 `integration/study-time-m0` 已合并 Backend（`61fcf82`）与客户端
 （`a2693e9`），冲突已解决，双侧 CI 与联合 drift check 全绿（draft PR #1）。

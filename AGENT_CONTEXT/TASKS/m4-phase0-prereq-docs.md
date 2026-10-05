@@ -1,11 +1,16 @@
 # M4 任务：先决文档双草案（phase-0，A/B 各一，互审后冻结）
 
-Status: open（2026-10-03 立项，协调人，M3 收口后开跑）。依据：路线
+Status: completed（2026-10-03 随 #50、D-034 冻结；M4 于 2026-10-05
+随 #66、main bf02eeb 收口）。规范文本以 DECISIONS D-034 的 A v3/B r3
+为准；下方草案进度与 tsvector 预设保留为历史，后者已明确由 pg_trgm
+取代，不再是待办。下一阶段见 [M5 phase-0](m5-phase0-prereq-docs.md)。
+
+原立项依据（2026-10-03，协调人，M3 收口后开跑）：路线
 大纲 M4 节（D-030 accepted）、AGENTS §2.1（显式循环）、§3（权限
 数据化）、`HANDOFF/2026-10-01-hermes-memory-prestudy.md` §2 的两条
 「记账 M4」（会话 FTS、前缀稳定排序）、现有 M2/M3 phase-0 模式。
 
-进度（2026-10-03 晚）：A 草案 **v3**（裁定 A1/A2/B4② 落案、B4① 确认、
+历史进度（冻结前记录）：A 草案 **v3**（裁定 A1/A2/B4② 落案、B4① 确认、
 A4 终裁执行，跨契约吸收见 §11.1 第 10-14 条）；B 草案 **r2** @ `564f68a`
 （B1/B2/B3/A3/A5 + B4①② + AgentRunRead 字段级 + 路径对齐）。**A 对 B r2
 评审 = Approve 无阻塞**（`HANDOFF/2026-10-03-a-review-m4-b-contract.md`）。
