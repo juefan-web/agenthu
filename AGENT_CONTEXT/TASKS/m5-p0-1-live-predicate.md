@@ -66,6 +66,13 @@ Status: **已实现，待 B head-bound 互审与协调人核验合并（2026-10-
   （客户端只镜像 MemoryRead，读侧未动）。
 - ruff / pyright 0 错误；全量后端测试结果见 PR 描述（本地基线
   352 passed + 1 fixed → 全绿）。
+- **流程注记（协调人 2026-10-05 记录在案）**：首头 165060d 远端 CI 红，
+  根因是纯格式——`ruff format --check` 在新测试文件 :88/:138 换行排版
+  上失败（46 秒即死、测试未跑）。本地交付前只跑了 `ruff check`（lint），
+  与 CI 步骤不同形（ci.yml 另有 `ruff format --check .`）。修复 =
+  `24d62f1`（纯格式，8 行）。教训：**交付前本地必须跑 CI 同形命令**
+  （`ruff check .` 与 `ruff format --check .` 两条都要），远端非绿必须
+  在交付报告中披露。
 
 ## 4. 对 E7 账面的影响
 
