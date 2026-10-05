@@ -85,9 +85,7 @@ def test_live_predicate_boundaries(client, auth_headers, db_session) -> None:
 
     live_ids = {
         row.id
-        for row in db_session.scalars(
-            select(Memory).where(*live_memory_conditions(now=fixed))
-        )
+        for row in db_session.scalars(select(Memory).where(*live_memory_conditions(now=fixed)))
     }
     for name, expected_live in [
         ("open", True),
@@ -138,9 +136,7 @@ def test_readers_exclude_retired_unpointed_rows(client, auth_headers, db_session
     assert str(future.id) not in episode_ids
 
 
-def test_retired_squatter_does_not_block_new_subject_key(
-    client, auth_headers, db_session
-) -> None:
+def test_retired_squatter_does_not_block_new_subject_key(client, auth_headers, db_session) -> None:
     """A retired unpointed row must not squat (user, subject_key):
     the predicate pre-check passes AND the narrowed unique index lets the
     insert through (the r1 failure mode was a 409 from the squatting row)."""
