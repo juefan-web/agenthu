@@ -962,3 +962,62 @@ re-rebase，不再多一轮确认」）。附 B 侧教训入档：**评审旁注
 - **OneTHU BSL 1.1 / LearnX 许可评审**：仓库转 public 触发，M5 合规
   先决。
 - **真实 API key 轮换**：测试 key 不得转正。
+
+## D-036 — M5 phase-0 冻结裁定（2026-10-05，协调人；B 按派工逐字转录登记）
+
+**冻结对象**：双契约 @ `de8f5c0`（A 稿 = `581606a` 版本；B 稿 = 同步后
+版本）。前置：双向 head-bound 互审齐（A→B @293d7ca 机械延续至 de8f5c0，
+delta 已核；B→A @581606a）、B 作者身份确认、CI 全绿、协调人代码预核
+（四读者、MemoryUpdate 可写、live-key 谓词缺失均属实）。
+
+延续终检记录（协调人原话）：「延续性终检通过：B 稿 delta（+31/−7）恰为
+『采纳 A 互审五条 + 字段重镜像 + 两条留裁项落文 + 账目措辞区分』，无任何
+裁外语义新增——机械延续规则第三次适用，A 对 B-r2 的 approve 由
+`293d7ca` 延续至 `de8f5c0`；B 对 A-r2 的 approve 直接绑定 `581606a`
+（其后 A 稿未动）。CI 全绿、B 作者身份确认双落档。」
+
+**逐项裁定**：
+
+1. **删除图与有效期（§8-1）**：统一 live 谓词 = `supersedes_id IS NULL
+   AND (valid_from IS NULL OR valid_from<=now()) AND (valid_to IS NULL OR
+   valid_to>now())`，四处读者 + 写侧 live-key + partial unique index
+   **同谓词**，实现为共享查询片段防第三处漂移；索引迁移随 P0-1。整链
+   忘记含 supersedes 闭包；源删除先失效再按剩余证据重算。**L2 样本不足
+   → 整链清理**（两案取简明案：无内容占位引入第三态，复杂度不值其展示
+   收益）。独立修正保留但去相关、清嵌入、重算有效性。
+2. **期限与恢复（§8-2）**：按提案冻结——receipt 90d、logs/trace 14d、
+   staging 24h（失败包同 TTL）、备份 30d、隐藏 Chat 7d 硬清、恢复先重放
+   抑制再放流量。**B 的 recover 摘要定义采纳**：规范化 POST /deletions
+   请求体（canonical JSON、键排序去空白）的 SHA-256；体内含
+   preview_digest 故传递性绑定内容；客户端留存完整请求体于 receipt 槽位
+   元数据（三字段全非敏感），10 分钟窗口同体重发匹配；双端算法 fixture
+   钉住。receipt 视图统一「回执不可用」采纳。
+3. **API 与兼容（§8-3）**：A-r2 §4 矩阵冻结，含 retry 收敛
+   `expected_version` 单字段（409 天然幂等，与 M4 confirm 同构）。旧
+   DELETE 保留原语义至 **M5 出口（E7 通过）**，此后转明确升级错误；旧
+   客户端不识 capabilities 时旧入口照常可见（防无处可删）。
+   X-Data-Generation 独立元数据头；无主/无代际队列禁止自动补值重放。
+4. **grant（§8-4）**：GrantScopeCatalog 由 ACTION_POLICY + 注册表派生，
+   端点形状按 B 稿；**catalog_version 变更纪律采纳**（action/channel
+   变更必升版，客户端按版本失效重取——不成为第二 drift 面）。channels
+   只列实际可执行渠道（现仅 web/应用内）；dispatch 复验 category AND
+   channel AND 可选时间窗。**local_time_window M5 禁止**（不给入口、
+   fail-closed、目录标 false）。创建/扩 scope 需 version+expected_version
+   确认；缩/撤即时生效；旧不合规 grant 切换时标
+   requires-reauthorization，不自动扩不自动撤。创建侧按 catalog 值级校验
+   收紧随 P0-4。
+5. **E7 报告分离（§8-5）**：按稿冻结——受控在线擦除与离线/备份/供应商
+   限制分开报告，不以「未来过期」抵在线残留。
+6. **validity 移出可写面（§8-6）**：采纳——MemoryUpdate 移除两字段
+   （unknown-key 静默忽略兼容旧客户端），有效期仅服务端管理；契约变更
+   按 D-035 排序规则落批。
+7. **五项结转门（DECISION-GATES）**：HNSW/检索 ADR 触发 = 10 并发
+   p95>500ms 或 recall@10<0.9（规定语料面，短 CJK 单列）；SSE 评估触发
+   = 感知 p95>5s 或轮询>10% API 预算（保留轮询兜底）；daily_budget=3
+   暂留、自愿 Alpha 一周反馈后复查；**OneTHU/BSL/LearnX 逐文件许可结论
+   + 真实 key 轮换 = P0-6 硬发布门**（未澄清不分发、无凭据证据不宣布
+   通过）。
+8. **实施令**：P0-1（A：依赖清单、持久操作/清理账本、屏障/代际、迁移
+   回填、统一谓词四读者修复）与 P0-2（B：owner 命名空间、无主队列隔离、
+   本地清理面）**即刻并行**；切片 PR 惯例照旧；E7 预期账面随实现同步
+   修订，预登记纪律沿用。

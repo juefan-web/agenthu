@@ -1,8 +1,11 @@
 # M5 phase-0：数据生命周期与数据控制双草互审
 
-Status: **B-r2 与 A-r2 已署名修订（2026-10-05），A 对 B-r2 互审报告已
-交付（Approve 无阻塞）；待 B 对 A-r2 head-bound 互审与协调人裁定**。
-输入：M4收口 bf02eeb、D-030、M3删除图、M4五项结转；
+Status: **已冻结（D-036，2026-10-05，协调人裁定；全文见
+[DECISIONS D-036](../DECISIONS.md)）**。前置闭合：双向 head-bound 互审齐
+（A→B @`293d7ca` 机械延续至 `de8f5c0`——delta 恰为「采纳 A 五建议 +
+字段重镜像 + 留裁项落文 + 措辞区分」，机械延续规则第三次适用；B→A
+@`581606a`）+ B 作者身份确认 + CI 全绿。**P0-1（A）/ P0-2（B）即刻并行
+开工**。输入：M4收口 bf02eeb、D-030、M3删除图、M4五项结转；
 总指导见 [m5-planning-guidance](m5-planning-guidance.md)。
 
 ## 0. 任务边界

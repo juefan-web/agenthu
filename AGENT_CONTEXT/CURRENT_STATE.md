@@ -1,19 +1,21 @@
 # CURRENT_STATE
 
-**当前队列（2026-10-05 晚 A-r2 轮）**：M4 已正式收口（#66，main bf02eeb，
-收口 SHA 双 CI 绿已独立核验）。M5 phase-0 推进中：**B-r2 与 A-r2 均已
-署名修订**（协调人裁定一：r1 codex 稿仅输入材料）；A 对 B-r2 互审报告
-已交付 = **Approve 无阻塞 + 5 建议 + 1 字段级 delta**
-（[报告](HANDOFF/2026-10-05-a-review-m5-b-r2.md)，head-bound @ 293d7ca，
-含 §2 扫描表后端面七项对码全属实、E7-5/6/9 对 M4 租约/幂等原语可行）。
-待：B 对 A-r2 head-bound 互审 → 协调人裁定冻结并登记 Decision。
-A 侧运营尾巴已闭合：E6 已 dump（仓库外 D:\agenthu-e6-archive，恢复验证
-24 表计数一致）后拆栈（三进程停、compose down、volume 保留）；B worktree
-回 main 仍待 B 执行。入口：[规划指导](TASKS/m5-planning-guidance.md)、
+**当前队列（2026-10-05 深夜 D-036 冻结轮）**：M4 已正式收口（#66，main
+bf02eeb）。**M5 phase-0 已冻结（[D-036](DECISIONS.md)，双契约
+@`de8f5c0`）**：双向互审齐——A→B @`293d7ca` 机械延续至 `de8f5c0`
+（机械延续规则第三次适用），B→A @`581606a`（[B 报告](HANDOFF/2026-10-05-b-review-m5-a-r2.md)
+含七项对码 + 防枚举拼接零缝 + E7-7/8 客户端可行性）；B 作者身份确认
+双落档。**P0-1（A）/ P0-2（B）即刻并行开工**——P0-2 = owner 命名空间
+（TS localStorage / Rust offline.sqlite3 / Stronghold 三层）、无主队列
+隔离、本地清理面（契约 = B 稿 §3/§4）。本提交 = #67 最后一提交
+（DECISIONS 登记 D-036 + phase-0 翻 frozen + 本队列更新），待 A 转录
+忠实性 head-bound approve → CI 绿转 ready → 协调人合并即开工。运营尾巴
+全闭合（A：E6 dump 恢复验证 24/24 后拆栈；B：worktree 回 main）。
+入口：[规划指导](TASKS/m5-planning-guidance.md)、
 [双草任务](TASKS/m5-phase0-prereq-docs.md)、
 [状态核验与交接](HANDOFF/2026-10-05-m5-planning-verification.md)。
 
-Updated: 2026-10-05 · Milestone: **M4（Agent 运行时、Chat 与主动 Agent）——已收口（2026-10-05，D-030 双证齐：E6 六用例两轮绿 + B 核账账实相符；main `058c512` 复绿；实施链 #50–#65 全合，见 2026-10-05 收口条目）**。M3 已收口（main `5b381fd`，D-030 口径出口判据「代码 + 真机双证」达成，见 2026-10-03 收口条目）。M2 已关闭（main `e2a80e6`，出口判据「四绿三窗口双人」达成，见 2026-10-02 条目）。M0/M1 已合并（PR #1-#15，round-5 数据闭环验收通过 + e2e 首跑解锁）；对概念基线的完整差距评估见 `HANDOFF/2026-09-30-implementation-evaluation.md`（§8 七子句：4 达成 + 1 部分 + 2 缺失），M2 出口判据即该报告末节的场景化 §8 全句。路线大纲（M2–M8）已经 A/B 确认采纳（**D-030 accepted**，含三处修订：M3 同步产出删除/依赖图设计、TECH_STACK 依赖方已注取代、m2-breakdown 已对齐大纲口径）。
+Updated: 2026-10-05 · Milestone: **M4（Agent 运行时、Chat 与主动 Agent）——已收口（2026-10-05，D-030 双证齐：E6 六用例两轮绿 + B 核账账实相符；main `058c512` 复绿；实施链 #50–#65 全合，见 2026-10-05 收口条目）**。M5 phase-0 已冻结（D-036，2026-10-05，双契约 @`de8f5c0`；P0-1/P0-2 开工）。M3 已收口（main `5b381fd`，D-030 口径出口判据「代码 + 真机双证」达成，见 2026-10-03 收口条目）。M2 已关闭（main `e2a80e6`，出口判据「四绿三窗口双人」达成，见 2026-10-02 条目）。M0/M1 已合并（PR #1-#15，round-5 数据闭环验收通过 + e2e 首跑解锁）；对概念基线的完整差距评估见 `HANDOFF/2026-09-30-implementation-evaluation.md`（§8 七子句：4 达成 + 1 部分 + 2 缺失），M2 出口判据即该报告末节的场景化 §8 全句。路线大纲（M2–M8）已经 A/B 确认采纳（**D-030 accepted**，含三处修订：M3 同步产出删除/依赖图设计、TECH_STACK 依赖方已注取代、m2-breakdown 已对齐大纲口径）。
 · 集成分支 `integration/study-time-m0` 已合并 Backend（`61fcf82`）与客户端
 （`a2693e9`），冲突已解决，双侧 CI 与联合 drift check 全绿（draft PR #1）。
 · **Merge-1 Windows 构建包人工测试结论：不建议转正合并**（见
@@ -1296,3 +1298,20 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   D-035 实现注记 / 墙钟守卫惯例 / 预登记对账惯例 / 延续协议实践 /
   协调人勘误三笔 / 遗留清单结转 M5）。此后队列进入 M5 规划起草（按
   TECH_STACK_AND_WORKPLAN 对齐）。
+
+- **M5 phase-0 冻结（D-036，2026-10-05，协调人裁定）**：双契约
+  @`de8f5c0` 冻结（A 稿 = `581606a`；B 稿 = 同步后版本），八项裁定全文
+  见 DECISIONS D-036（B 逐字转录登记）：①统一 live 谓词（四读者 + 写侧
+  + partial unique index 同谓词，共享查询片段）+ L2 样本不足整链清理；
+  ②期限冻结（receipt 90d/logs 14d/staging 24h/备份 30d/隐藏 Chat 7d 硬清）
+  + B 的 recover 摘要定义采纳（canonical JSON SHA-256，双端 fixture 钉住）；
+  ③A-r2 §4 矩阵冻结（retry = expected_version 单字段），旧 DELETE 原语义
+  保留至 E7 通过；④GrantScopeCatalog 派生 + catalog_version 纪律 +
+  local_time_window M5 禁止；⑤E7 报告分离；⑥validity 移出 MemoryUpdate
+  可写面；⑦五项结转门参数（HNSW/SSE/daily_budget/许可 + key 轮换 =
+  P0-6 硬发布门）；⑧实施令 P0-1/P0-2 即刻并行。延续终检：B 稿 +31/−7
+  恰为「采纳 A 五建议 + 字段重镜像 + 留裁项 + 措辞区分」，机械延续规则
+  第三次适用（A approve `293d7ca`→`de8f5c0`；B→A 直接绑定 `581606a`）。
+  B-r2 作者身份确认在案（报告 §1 + PR 评论）。本提交 = #67 最后一提交，
+  待 A 转录忠实性 head-bound approve → CI 绿转 ready → 协调人合并，
+  P0-1（A）/ P0-2（B）随即开工。
