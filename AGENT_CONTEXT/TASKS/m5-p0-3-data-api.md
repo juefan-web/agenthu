@@ -68,7 +68,51 @@ B 对 #70 的 head-bound 互审（approve；携带项三 + should-fix 一 + advi
   孤儿集流改接 durable 队列（Redis 仅唤醒）+ source 抑制解除（重新授权
   路径）+ E7 账面随实现修订。
 
-## 3. 实现记录
+## 2A. 切片 2 开工裁定（2026-10-06，协调人令：先裁定后动 executor）
+
+### 裁定①：多事件派生 task 的部分源删除语义
+
+**依据**（均已冻结，非新裁量）：A 稿 §1 Event/Task/Focus 行"源删除区分
+纯派生与独立用户编辑；派生内容清除，独立内容去相关来源后保留，preview
+告知"；registry tasks 条目 disposal 同义。本裁定把"纯派生 vs 独立"操作化
+为**锚定判据**：
+
+1. **纯派生 = D-028 锚定**：`task.(source, source_upstream_id)` 匹配某被删
+   event 的 `(source, provenance.upstream_id)`。D-028 派生 task 是上游
+   assignment 的连续投影——title/description/deadline/extra 由每次
+   assignment 事件整体重写（event_handlers.handle_assignment_event），
+   不存在稳定的独立编辑面；状态（COMPLETED sticky）、Focus 实际耗时、
+   计划条目结果都在 task 本体之外留痕。处置：**整删**；其
+   focus_sessions 经 FK CASCADE 一并入闭包显式枚举（用户活动记录随
+   派生对象消亡，preview 计数可见）；plan_items.task_id 经 FK SET NULL
+   **存活**（计划历史是用户工作成果，actual_minutes/result 留在条目上），
+   title 拷贝残留记入 limitations、basis 失效由重算处理。
+2. **相关但非派生 = 用户关联**：task_events 边连到被删 event 但锚不匹配
+   （手工 task、锚在其它 event 的 task）。边是用户手工建立的相关性记录
+   （api/v1/tasks.py 206/218），不是内容拷贝。处置：**去相关存活**——
+   边行随 event 行删除经 FK CASCADE 消失，task 本体保留；闭包把边列为
+   delete_ids（reason_code=decorrelated），VERIFY 覆盖边。
+3. **切片 1 双向修正**：切片 1 闭包经 task_events 边 join 拉 task——
+   对冻结语义**过删**（用户关联的手工 task 被整删）且**漏删**（D-028
+   锚定但无边的 task 带着复制内容存活）。裁定后闭包改按锚查询为主、
+   边仅产生去相关效果。
+4. **preview 区分**（B 核点）：tasks 家族 reason_code=
+   `anchored_derivation`（整删）；task_events 家族 reason_code=
+   `decorrelated`（去相关）；focus_sessions 级联入 effects；
+   plan_items SET NULL + basis 重算记 limitations。E7-3 预期账面同步。
+
+### 裁定②：executor 分派纪律（先读 payload 再分派）
+
+DELETE_RELATIONAL 项 executor **先读 payload 再分派**：
+`payload.redact is True` → audit 脱敏路径（UPDATE 置空
+details/path/resource_id/ip_address/user_agent，不删行，90d 回执保留）；
+否则 → 行删路径（DELETE WHERE id IN payload.ids；task_events 用
+(task_id,event_id) 对判别）。错路由=把 redact 当行删执行，方向上是
+隐私安全的损失但违背回执保留语义——**单元测试 + 集成测试双钉红**。
+配套：account 闭包的 audit redact_ids 从 `audit:{index}` 占位改为**真实
+行 id**（占位符让 executor 无从定位行；redact 计数语义不变）。
+
+
 
 - **首提交（2026-10-05）**：§1.2 embedding 补录、§1.3 matching_barrier
   fail-closed（同 scope + None = 冲突；异 scope 不受影响）、§1.4 N1 全谓词
@@ -117,8 +161,8 @@ B 对 #70 的 head-bound 互审（approve；携带项三 + should-fix 一 + advi
   - **路由**（api/v1/data.py）：capabilities（export_enabled=false 诚实
     不广告未落地面）/previews 201/deletions 202/operations GET +
     X-Data-Generation 响应头。账号删除后 is_active=false → 业务 auth
-  即 401（deps.get_current_user 既有语义），停用后读取走 receipt
-  路径（切片 2）。
+    即 401（deps.get_current_user 既有语义），停用后读取走 receipt
+    路径（切片 2）。
 
 - **评审修订（2026-10-06，B RC 唯一必改项）**：补"过期 preview ×
   幂等命中 → 同 op"组合测试（核点 4——冻结句"删除重传先查幂等，

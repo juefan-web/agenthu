@@ -34,7 +34,7 @@ expected delete/redact/recompute/retain counts及原因；B先核manifest。
 | --- | --- | --- |
 | E7-1 | U完整导出，V尝试列/下载/receipt；并发source删除；包TTL | U manifest计数、checksum/快照与seed一致；无V或凭据；include_files=false有明确遗漏；并发删除使旧包作废；过期/已删签名能力不能读 |
 | E7-2 | 预览变化、过期、重复确认、202丢响应、失败重试 | stale→409，无扩大删除；同ID同operation，不同输入409；durable账本不丢；账号停用后只有窄receipt恢复路径可用，不能借旧JWT业务访问 |
-| E7-3 | 分别删Event、file、Chat message/session | 每种source的图闭包与preview匹配；派生Task/Memory/quotes/标题/摘要/缓存清；独立用户内容按冻结规则保留；失效basis不再有原文 |
+| E7-3 | 分别删Event、file、Chat message/session | 每种source的图闭包与preview匹配；派生Task/Memory/quotes/标题/摘要/缓存清；独立用户内容按冻结规则保留；失效basis不再有原文。**派生Task=锚定判据**（task.(source,source_upstream_id) 匹配被删 event 锚→整删含 focus_sessions 级联计数；仅 task_events 边关联→去相关存活，边清 task 留）；preview reason_code 区分 anchored_derivation/decorrelated；audit 脱敏按真实行 id 定位（P0-3 切片 2 裁定①②，2026-10-06） |
 | E7-4 | Memory最新版整链忘记、source导致L2样本不足 | SET NULL不复活旧版；全部live行读者（检索、估时、L1证据血缘、live-key判定）不读valid_to失效行，PATCH不可写valid_to；向量/检索/重算不回写已忘事实；独立用户修正按预期处置 |
 | E7-5 | 账号删除与两个worker在context/dispatch/embed/结果写回各处竞态 | 新业务拒绝，run/action诚实结算；已发外部请求不伪造撤回；无新Task/Memory/回答；一份有效claim，旧结果不落库，V不受影响 |
 | E7-6 | DB已接受后Redis断供、S3超时/403、进程崩溃 | DB清理账本仍有key；状态非COMPLETED，403不当404；恢复继续同operation，最多自动5次，耗尽可核查；对象版本/导出包一起清 |
