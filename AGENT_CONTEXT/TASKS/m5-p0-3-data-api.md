@@ -76,11 +76,85 @@ B 对 #70 的 head-bound 互审（approve；携带项三 + should-fix 一 + advi
   （零迁移：SAEnum 持久化名，CHECK 按名生成，值改大写名不动 DB）、
   §1.5 DECISIONS 回填范式注记、本任务书（含 N2/N3 档位记录）。
 
+- **切片 1 主体（2026-10-05）**：
+  - **DTO**（schemas/data.py）：DeleteTarget 判别联合（account/source/
+    memory；`include_history: Literal[True]`、`confirmed: Literal[True]`
+    把"必须显式"压进类型）；错误组件命名 **DataSafeError**（与 agent 域
+    既有 SafeError `{code,message}` 撞名，FastAPI 会模块前缀化——改名而非
+    扩旧面，线上 JSON 形状即冻结文本的 SafeError）。
+  - **闭包枚举**（services/data_closure.py）：preview/confirm/清理项共
+    用一图。source/event → events + task_events 边 join tasks + Python 侧
+    source_event_ids 交集（memories）+ current_states recompute；
+    source/file → file_objects + material_chunks(file_id) +
+    material_answers(citations 引用扫描) + 对象键；chat_session →
+    会话+消息；chat_message → 消息本体；memory → supersedes 双向定点
+    迭代整链；account → registry 全族扫描（含 plan_items/mutations 经
+    join 的间接族、task_events 边、audit redact 计数、全部对象键）。
+    所有权先于内容：目标 id 缺失/异主一律 404。版本戳：一律 updated_at，
+    唯 ChatMessage 用 created_at（不可变行，无 updated_at）。
+  - **preview**（data_operations.create_preview）：10min TTL + 惰性清除；
+    digest 绑 user + target + graph_version（REGISTRY 内容 sha256[:16]，
+    自维护）+ data_generation + 影响集 + 逐行内容版本——不是行数哈希。
+  - **confirm 事务**（confirm_deletion）顺序：幂等重放优先（preview 行
+    已过期/已清也返回同 op）→ preview 行/摘要 → 闭包重算比对（漂移=
+    409 preview_stale，不静默扩大）→ 同 scope 在途屏障（409
+    deletion_in_progress）→ **bump 代际（users 行 UPDATE 锁 = 并发同 key
+    confirm 的串行化点，携带①）**→ 锁内幂等复查 → savepoint 内 INSERT
+    （IntegrityError → 重查收敛同 op / 异输入 409，携带①双保险）→
+    屏障升起 → account：is_active=false + grant/consent 撤销时间戳 +
+    receipt 能力（token_urlsafe(32)，账本只存 sha256 摘要，202 响应仅
+    一次吐出）/ source：抑制行（HMAC-SHA256(secret_key, kind:upstream)，
+    events 用 provenance.upstream_id、缺失回落 event id；file/chat 用
+    行 id）→ 清理项登记（DELETE_RELATIONAL 携 payload ids / account 全
+    域无 payload、DELETE_OBJECT 逐对象键、CLEAR_REDIS 仅 account、
+    VERIFY_ABSENT 逐族）→ progress_total/outstanding 落值。
+  - **迁移 a9c41f7d2e83**：data_previews（users FK CASCADE——瞬态非账本）
+    + data_receipts/data_suppressions（owner_handle 值键控无 FK——必须
+    活过 users 行删除）+ data_operations.preview_digest/impact +
+    data_cleanup_items.payload。
+  - **registry**：三张新表登记（inventory 在开发期即抓到未登记——
+    fail-closed 自证一次）+ graph_version()。
+  - **路由**（api/v1/data.py）：capabilities（export_enabled=false 诚实
+    不广告未落地面）/previews 201/deletions 202/operations GET +
+    X-Data-Generation 响应头。账号删除后 is_active=false → 业务 auth
+    即 401（deps.get_current_user 既有语义），停用后读取走 receipt
+    路径（切片 2）。
+
 ## 4. 验证证据（随切片填）
 
 - 首提交：全量 pytest（含新测试 ×2）、ruff 同形双命令、pyright、
   OpenAPI 零变更预期（本提交不开 API 面）。
+- 切片 1 主体：新增 tests/integration/test_data_api.py 18 例（capabilities
+  诚实性 / account 与五种 source 预览计数与 owner 隔离 / 404 所有权 /
+  memory 整链 / include_history 422 / confirm 全登记断言（屏障 scope+
+  target、清理项 payload ids、抑制 HMAC≠原文、X-Data-Generation=2）/
+  幂等重放同 op / 同 key 异 preview 409 / 闭包漂移 409 / 过期+错摘要
+  409 / 同 scope 在途 409 / 操作读取 owner 隔离 404 / **IntegrityError
+  收敛（双 monkeypatch：前置 SELECT 失明两次 + INSERT 抛唯一冲突 →
+  收敛 winner 同 op）** / 账号删除停用+撤销+能力一次吐出+摘要落账 /
+  account 清理项含 CLEAR_REDIS 字面量）；迁移往返（scratch 库
+  upgrade→downgrade→upgrade 含 a9c41f7d2e83）+ autogenerate 零漂移探针
+  0 op；OpenAPI 65 路径（+4）重生 + check_contract_drift --require-zod
+  绿（DataSafeError 改名后无组件撞名）；ruff 同形双绿；pyright 0。
+  终轮全量（空载重跑）：**391 passed, 8 skipped**——7 skip =
+  conftest 深夜窗口守卫（plan/focus 当日排程测试，本地 23 点后自跳，
+  与本切片零交集、CI 任意时刻跑当绿），1 skip = S3_ENDPOINT_URL 环境项
+  （CI 设该变量）；非未披露红。
 
 ## 5. 实现期判断（待 B 核）
 
-- （随切片记录）
+1. **并发败者的 confirm 可能多吃一次代际 bump**：users 行锁串行化后，
+   败者锁内幂等复查返回 winner 同 op，但其 bump 已执行——代际多消耗
+   一次。方向安全（fail-closed：多失效在途工作），频率 = 并发同 key
+   竞态窗口；不入回滚位。
+2. **抑制上游锚点**：events 优先 provenance.upstream_id、缺失回落
+   event id；file/chat 用行 id。真 connector（P0-6）落地时
+   upstream_id 面已占用；切片 3 重采拦截沿用同锚点。
+3. **audit 脱敏清理项复用 DELETE_RELATIONAL**：item_ref
+   `audit_logs:redact` + payload `{"redact": true}` 判别，不扩枚举
+   （零数据期加 REDACT 枚举反而多一个迁移面）；切片 2 executor 按
+   payload 分派。
+4. **ChatMessage 版本戳用 created_at**（不可变行无 updated_at）；
+   digest 的内容版本语义对该族退化为"创建即版本"，对本片删除闭包
+   等价（消息不可变，闭包成员变化即 digest 变化）。
+

@@ -1358,3 +1358,16 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   清单见 TASKS/m5-p0-3-data-api.md；首提交落：embedding 补录、
   matching_barrier fail-closed、N1 全谓词升级、enums 名=值对齐（零迁移）、
   DECISIONS 回填范式注记、N2/N3 档位记录。
+
+- **P0-3 切片 1 主体交审（A，2026-10-05，分支 feature/m5-p0-3-data-api）**：
+  /v1/data 四路由（capabilities/previews/deletions/operations + 
+  X-Data-Generation 响应头）+ 闭包枚举一图（五 source kind + memory 整链
+  + account 全 registry 扫描，所有权 404）+ preview 10min digest 绑定
+  （graph_version=REGISTRY 摘要）+ confirm 事务（幂等重放优先/preview_stale/
+  deletion_in_progress/users 行锁串行化 + savepoint IntegrityError 收敛=
+  B 携带①/屏障/清理项 payload ids/account 停用+撤权+receipt 能力一次
+  吐出摘要落账/source 抑制 HMAC）+ 迁移 a9c41f7d2e83（三新表，
+  receipts/suppressions 值键控无 FK）+ registry 三新表登记（inventory
+  开发期自证一次）。OpenAPI 65 路径重生、漂移绿；DataSafeError 组件名
+  避让 agent 域 SafeError。四条实现期判断见任务书 §5（败者 bump 多耗/
+  抑制上游锚点/audit redact 复用枚举/ChatMessage 版本戳）。待 B 互审。

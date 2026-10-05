@@ -18,7 +18,7 @@ primitives plus the rules frozen in the contract:
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from sqlalchemy import and_, or_, select, update
@@ -123,6 +123,11 @@ class OperationRequest:
     client_request_id: str
     target: dict | None
     data_generation: int
+    # Both are client-visible confirm inputs (the client sends the digest),
+    # so both belong to the replay comparison; impact is server-derived and
+    # is stored, never compared.
+    preview_digest: str | None = None
+    impact: dict | None = None
 
 
 def get_or_create_operation(
@@ -144,12 +149,12 @@ def get_or_create_operation(
         )
     )
     if existing is not None:
-        # Compared input is client-visible only (kind/key/target snapshot,
-        # which carries the preview digest at P0-3). The server-side
-        # generation snapshot is NOT part of the comparison: replaying the
-        # same request after its own confirm bumped the generation must
-        # return the same operation, not a false 409.
-        if existing.target != request.target:
+        # Compared input is client-visible only (kind/key/target/digest
+        # snapshot). The server-side generation snapshot is NOT part of the
+        # comparison: replaying the same request after its own confirm
+        # bumped the generation must return the same operation, not a
+        # false 409.
+        if existing.target != request.target or existing.preview_digest != request.preview_digest:
             raise IdempotencyConflict(
                 f"client_request_id {request.client_request_id!r} already used with different input"
             )
@@ -159,6 +164,8 @@ def get_or_create_operation(
         kind=request.kind,
         client_request_id=request.client_request_id,
         target=request.target,
+        preview_digest=request.preview_digest,
+        impact=request.impact,
         status=DataOperationStatus.QUEUED,
         data_generation=request.data_generation,
     )
@@ -175,6 +182,9 @@ class CleanupItemSpec:
     resource_type: str
     item_ref: str
     action: str
+    # Excluded from eq/hash: dedupe keys on the unique-constraint triple;
+    # the payload dict rides along to the row without breaking hashability.
+    payload: dict | None = field(default=None, compare=False)
 
 
 def enqueue_cleanup_items(
@@ -213,6 +223,7 @@ def enqueue_cleanup_items(
                 resource_type=spec.resource_type,
                 item_ref=spec.item_ref,
                 action=spec.action,
+                payload=spec.payload,
                 state=CleanupItemState.PENDING,
             )
         )
