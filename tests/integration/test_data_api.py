@@ -347,6 +347,28 @@ class TestConfirmDeletion:
         assert second["id"] == first["id"]
         assert second["version"] == first["version"]
 
+    def test_expired_preview_idempotent_replay_returns_same_operation(
+        self, client, auth_headers, db_session
+    ):
+        # A-draft §4 order pin: the idempotency lookup runs before the
+        # preview expiry check, so replaying an already-expired preview
+        # returns the same operation — not 409 preview_stale, not 410.
+        event_id = _seed_event(client, auth_headers)
+        preview = _preview(
+            client, auth_headers, {"kind": "source", "source_kind": "event", "ids": [event_id]}
+        )
+        first = _confirm(client, auth_headers, preview, key="expired-replay-key-1")
+        db_session.execute(
+            update(DataPreview)
+            .where(DataPreview.id == uuid.UUID(preview["id"]))
+            .values(expires_at=datetime.now(UTC) - timedelta(minutes=1))
+        )
+        db_session.flush()
+        second = _confirm(client, auth_headers, preview, key="expired-replay-key-1")
+        assert second["id"] == first["id"]
+        assert second["version"] == first["version"]
+        assert second["receipt_capability"] is None
+
     def test_same_key_different_preview_is_409(self, client, auth_headers):
         event_a = _seed_event(client, auth_headers)
         event_b = _seed_event(client, auth_headers)

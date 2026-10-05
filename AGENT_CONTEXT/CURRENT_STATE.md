@@ -1371,3 +1371,11 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   开发期自证一次）。OpenAPI 65 路径重生、漂移绿；DataSafeError 组件名
   避让 agent 域 SafeError。四条实现期判断见任务书 §5（败者 bump 多耗/
   抑制上游锚点/audit redact 复用枚举/ChatMessage 版本戳）。待 B 互审。
+
+- **P0-3 切片 1 RC 修复（A，2026-10-06）**：B 互审 @ `77c38e1` 全签
+  （四判断 + 五核点）唯一必改 = 核点 4 组合测试缺失——已补
+  "过期 preview × 幂等命中 → 202 同 op"（source 域；account 域首次
+  confirm 即停用无法测该组合）。切片 2 强携两条（executor 先读
+  payload 再分派、多事件派生 task 部分源删除语义正面裁定）、切片 3
+  强携三条（upstream_id 前置纪律入任务书、E7-7 seed 带 upstream_id、
+  assert_writable/孤儿流/抑制解除）已录入任务队列。

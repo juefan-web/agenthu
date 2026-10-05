@@ -117,8 +117,16 @@ B 对 #70 的 head-bound 互审（approve；携带项三 + should-fix 一 + advi
   - **路由**（api/v1/data.py）：capabilities（export_enabled=false 诚实
     不广告未落地面）/previews 201/deletions 202/operations GET +
     X-Data-Generation 响应头。账号删除后 is_active=false → 业务 auth
-    即 401（deps.get_current_user 既有语义），停用后读取走 receipt
-    路径（切片 2）。
+  即 401（deps.get_current_user 既有语义），停用后读取走 receipt
+  路径（切片 2）。
+
+- **评审修订（2026-10-06，B RC 唯一必改项）**：补"过期 preview ×
+  幂等命中 → 同 op"组合测试（核点 4——冻结句"删除重传先查幂等，
+  再验 preview 到期"的第四象限；既有 replay 测试用未过期 preview、
+  expired 测试用全新 key，重排检查次序不会红）。source 域：首次
+  confirm 202 → preview 行 expires_at 改过去 → 同 key + 同 digest
+  重放 → 202 同 operation id/version、capability 不重发。account 域
+  无法测该组合（首次 confirm 即停用，auth 401 在幂等检查之前）。
 
 ## 4. 验证证据（随切片填）
 
@@ -140,6 +148,9 @@ B 对 #70 的 head-bound 互审（approve；携带项三 + should-fix 一 + advi
   conftest 深夜窗口守卫（plan/focus 当日排程测试，本地 23 点后自跳，
   与本切片零交集、CI 任意时刻跑当绿），1 skip = S3_ENDPOINT_URL 环境项
   （CI 设该变量）；非未披露红。
+- 评审修订：test_data_api.py 全文件 19 passed（新组合测试含）；ruff
+  同形双绿；pyright 0；测试独 delta，无 schema/API 变更（OpenAPI/
+  drift 不受影响，CI 复核）。
 
 ## 5. 实现期判断（待 B 核）
 
