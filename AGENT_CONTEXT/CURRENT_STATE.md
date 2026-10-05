@@ -1314,3 +1314,20 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   B-r2 作者身份确认在案（报告 §1 + PR 评论）。本提交 = #67 最后一提交，
   待 A 转录忠实性 head-bound approve → CI 绿转 ready → 协调人合并，
   P0-1（A）/ P0-2（B）随即开工。
+
+- **P0-1 切片 1 落地 + 切片 2 交审（A，2026-10-05，main `3f023ca` =
+  #68 合并）**：切片 1（统一 live 谓词 + validity 移出可写面 + 索引
+  窄化 45b7db4cb2cb）经 B approve @`e617ae2` 合并；合并前远端红一次
+  （ruff format --check 与本地检查不同形），教训已入任务书 §3 流程
+  注记（交付前本地必须跑 CI 同形命令）。切片 2 开工即交审：持久操作/
+  清理账本（三表，owner_handle 不透明键控、无 users FK，幂等键 + 代际
+  快照）+ 屏障/代际原语（raise/lock/check/release，FAILED 不解除、
+  account 不自动解除，退避梯 5/30/120/300/900s + 24h 窗 + 5min 租约）
+  + 依赖清单矩阵（26 表全登记 + Redis 字面量 AST 扫描，存在但未登记
+  即失败）+ 迁移 e6d496a26f09（显式回填，server_default 规范化假漂移
+  已绕开；往返 + autogenerate 零漂移双轮验证）。378 passed/1 skipped、
+  ruff 同形双绿、pyright 0、OpenAPI 零变更（D-035 不触发）。三处
+  实现期判断（幂等比较不含代际 / 5min 租约 / enqueue 重复 no-op）见
+  任务书 §5 待 B 核。#69（B 的 P0-2 切片 1）A 已 RC：换号守卫窗口
+  一项必改（多批循环顶部无 assert，A→B 直切可致 A 事件带 B token
+  上推）+ 四 advisory；待 B 修复后新头复核。
