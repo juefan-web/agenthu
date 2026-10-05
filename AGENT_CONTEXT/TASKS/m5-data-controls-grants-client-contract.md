@@ -28,8 +28,13 @@ tests/fixtures/client_contract.ts 冻结镜像同步，`check_contract_drift.py`
 注册表登记新映射；字段级人工 cross-review 仍是主防线。
 
 operation.version 必有；receipt_capability 仅创建/恢复交付、普通读取为
-null。无 capabilities 时显示「此服务尚未支持完整导出/删除」；
-minimum_client_version 只控制新面显隐，不阻塞既有功能。旧 DELETE 的 204
+null。**路由输入同步镜像**（@A-r2 `581606a` §4/互审 §6 字段 delta）：
+`POST /operations/{id}/retry` 输入 = `expected_version` 单字段——409
+version_conflict 即天然幂等，不引入第二个幂等键；客户端双击重试的第二发
+落 409 → 重取 operation，与 M4 confirm 的 expected_version 模式同构。
+无 capabilities 时显示「此服务尚未支持完整导出/删除」；
+minimum_client_version 只控制新面显隐，不阻塞既有功能；**旧客户端不识
+/v1/data 时，旧 DELETE 入口保持原语义可见**（防「无处可删」）。旧 DELETE 的 204
 不得渲染为全量擦除——旧入口保持原语义（隐藏/归档/单条删除）与如实文案，
 「永久删除/全账号删除」仅经 /v1/data。业务 401 退出后 receipt 读取走
 **独立最小视图**：从登录屏入口进入，不依赖 AppServices 业务会话、不进
@@ -68,10 +73,18 @@ URL、日志、剪贴板自动复制或遥测。
 
 确认按钮锁定同一 client_request_id；409 重取 preview/version，不后台自动
 扩大范围；429 显示 Retry-After；未知状态停危险操作并显示升级提示。
+**poll 与手动重试的作用域**（对齐 A-r2 §2 收紧）：operation 轮询与手动
+重试仅适用 source/memory（owner 仍可业务认证）；账号删除确认后 owner
+认证失效（401），状态查询走 receipt 视图轮询，FAILED 只显示「系统将
+自动重试，必要时由运维处置」，不提供手动重试入口。**recover 重发物料**：
+客户端在删除确认时把完整 POST /deletions 请求体（preview_id、
+preview_digest、client_request_id——全非敏感）留存在 receipt 槽位元数据，
+10 分钟 recover 以同体重发参与摘要匹配。
 **poll 参数提案**：5s 起步、退避至 30s、前台上限 30 分钟、后台暂停
 （visibilitychange）+ 重挂载即新鲜拉取；手动查询只 GET，不重发
 DELETE/POST。receipt 恢复失败也告知「清理仍在继续，回执凭据未能取回」，
-不能重新开启账号。
+不能重新开启账号；receipt 视图对无效能力统一显示「回执不可用」，
+不区分不存在/过期/身份不符（客户端侧同样不给枚举面）。
 
 永久忘记 Memory 明确「含历史版本」；拒绝（REJECTED）是阻止再派生的不同
 动作，不得误称已永久擦除。Chat 隐藏/归档与永久删除分清，说明隐藏内容
@@ -90,7 +103,9 @@ receipt 槽**）→ queryClient.clear()（receipt 视图状态不在业务缓存
 
 本机清理状态机：`not_started → cleaning`（删除确认成功立即进入）→
 `verified / failed`；failed 允许显式重试本机清理，期间保持冻结旧队列，
-不能返回采集/同步。其他设备是 `unknown/pending`，没有设备响应时不得猜
+不能返回采集/同步。**verified 判据 = 可复跑的检查命令输出**（键存在性、
+SQLite 行数/WAL、槽位清点），不是一次性手工确认——E7 双轮同规格重放。
+其他设备是 `unknown/pending`，没有设备响应时不得猜
 verified——服务端 COMPLETED ≠ 本机 verified。显示 backup_expires_at 与
 provider_limitations，不声称供应商零保留；用户导出的外部副本与无法在线
 控制的旧设备均明确说明。
@@ -142,7 +157,9 @@ owner_key = canonical backend origin + server user_id（哈希后作存储键与
 **GrantScopeCatalog 端点形状提案**：`GET /v1/permissions/scope-catalog` →
 `{catalog_version, actions: [{action, level, implemented, categories[],
 channels[], supports_time_window}]}`。客户端按目录渲染可授权项，未知
-action/category/channel fail-closed 不显示；与现行 policy API 的关系 =
+action/category/channel fail-closed 不显示；**catalog_version 变更纪律**
+（A 互审建议 3）：服务端新增/变更 action、channel 必须升版本，客户端按
+版本缓存失效重取——目录不成为第二个 drift 面。与现行 policy API 的关系 =
 policy 保留通用说明面，catalog 是**值级新面**（现 policy description 不能
 替代）。实际 dispatch 复验类别 AND 渠道（E6 实证 strict_scope_validator
 要求双显式）AND 可选时间窗。
@@ -198,8 +215,8 @@ WAL 真实清除证据（verified 需真实清除而非列表过滤）、离线�
    Rust `offline.sqlite3`（lib.rs QueueDb，含请求 payload 用户内容面）、
    Stronghold 具名槽——矩阵按层重写，VACUUM 分级（全账号才做）。
 
-**删除/不认同（1）**：r1「receipt 能力不放 URL、日志」等保留；唯一降级
-收紧——「任务重查不重新创建包」明确为幂等三元组语义，避免读成前端缓存。
+**收紧（1）**（r1 无整段删除；按 A 互审建议 5 与「删除」措辞区分）：
+「任务重查不重新创建包」明确为幂等三元组语义，避免读成前端缓存。
 
 **补己见（10）**：Zod `.nullable()` vs `.optional()` 按 `?` 语义代码化 +
 恒发字段同批 sequencing；preview_digest 不透明回显；recover 三输入要求
@@ -208,3 +225,10 @@ WAL 真实清除证据（verified 需真实清除而非列表过滤）、离线�
 EventSyncCoordinator 相容性；导出附包 defer 认领（B 决定 + 理由）；
 GrantScopeCatalog 端点形状 + 与 policy API 关系；grant 空态/expires_at
 展示；许可盘点交付物形状 + 未澄清阻断发布规则。
+
+**同步（@A-r2 `581606a`，A 互审 §5/§6 采纳）**：① retry 输入收为
+`expected_version` 单字段，镜像同步（§1）+ 409→重取 与 M4 confirm 同构；
+② 账号删除状态查询走 receipt 轮询、手动重试仅 source/memory（§2）；
+③ 旧客户端保留旧 DELETE 入口原语义（§1）；④ catalog_version 变更纪律
+（§5）；⑤ verified 判据 = 可复跑检查命令输出（§3）；⑥ recover 留存完整
+请求体参与摘要匹配 + receipt 视图统一「回执不可用」文案（§2）。
