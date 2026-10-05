@@ -1,11 +1,14 @@
 """Semantic memory lifecycle actions (confirm / correct / reject).
 
 D-032 ruling: correction_status moves only through these actions — direct
-fills on Create/Update would bypass the version chain. The chain direction is
-**superseded-by** (A proposal, B counter-signed 2026-10-01, migration plan
+fills on Create/Update would bypass the version chain. The chain direction
+is **superseded-by** (A proposal, B counter-signed 2026-10-01, migration plan
 §8): when a new version lands, the *old* row gets ``supersedes_id`` set to
-the new row's id in the same transaction. Live row == ``supersedes_id IS
-NULL``; the partial unique index and the retrieval filter both key on that.
+the new row's id in the same transaction. Live row == the shared predicate
+in :func:`live_memory_conditions` (D-036 §1: no superseded pointer AND the
+validity window covers ``now``); the partial unique index keys on the
+immutable subset of that predicate (``valid_to IS NULL``) as a write-order
+guard only.
 
 The correct/supersede logic here is the template the L2 aggregation writer
 will reuse (same transaction ordering: retire the old row *before* inserting
@@ -16,8 +19,9 @@ from __future__ import annotations
 
 import logging
 import uuid
+from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import ColumnExpressionArgument, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -27,6 +31,28 @@ from backend.models.enums import MemoryCorrectionStatus
 from backend.models.memory import Memory
 
 logger = logging.getLogger(__name__)
+
+
+def live_memory_conditions(
+    now: datetime | None = None,
+) -> list[ColumnExpressionArgument[bool]]:
+    """The single live-row predicate (D-036 §1); every reader spreads it.
+
+    Live == ``supersedes_id IS NULL`` AND (``valid_from`` NULL or <= now)
+    AND (``valid_to`` NULL or > now). NULL bounds are unbounded on that
+    side; the window is ``valid_from <= now < valid_to``. Before this
+    predicate, three readers keyed on ``supersedes_id IS NULL`` alone, so a
+    row retired by ``valid_to`` (or a retired row un-pointed by the FK's
+    SET NULL) kept flowing into retrieval, estimates and L1 lineage.
+    """
+
+    if now is None:
+        now = utcnow()
+    return [
+        Memory.supersedes_id.is_(None),
+        or_(Memory.valid_from.is_(None), Memory.valid_from <= now),
+        or_(Memory.valid_to.is_(None), Memory.valid_to > now),
+    ]
 
 
 def _require_live(memory: Memory) -> None:
@@ -147,7 +173,7 @@ def upsert_keyed_memory(
         .where(
             Memory.user_id == user_id,
             Memory.subject_key == subject_key,
-            Memory.supersedes_id.is_(None),
+            *live_memory_conditions(),
         )
         .with_for_update()
     )

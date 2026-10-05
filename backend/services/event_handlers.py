@@ -43,7 +43,7 @@ from backend.services.estimates import (
     round_half_up,
     trimmed_mean,
 )
-from backend.services.memory_lifecycle import upsert_keyed_memory
+from backend.services.memory_lifecycle import live_memory_conditions, upsert_keyed_memory
 
 logger = logging.getLogger(__name__)
 
@@ -276,7 +276,7 @@ def _recent_episode_ids(
     conditions = [
         Memory.user_id == user_id,
         Memory.kind == MemoryKind.EPISODE,
-        Memory.supersedes_id.is_(None),
+        *live_memory_conditions(),
     ]
     if course_name is not None:
         conditions.append(Memory.source["course_name"].as_string() == course_name)
