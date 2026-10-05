@@ -37,7 +37,7 @@ bf02eeb5906aa2732708ced8fe792ae41be96dd4。本文不构成新契约冻结或开�
 | --- | --- | --- |
 | [files.py](../../backend/api/v1/files.py)、[enqueue.py](../../backend/worker/enqueue.py) | 先提交关系删除，再删对象；失败进入 Redis orphan set | DB 行已消失且 Redis 失效时，清理凭据可能丢失。改为同事务持久清理账本，Redis 只负责唤醒 |
 | [memory.py](../../backend/api/v1/memory.py)、[memory_lifecycle.py](../../backend/services/memory_lifecycle.py) | 有来源、修正/拒绝、superseded-by 链 | DELETE 仅删行。删除替代行的 SET NULL 可能重新暴露旧版本；需要全链/失效/重算规则 |
-| [memory_retrieval.py](../../backend/services/memory_retrieval.py)、[estimates.py](../../backend/services/estimates.py) | live/non-rejected 过滤、独立估时样本门槛 | 两路径未过滤 valid_to；只写 valid_to 不足以阻止再使用。冻结失效过滤语义，保留不同门槛 |
+| [memory_retrieval.py](../../backend/services/memory_retrieval.py)、[estimates.py](../../backend/services/estimates.py)、[event_handlers.py](../../backend/services/event_handlers.py) | live/non-rejected 过滤、独立估时样本门槛 | 三处读者（检索/估时/L1证据血缘，另 _live_key_owner）均未过滤 valid_to，且 MemoryUpdate 今可直写该字段；只写 valid_to 不足以阻止再使用。冻结统一 live 谓词，保留不同门槛（A 对码核验 2026-10-05） |
 | [reference_invalidation.py](../../backend/services/reference_invalidation.py) | Chat 删除使 run/action basis 引用 source_deleted | 未覆盖 Event/Memory/file、Plan/PlanItem、回答与 mutation.response；标签不能代替清除派生内容 |
 | [agent.py](../../backend/models/agent.py)、[material.py](../../backend/models/material.py) | run context 保存引用/校验和；回答有引用元组 | args/display/basis/result、回答 quote、历史确认缓存仍可能有用户内容，不能略过 |
 | [deps.py](../../backend/api/deps.py)、[user.py](../../backend/models/user.py) | 认证检查用户存在且 is_active | 可复用账号停用门；worker/同步还需屏障与数据代际，旧 JWT 和队列不能恢复数据 |

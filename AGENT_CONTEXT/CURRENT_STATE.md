@@ -1,13 +1,17 @@
 # CURRENT_STATE
 
-**当前队列（2026-10-05 复核）**：M4 已正式收口，最终归档合并 #66，
-main bf02eeb（下文058c512为#65此前产品修复复绿点）。本次已独立核验
-远端合并状态及收口SHA的CI/Client checks双绿，E6/核账只据已归档证据，
-未重跑或访问验收库。M5处于**phase-0规划初稿、待A/B互审与协调人裁定**，
-尚未实施或冻结新决策。入口：[规划指导](TASKS/m5-planning-guidance.md)、
+**当前队列（2026-10-05 晚 A-r2 轮）**：M4 已正式收口（#66，main bf02eeb，
+收口 SHA 双 CI 绿已独立核验）。M5 phase-0 推进中：**B-r2 与 A-r2 均已
+署名修订**（协调人裁定一：r1 codex 稿仅输入材料）；A 对 B-r2 互审报告
+已交付 = **Approve 无阻塞 + 5 建议 + 1 字段级 delta**
+（[报告](HANDOFF/2026-10-05-a-review-m5-b-r2.md)，head-bound @ 293d7ca，
+含 §2 扫描表后端面七项对码全属实、E7-5/6/9 对 M4 租约/幂等原语可行）。
+待：B 对 A-r2 head-bound 互审 → 协调人裁定冻结并登记 Decision。
+A 侧运营尾巴已闭合：E6 已 dump（仓库外 D:\agenthu-e6-archive，恢复验证
+24 表计数一致）后拆栈（三进程停、compose down、volume 保留）；B worktree
+回 main 仍待 B 执行。入口：[规划指导](TASKS/m5-planning-guidance.md)、
 [双草任务](TASKS/m5-phase0-prereq-docs.md)、
 [状态核验与交接](HANDOFF/2026-10-05-m5-planning-verification.md)。
-E6日志/dump后拆栈、B worktree回main两项运营尾巴本轮未执行/验证。
 
 Updated: 2026-10-05 · Milestone: **M4（Agent 运行时、Chat 与主动 Agent）——已收口（2026-10-05，D-030 双证齐：E6 六用例两轮绿 + B 核账账实相符；main `058c512` 复绿；实施链 #50–#65 全合，见 2026-10-05 收口条目）**。M3 已收口（main `5b381fd`，D-030 口径出口判据「代码 + 真机双证」达成，见 2026-10-03 收口条目）。M2 已关闭（main `e2a80e6`，出口判据「四绿三窗口双人」达成，见 2026-10-02 条目）。M0/M1 已合并（PR #1-#15，round-5 数据闭环验收通过 + e2e 首跑解锁）；对概念基线的完整差距评估见 `HANDOFF/2026-09-30-implementation-evaluation.md`（§8 七子句：4 达成 + 1 部分 + 2 缺失），M2 出口判据即该报告末节的场景化 §8 全句。路线大纲（M2–M8）已经 A/B 确认采纳（**D-030 accepted**，含三处修订：M3 同步产出删除/依赖图设计、TECH_STACK 依赖方已注取代、m2-breakdown 已对齐大纲口径）。
 · 集成分支 `integration/study-time-m0` 已合并 Backend（`61fcf82`）与客户端

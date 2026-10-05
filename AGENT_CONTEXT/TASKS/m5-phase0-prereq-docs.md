@@ -1,6 +1,7 @@
 # M5 phase-0：数据生命周期与数据控制双草互审
 
-Status: **r1 初稿已备齐，等待 A/B 互审与协调人裁定（2026-10-05）**。
+Status: **B-r2 与 A-r2 已署名修订（2026-10-05），A 对 B-r2 互审报告已
+交付（Approve 无阻塞）；待 B 对 A-r2 head-bound 互审与协调人裁定**。
 输入：M4收口 bf02eeb、D-030、M3删除图、M4五项结转；
 总指导见 [m5-planning-guidance](m5-planning-guidance.md)。
 

@@ -1,8 +1,11 @@
 # M5 A 草稿：数据生命周期、导出删除与运行契约
 
-Status: **r1 提案，2026-10-05；待 A 修订、B 互审、协调人裁定**。
-基线 bf02eeb；边界/负责人见 [phase-0](m5-phase0-prereq-docs.md)。
-以下字段、期限与阈值均为拟冻结内容，不声称现已实现。
+Status: **r2，A 署名修订（2026-10-05）**。r1 是外部 codex 输入材料（协调人
+裁定一），不构成共识基线；r2 起 A 认领作者身份——改错、删不认同项、补己见，
+修订账见 §9（供 B 互审逐条对照）。基线 bf02eeb；边界/负责人见
+[phase-0](m5-phase0-prereq-docs.md)。以下字段、期限与阈值均为拟冻结内容，
+不声称现已实现；文中引用的现行码位均在 bf02eeb 对码核验，
+核验记录见 [A 对 B-r2 互审报告](../HANDOFF/2026-10-05-a-review-m5-b-r2.md)。
 
 ## 1. 导出、删除与验证使用同一图
 
@@ -27,9 +30,22 @@ A 实现前把本表与全部ORM tables/JSON字段/Redis key/本地储存对照�
 结果保守清除并列preview；若涉及无法区分的原创内容，则阻塞子集操作、
 提供全账号删除，不静默跳过。
 
-Memory reader与估时reader都补有效期条件：valid_from<=now（NULL无下界），
-valid_to IS NULL或valid_to>now；保留既有live/non-rejected及不同的
-confidence/sample门槛。整链删除先枚举闭包并同事务处理，不能依赖SET NULL。
+统一 live 谓词并落到**全部** live 行读者：
+`supersedes_id IS NULL` 且 `valid_to IS NULL 或 valid_to>now` 且
+`valid_from IS NULL 或 valid_from<=now`，叠加既有 non-rejected 过滤与
+各自 confidence/sample 门槛。bf02eeb 现状以 `supersedes_id IS NULL` 定义
+live 的码位共四处：memory_retrieval.py:71（检索）、estimates.py:70
+（估时 live_key_row）、**event_handlers.py:279（L1 episode 证据血缘，
+r1 漏记）**、api/v1/memory.py:47（_live_key_owner 冲突检查）；四处都必须
+换谓词。partial unique index（subject_key WHERE supersedes_id IS NULL）
+保留为**写序守卫**，不承担读时 live 定义——索引谓词不能含 now()。
+另两点：①MemoryUpdate（schemas/memory.py:78-79）今天允许客户端直写
+valid_from/valid_to，即“行被标失效而读者照读”是**现时可触发**的缺口，
+不是潜伏风险；r2 提案把两字段移出客户端可写面（§8-6）。②删除替代行触发
+FK SET NULL（models/memory.py:114）会让旧行带着已过期的 valid_to 回到
+`supersedes_id IS NULL` 位——统一谓词在读路径恰好挡住它，但 _live_key_owner
+与写侧判定必须同谓词，否则复活行占住 subject_key 使新建撞 conflict。
+整链删除先枚举闭包并同事务处理，不能依赖SET NULL。
 L2样本不足时全链清理或保留不可检索无内容占位，需§8裁定。
 独立用户修正可保留，但去掉被删来源片段/证据/嵌入并重算有效性；
 CONFIRMED不代表免除删除。
@@ -51,7 +67,8 @@ CONFIRMED不代表免除删除。
 3. 新写入、context、dispatch、extract/embed/backfill、Focus/投影在入口
    与最终写入/外发前检查屏障/代际；仅enqueue检查不足。外部调用返回
    后再复查，旧结果不得写回。
-4. QUEUED/RUNNING run使用已有CANCELLED；PENDING/CONFIRMED/
+4. QUEUED/RUNNING/**WAITING_CONFIRMATION** run使用已有CANCELLED
+   （枚举见 models/agent.py:41）；PENDING/CONFIRMED/
    FAILED_RETRYABLE action用已有FAILED，code=account_deleted/source_deleted。
    不把CONFIRMED伪称时间过期。EXECUTING待执行边界/租约核验；
    已发外部请求不能声称撤回，结果不明记录outstanding side effect，
@@ -64,11 +81,15 @@ CONFIRMED不代表免除删除。
    后解除。账号恢复抑制凭据独立于旧备份，见§5。
 
 复用M4租约模式，增加durable phase/checkpoint/attempt。
-单步timeout提案30s，最多5次自动尝试，退避5/30/120/300s；
-RETRY_WAIT含next_retry_at与恢复phase；耗尽为FAILED，列剩余项与safe error。
-人工重试仍是原operation，不能解除屏障。
-存储超时/403不等于不存在；现exists()把部分错误当false，
-不可当擦除证据。验证必须区分确证404、403与网络故障。
+单步timeout提案30s，最多5次自动重试，退避5/30/120/300/900s
+（每次重试各配一档），自动重试总窗口提案24h；RETRY_WAIT含next_retry_at
+与恢复phase；耗尽为FAILED，列剩余项与safe error。
+人工重试仍是原operation，不能解除屏障；**手动重试仅适用于owner仍可
+业务认证的范围（source/memory）**——账号删除后owner无法业务认证，
+其FAILED清理只走自动重试与运维处置，receipt能力保持只读（§4）。
+存储超时/403不等于不存在；现exists()把ClientError/BotoCoreError全归
+False（storage.py:134-139），不可当擦除证据。验证必须区分确证404、
+403与网络故障。
 
 ## 3. 导出一致性与包
 
@@ -108,7 +129,7 @@ strict enum、拒绝未知字段。下表 ? 表示**字段必有但允许null**�
 | POST /exports | client_request_id, include_files（可省略，默认true） | 202 DataOperation，本人读取 |
 | GET /operations/{id} | owner auth | DataOperation，Level 0 |
 | GET /operations/{id}/download | owner auth，仅export READY | 包流，Cache-Control:no-store |
-| POST /operations/{id}/retry | client_request_id, expected_version | DataOperation，本人明确重试，不改范围 |
+| POST /operations/{id}/retry | expected_version | DataOperation，本人明确重试，不改范围；版本冲突即天然幂等（409 version_conflict），不引入第二个幂等键 |
 | GET /receipts/{id} | 专用receipt capability，Authorization头，不在URL | DataReceipt，仅读该回执，可用于账号停用后 |
 
 DeleteTarget判别联合：account {kind}；
@@ -136,17 +157,21 @@ error仅失败/等待重试非null；target仅export为null。
 
 幂等唯一(user,kind,client_request_id)；同输入返回同operation，
 不同输入409 idempotency_conflict。删除重传先查幂等，再验preview到期。
-owner必须保存在独立最小操作账本，不能因删除users行CASCADE丢掉操作或幂等；
-可用opaque owner handle并按§5管理，业务查询不得拿它恢复用户身份。
-缓存脱敏operation，不能沿用含被删正文的mutation.response。
-202代表已持久接受，不代表清除完成。
+owner、幂等记录与data_generation都必须保存在独立最小操作账本
+（以opaque owner handle键控），不能因删除users行CASCADE丢掉；
+业务查询不得拿它恢复用户身份。缓存脱敏operation，
+不能沿用含被删正文的mutation.response。202代表已持久接受，
+不代表清除完成。
 
-账号删除创建时发随机高熵receipt capability，持久账本仅存摘要。
-为丢失首次202保留独立加密短期交付缓存（提案10分钟）；
+账号删除创建时发随机高熵receipt capability（≥128-bit随机），
+持久账本仅存摘要。为丢失首次202保留独立加密短期交付缓存（提案10分钟）；
 特殊恢复接口 POST /deletions/recover 仅凭原JWT身份、原client_request_id
 和同请求摘要返回原operation与能力，停用身份仅可走此路径，
 不重新开放业务JWT。过期后不能新发能力；UI说明回执可能无法找回，
-清理继续。该路径需防枚举/限流测试，密钥与业务库隔离。
+清理继续。该路径与 GET /receipts/{id} 的防枚举硬化（r2 补）：
+不区分“无此请求/已过期/身份不符”（统一404）、按原身份与按IP双限流
+（429带Retry-After）、digest作为高熵第二因子参与匹配、
+响应时延不构成存在性oracle、能力值不进日志。密钥与业务库隔离。
 能力90天到期，仅读脱敏回执，不能导出/恢复/列数据；B安全保存，
 GET operation不能重复吐secret，receipt_capability在普通读取为null。
 
@@ -188,11 +213,14 @@ GPS/录音/消费/通知原文等新类别不借M5扩大接入。
 - Redis共享限流：受信代理规则识别登录来源，owner模型/导出额度、并发任务
   分桶原子结算。生产Redis失效时新认证/昂贵任务503；
   durable删除继续DB扫尾、普通owner读取可用，不静默退每进程无限额度。
-  至少2API进程+2worker验证唯一claim/租约执行。
+  至少2API进程+2worker验证唯一claim/租约执行。现rate_limit.py为进程内
+  defaultdict/deque（core/rate_limit.py:14-23，docstring自认单worker假设），
+  `hit`/`retry_after` 即替换缝。
 - 备份恢复：提案每日加密DB+对象清单，Alpha RPO<=24h/RTO<=4h，
-  是拟目标不是实测。删除抑制账本独立保存；
-  隔离恢复→重放抑制/清理→checksum/schema校验→放流量，
-  不从旧Redis dump恢复任务。演练从bf02eeb升级；降级不能恢复已删内容。
+  是拟目标不是实测。删除抑制账本独立保存；恢复时抑制与data_generation
+  从独立账本重放（§4），不依赖users行、不从旧Redis dump恢复任务；
+  隔离恢复→重放抑制/清理→checksum/schema校验→放流量。
+  演练从bf02eeb升级；降级不能恢复已删内容。
 - dev/test/alpha secrets隔离，保留现强密钥校验。
   有权限操作者新key验证→切配置→撤旧key→旧拒绝/新最低额度验证；
   证据仅key标识与结果。备份/E6敏感证据本地受控，不提交公共仓库。
@@ -215,13 +243,54 @@ DTO随phase-0冻结，不得仅在客户端改代际头绕过。
 
 ## 8. 必须显式裁定
 
-1. D-032删除图的有效期过滤、整链忘记、L2不足样本与独立修正保留。
-2. 90d/14d/24h/30d、隐藏Chat7d、备份抑制和receipt恢复协议。
+1. D-032删除图的有效期过滤（统一live谓词与四处读者改造）、整链忘记、
+   L2不足样本与独立修正保留。
+2. 90d/14d/24h/30d、隐藏Chat7d、备份抑制、receipt恢复协议与
+   RPO<=24h/RTO<=4h目标。
 3. API字段/状态、确认摘要、旧DELETE窗口/同步代际兼容。
 4. grant新建/扩scope确认与并发版本，notify实际channel、
-   local_time_window执行或禁止；现matcher只比category。
-   不支持渠道不能存有效grant，旧grant如何迁移/撤销一起裁定。
+   local_time_window执行或禁止；现matcher只比category
+   （agent_tools.py:173-174），strict_scope_validator对channels仅要求
+   存在（:706-711），不值级比较。不支持渠道不能存有效grant，
+   旧grant如何迁移/撤销一起裁定。
 5. E7受控在线擦除与离线/备份/供应商限制分开报告，
    不承诺所有磁盘历史扇区即时物理擦除。
+6. valid_from/valid_to移出MemoryUpdate的兼容窗口与迁移
+   （现schemas/memory.py:78-79可直写）；SET NULL复活行的写侧判定
+   与partial unique index写序守卫的定位。
 
 当前无A/B签认或协调人采纳记录；验收见 [E7](m5-e7-acceptance.md)。
+
+## 9. r2 修订账（供 B 互审逐条对照）
+
+**改错（4）**：
+1. §1 r1 只列检索/估时两条读路径；对码 bf02eeb 实为**四处**
+   `supersedes_id IS NULL` 读者（加 event_handlers.py:279 的 L1 证据
+   血缘与 api/v1/memory.py:47 的 _live_key_owner）。且 MemoryUpdate
+   今可直写 valid_from/valid_to——缺口现时可触发，非潜伏。
+2. §2.4 run 终态漏 WAITING_CONFIRMATION（枚举已有该值，
+   models/agent.py:41）。
+3. §2 重试退避 5/30/120/300s 四值配“最多5次尝试”对不齐；
+   补 900s 档并加自动重试总窗口 24h。
+4. §4 retry 输入的 client_request_id 冗余——expected_version 的
+   409 version_conflict 已是幂等；字段级 delta 供 B 重镜像 §1。
+
+**删除/不认同（1）**：
+1. r1 手动重试未限定范围。收紧：manual retry 仅适用 source/memory
+   （owner 仍可业务认证）；账号删除后 FAILED 只走自动重试与运维处置，
+   receipt 能力保持只读——与 §4 “仅读脱敏回执”自洽。
+
+**补己见（6）**：
+1. 统一 live 谓词（读四处+写侧同源）+ partial unique index 定位为
+   写序守卫 + SET NULL 复活行带 stale valid_to 的读写两侧对齐（§1）。
+2. valid_from/valid_to 移出 MemoryUpdate，冻结为生命周期内部字段（§8-6）。
+3. recover/receipts 防枚举硬化五条：高熵能力、统一404、双限流、
+   digest 第二因子、无时延oracle（§4）。
+4. 幂等记录与 data_generation 落独立操作账本，restore 重放不依赖
+   users 行（§4/§6）。
+5. 孤儿集现行凭据码位入档：files.py:194-211（行先提交、对象best-effort、
+   mark_storage_orphan返回值被忽略）、enqueue.py:58-89（SADD/SPOP破坏性
+   弹出，pop后崩溃丢key）、worker/tasks.py:251-275（drain cron）——
+   §2.5 durable账本方案即覆盖此三处。
+6. storage exists() 把 ClientError/BotoCoreError 全归 False
+   （storage.py:134-139）——§2.5 “验证三分”的现行依据。

@@ -36,15 +36,22 @@ C:/Users/惠普/.codex/worktrees/m5-planning/agenthu，
 分支codex/m5-planning，从bf02eeb建立。
 旧M4辅助草稿不能作为已冻结D-034/D-035替代品。
 
-两项尾巴**仍未在本轮执行/验证**：
+两项尾巴的执行状态（A 侧已闭合，B 侧待 B 自行执行）：
 
-- A保留e6-logs原始目录，agenthu_e6 pg_dump到受控本地文件，
+- ~~A保留e6-logs原始目录，agenthu_e6 pg_dump到受控本地文件，
   验证dump可读/恢复后再停其uvicorn/arq/replay、撤compose。
-  不把dump/未脱敏日志推到public仓库，不盲目删volume。
+  不把dump/未脱敏日志推到public仓库，不盲目删volume。~~
+  **A 已于 2026-10-05 执行完毕**：pg_dump（plain SQL，24 张 CREATE TABLE，
+  结尾标记完整）落 `D:\agenthu-e6-archive\`（仓库外受控目录）；
+  恢复验证——灌入 scratch 库 agenthu_e6_verify 后逐表计数与源库
+  24/24 完全一致、零错误，验证后 scratch 已删；随后停 uvicorn/arq/
+  replay 三进程、`docker compose -p agenthu --profile s3mock down`
+  （volume 全部保留，agenthu_e6 库未删）；e6-logs 留 wt-a 本地并加
+  `.git/info/exclude` 防误提交。dump/日志均未入任何仓库。
 - B的agenthu-b-cursor占用已合docs/m4-closure-d030，
   下次由B自行检查本地改动后切回main/拉齐；本轮未动其工作区或强删分支。
 
-这两项不否定M4已收口；也不能因协调报告已发指令就写成已执行。
+B 侧尾巴不否定M4已收口；也不能因协调报告已发指令就写成已执行。
 
 ## 3. 规划结论与下一步
 
