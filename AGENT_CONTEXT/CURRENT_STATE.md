@@ -1,19 +1,18 @@
 # CURRENT_STATE
 
-**当前队列（2026-10-05 深夜 D-036 冻结轮）**：M4 已正式收口（#66，main
-bf02eeb）。**M5 phase-0 已冻结（[D-036](DECISIONS.md)，双契约
-@`de8f5c0`）**：双向互审齐——A→B @`293d7ca` 机械延续至 `de8f5c0`
-（机械延续规则第三次适用），B→A @`581606a`（[B 报告](HANDOFF/2026-10-05-b-review-m5-a-r2.md)
-含七项对码 + 防枚举拼接零缝 + E7-7/8 客户端可行性）；B 作者身份确认
-双落档。**P0-1（A）/ P0-2（B）即刻并行开工**——P0-2 = owner 命名空间
-（TS localStorage / Rust offline.sqlite3 / Stronghold 三层）、无主队列
-隔离、本地清理面（契约 = B 稿 §3/§4）。本提交 = #67 最后一提交
-（DECISIONS 登记 D-036 + phase-0 翻 frozen + 本队列更新），待 A 转录
-忠实性 head-bound approve → CI 绿转 ready → 协调人合并即开工。运营尾巴
-全闭合（A：E6 dump 恢复验证 24/24 后拆栈；B：worktree 回 main）。
-入口：[规划指导](TASKS/m5-planning-guidance.md)、
-[双草任务](TASKS/m5-phase0-prereq-docs.md)、
-[状态核验与交接](HANDOFF/2026-10-05-m5-planning-verification.md)。
+**当前队列（2026-10-05 深夜，P0-1 切片 1 送审）**：#67 已合并（main
+`95858ee`），**D-036 生效、P0-1/P0-2 并行开工**。A 侧 **P0-1 切片 1
+已实现待审**（[任务书](TASKS/m5-p0-1-live-predicate.md)，分支
+`feature/m5-p0-1-live-predicate`）：统一 live 谓词
+`live_memory_conditions` 接入五处（四读者 + keyed upsert 写侧）、
+`MemoryCreate/Update` 移除 validity（D-036 §6，Create 侧为原则完足的
+解释步）、唯一索引窄化 `valid_to IS NULL`（迁移 `45b7db4cb2cb` 升降级
+往返 + autogenerate 零漂移已验）、OpenAPI −48 行无漂移、新 5 例集成
+测试 + 旧往返测试改钉新契约；全量测试/ruff/pyright 绿。待 B head-bound
+互审 → 协调人对库实测后合并。P0-1 后续（持久账本/屏障/代际/依赖矩阵）
+与 B 侧 P0-2（三层 owner 命名空间）并行。运营尾巴全闭合（E6 dump 验读
+拆栈、volume 保）。入口：[规划指导](TASKS/m5-planning-guidance.md)、
+[双草任务](TASKS/m5-phase0-prereq-docs.md)。
 
 Updated: 2026-10-05 · Milestone: **M4（Agent 运行时、Chat 与主动 Agent）——已收口（2026-10-05，D-030 双证齐：E6 六用例两轮绿 + B 核账账实相符；main `058c512` 复绿；实施链 #50–#65 全合，见 2026-10-05 收口条目）**。M5 phase-0 已冻结（D-036，2026-10-05，双契约 @`de8f5c0`；P0-1/P0-2 开工）。M3 已收口（main `5b381fd`，D-030 口径出口判据「代码 + 真机双证」达成，见 2026-10-03 收口条目）。M2 已关闭（main `e2a80e6`，出口判据「四绿三窗口双人」达成，见 2026-10-02 条目）。M0/M1 已合并（PR #1-#15，round-5 数据闭环验收通过 + e2e 首跑解锁）；对概念基线的完整差距评估见 `HANDOFF/2026-09-30-implementation-evaluation.md`（§8 七子句：4 达成 + 1 部分 + 2 缺失），M2 出口判据即该报告末节的场景化 §8 全句。路线大纲（M2–M8）已经 A/B 确认采纳（**D-030 accepted**，含三处修订：M3 同步产出删除/依赖图设计、TECH_STACK 依赖方已注取代、m2-breakdown 已对齐大纲口径）。
 · 集成分支 `integration/study-time-m0` 已合并 Backend（`61fcf82`）与客户端

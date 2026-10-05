@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 
 import pytest
 
@@ -95,6 +94,10 @@ def test_memory_rejects_other_users_source_event(client, auth_factory) -> None:
 
 
 def test_memory_extension_fields_round_trip(client, auth_headers) -> None:
+    """D-031 §3 extension fields persist; validity is server-managed
+    (D-036 §6), so client-supplied valid_from/valid_to are ignored like
+    any unknown key — the payload keeps sending them the way an old client
+    would, and the read side must stay neutral."""
     event = client.post("/v1/events", json=assignment_event(), headers=auth_headers).json()
     document_evidence = {
         "type": "document",
@@ -127,15 +130,11 @@ def test_memory_extension_fields_round_trip(client, auth_headers) -> None:
     assert memory["use_count"] == 0
     assert memory["last_used_at"] is None
     assert memory["embedding"] is None
-    # Compare validity bounds as absolute instants: the echoed offset follows
-    # the flushed (not re-read) ORM value, which is the input offset here —
-    # the same serialization behavior round-5 pinned down for task due_at.
-    assert datetime.fromisoformat(memory["valid_from"]) == datetime.fromisoformat(
-        "2026-10-01T08:00:00+08:00"
-    )
-    assert datetime.fromisoformat(memory["valid_to"]) == datetime.fromisoformat(
-        "2027-01-31T23:59:00+08:00"
-    )
+    # Validity left the writable surface with D-036 §6: the ignored bounds
+    # must not land on the row (an unretired live row is the neutral state;
+    # retirement happens through the lifecycle chain only).
+    assert memory["valid_from"] is None
+    assert memory["valid_to"] is None
 
 
 def test_memory_embedding_round_trip_and_not_client_writable(

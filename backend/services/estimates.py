@@ -30,6 +30,7 @@ from sqlalchemy.orm import Session
 from backend.models.enums import MemoryCorrectionStatus, PlanItemStatus, TaskStatus
 from backend.models.memory import Memory
 from backend.models.task import Task
+from backend.services.memory_lifecycle import live_memory_conditions
 
 DEFAULT_TASK_MINUTES = 60
 COURSE_SAMPLE_LIMIT = 20
@@ -67,7 +68,7 @@ def live_key_row(session: Session, *, user_id: uuid.UUID, subject_key: str) -> M
         select(Memory).where(
             Memory.user_id == user_id,
             Memory.subject_key == subject_key,
-            Memory.supersedes_id.is_(None),
+            *live_memory_conditions(),
             Memory.correction_status != MemoryCorrectionStatus.REJECTED,
         )
     )

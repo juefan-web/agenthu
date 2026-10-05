@@ -1,9 +1,11 @@
 """The shared memory-retrieval path for decision contexts (D-031 §5).
 
-Frozen semantics (TASKS/m3-memory-schema-migration.md §5, DECISIONS D-031):
-only live rows (``supersedes_id IS NULL``), REJECTED rows filtered, and a
-confidence floor of 0.3 that callers may raise but never bypass. Vector
-recall (M3) must be applied AFTER this filter, never instead of it.
+Frozen semantics (TASKS/m3-memory-schema-migration.md §5, DECISIONS D-031,
+liveness widened by D-036 §1): only live rows
+(:func:`backend.services.memory_lifecycle.live_memory_conditions`),
+REJECTED rows filtered, and a confidence floor of 0.3 that callers may raise
+but never bypass. Vector recall (M3) must be applied AFTER this filter,
+never instead of it.
 
 Two gates live in this codebase on purpose:
 
@@ -36,6 +38,7 @@ from sqlalchemy.orm import Session
 from backend.db.base import utcnow
 from backend.models.enums import MemoryCorrectionStatus, MemoryKind
 from backend.models.memory import Memory
+from backend.services.memory_lifecycle import live_memory_conditions
 
 RETRIEVAL_CONFIDENCE_FLOOR = 0.3
 MAX_RETRIEVAL_LIMIT = 200
@@ -68,7 +71,7 @@ def retrieve_memories(
     )
     conditions: list[Any] = [
         Memory.user_id == user_id,
-        Memory.supersedes_id.is_(None),
+        *live_memory_conditions(),
         Memory.correction_status != MemoryCorrectionStatus.REJECTED,
         Memory.confidence >= floor,
     ]

@@ -53,13 +53,14 @@ class MemoryCreate(BaseModel):
     source: dict[str, Any] = Field(default_factory=dict)
     source_event_ids: list[uuid.UUID] = Field(default_factory=list)
     # M2 extension (D-031 §3). subject_key/evidence are writable; the version
-    # chain pointer and the decision-telemetry columns are server-managed and
-    # intentionally absent here (they appear in MemoryRead only).
+    # chain pointer, the validity windows and the decision-telemetry columns
+    # are server-managed and intentionally absent here (they appear in
+    # MemoryRead only). valid_from/valid_to were removed from the writable
+    # surface by D-036 §6 — sending them is silently ignored, same as any
+    # unknown key, so old clients keep working.
     kind: MemoryKind | None = None
     subject_key: str | None = Field(default=None, max_length=255)
     evidence: list[Evidence] = Field(default_factory=list, max_length=100)
-    valid_from: datetime | None = None
-    valid_to: datetime | None = None
 
 
 class MemoryUpdate(BaseModel):
@@ -75,8 +76,9 @@ class MemoryUpdate(BaseModel):
     kind: MemoryKind | None = None
     subject_key: str | None = Field(default=None, max_length=255)
     evidence: list[Evidence] | None = Field(default=None, max_length=100)
-    valid_from: datetime | None = None
-    valid_to: datetime | None = None
+    # No valid_from/valid_to either (D-036 §6: validity is server-managed,
+    # retirement happens through the lifecycle chain only) — same silent
+    # ignore on the wire as correction_status above.
 
 
 class MemoryCorrectRequest(BaseModel):

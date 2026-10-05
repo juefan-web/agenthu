@@ -24,23 +24,31 @@ class Memory(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     a wrong memory can be corrected, down-weighted or deleted.
 
     M2 extension (D-031 §3, migration plan in TASKS/m3-memory-schema-migration.md):
-    keyed rows aggregate by ``subject_key`` with at most one live row
-    (``supersedes_id IS NULL``) per (user, key); corrections supersede instead
-    of editing in place; ``evidence`` is the canonical reference list (events,
-    memories, document anchors); ``use_count``/``last_used_at`` record only
-    "entered a decision context" (planner retrieval / agent context assembly),
-    never "was retrieved as a candidate".
+    keyed rows aggregate by ``subject_key`` with at most one live row per
+    (user, key) — live per the shared predicate in
+    ``services/memory_lifecycle.live_memory_conditions`` (D-036 §1: no
+    superseded pointer AND validity window covers now); corrections supersede
+    instead of editing in place; ``evidence`` is the canonical reference list
+    (events, memories, document anchors); ``use_count``/``last_used_at``
+    record only "entered a decision context" (planner retrieval / agent
+    context assembly), never "was retrieved as a candidate".
     """
 
     __tablename__ = "memories"
     __table_args__ = (
-        # Live-row invariant: at most one non-superseded row per (user, key).
+        # Live-row invariant: at most one non-superseded, unretired row per
+        # (user, key). The index predicate is the immutable SUBSET of the
+        # live predicate — it cannot contain now() — so it stays a write-order
+        # guard (two open-ended live rows collide) and NOT the read-side live
+        # definition; readers use live_memory_conditions (D-036 §1).
         Index(
             "uq_memories_user_subject_live",
             "user_id",
             "subject_key",
             unique=True,
-            postgresql_where=text("subject_key IS NOT NULL AND supersedes_id IS NULL"),
+            postgresql_where=text(
+                "subject_key IS NOT NULL AND supersedes_id IS NULL AND valid_to IS NULL"
+            ),
         ),
         # Reverse-chain traversal for the deletion/dependency graph.
         Index(

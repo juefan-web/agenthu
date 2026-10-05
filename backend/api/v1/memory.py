@@ -21,7 +21,12 @@ from backend.schemas.memory import (
     MemoryUpdate,
 )
 from backend.services.lookup import ensure_owned_events, get_memory
-from backend.services.memory_lifecycle import confirm_memory, correct_memory, reject_memory
+from backend.services.memory_lifecycle import (
+    confirm_memory,
+    correct_memory,
+    live_memory_conditions,
+    reject_memory,
+)
 
 router = APIRouter(prefix="/memory", tags=["memory"])
 
@@ -37,14 +42,16 @@ def _dump_evidence(evidence: Sequence[Evidence]) -> list[dict]:
 
 
 def _live_key_owner(db: DBSession, user_id: uuid.UUID, subject_key: str | None) -> uuid.UUID | None:
-    """Id of the live row occupying (user, subject_key), if any (D-031 §3)."""
+    """Id of the live row occupying (user, subject_key), if any (D-031 §3;
+    liveness per D-036 §1, so a retired-but-unpointed row does not squat
+    the key)."""
 
     if subject_key is None:
         return None
     stmt = select(Memory.id).where(
         Memory.user_id == user_id,
         Memory.subject_key == subject_key,
-        Memory.supersedes_id.is_(None),
+        *live_memory_conditions(),
     )
     return db.scalar(stmt)
 
