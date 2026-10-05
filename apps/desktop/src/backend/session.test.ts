@@ -352,3 +352,81 @@ describe("createBackendSession", () => {
     expect(useBackendSessionStore.getState()).toMatchObject({ status: "ready", displayName: "Student" });
   });
 });
+
+describe("onOwnerChange (P0-2 / D-036)", () => {
+  it("notifies the owner after login/restore and null after logout or expiry", async () => {
+    const store = memoryStore();
+    const fetcher = vi.fn(async (input: RequestInfo | URL) =>
+      String(input).endsWith("/v1/auth/login") ? json(token) : json(user),
+    );
+    const owners: Array<{ origin: string; userId: string } | null> = [];
+    const session = createBackendSession({
+      baseUrl: "http://backend",
+      store,
+      fetcher,
+      now: () => 1_000,
+      onOwnerChange: (owner) => { owners.push(owner); },
+    });
+
+    await session.login("student@example.com", "password123");
+    expect(owners).toEqual([{ origin: "http://backend", userId: "u-1" }]);
+    expect(useBackendSessionStore.getState().userId).toBe("u-1");
+
+    await session.logout();
+    expect(owners).toEqual([{ origin: "http://backend", userId: "u-1" }, null]);
+
+    // restore 成功再通知同一 owner（去重：不重复通知同 id）
+    await session.login("student@example.com", "password123");
+    expect(owners).toEqual([{ origin: "http://backend", userId: "u-1" }, null, { origin: "http://backend", userId: "u-1" }]);
+
+    // 过期 restore：清除身份并通知 null
+    const expiredStore = memoryStore({ access_token: "jwt-old", expires_at: "1970-01-01T00:00:00Z" });
+    const expiredOwners: Array<{ origin: string; userId: string } | null> = [];
+    const expiredSession = createBackendSession({
+      baseUrl: "http://backend",
+      store: expiredStore,
+      fetcher,
+      now: () => Date.parse("2026-01-01T00:00:00.000Z"),
+      onOwnerChange: (owner) => { expiredOwners.push(owner); },
+    });
+    await expiredSession.restore();
+    // 新实例 currentUserId 初始即 null：等值守卫不重复通知（消费侧
+    // ownerScope.key 初始同为 null，无事可做）——owner 通知只在变化时发生
+    expect(expiredOwners).toEqual([]);
+  });
+
+  it("does not flip the owner when a replacement login fails mid-flight", async () => {
+    const store = memoryStore();
+    let loginCalls = 0;
+    let failSecondMe = false;
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path.endsWith("/v1/auth/login")) {
+        loginCalls += 1;
+        return json(loginCalls === 1 ? token : { ...token, access_token: "jwt-2" });
+      }
+      if (path.endsWith("/v1/auth/me")) {
+        if (loginCalls === 2 && failSecondMe) throw new Error("network down during me");
+        return json(loginCalls === 1 ? user : { ...user, id: "u-2" });
+      }
+      return json(user);
+    });
+    const owners: Array<string | null> = [];
+    const session = createBackendSession({
+      baseUrl: "http://backend",
+      store,
+      fetcher,
+      now: () => 1_000,
+      onOwnerChange: (owner) => { owners.push(owner?.userId ?? null); },
+    });
+
+    await session.login("student@example.com", "password123");
+    expect(owners).toEqual(["u-1"]);
+
+    // 第二次登录在 me() 阶段失败：owner 不翻到 u-2，也不误报 null
+    failSecondMe = true;
+    await expect(session.login("student@example.com", "password123")).rejects.toThrow("network down during me");
+    expect(owners).toEqual(["u-1"]);
+    expect(useBackendSessionStore.getState()).toMatchObject({ status: "ready", userId: "u-1" });
+  });
+});
