@@ -8,9 +8,17 @@ from backend.models.audit import AuditLog
 from backend.models.chat import ChatMessage, ChatSession
 from backend.models.consent import ModelContextConsent
 from backend.models.current_state import CurrentState
+from backend.models.data_lifecycle import DataBarrier, DataCleanupItem, DataOperation
 from backend.models.enums import (
     AuditActor,
     AuditDecision,
+    CleanupItemAction,
+    CleanupItemState,
+    DataBarrierScope,
+    DataBarrierState,
+    DataOperationKind,
+    DataOperationPhase,
+    DataOperationStatus,
     FocusSessionStatus,
     GoalStatus,
     MemoryCorrectionStatus,
@@ -38,7 +46,17 @@ __all__ = [
     "AuditLog",
     "ChatMessage",
     "ChatSession",
+    "CleanupItemAction",
+    "CleanupItemState",
     "CurrentState",
+    "DataBarrier",
+    "DataBarrierScope",
+    "DataBarrierState",
+    "DataCleanupItem",
+    "DataOperation",
+    "DataOperationKind",
+    "DataOperationPhase",
+    "DataOperationStatus",
     "Event",
     "FileObject",
     "FocusSession",

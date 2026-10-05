@@ -99,3 +99,62 @@ class AuditDecision(StrEnum):
     ALLOW = "allow"
     DENY = "deny"
     REQUIRE_CONFIRMATION = "require_confirmation"
+
+
+class DataOperationKind(StrEnum):
+    """Lifecycle operation kinds (M5 A-draft §4): export or deletion only."""
+
+    EXPORT = "export"
+    DELETION = "deletion"
+
+
+class DataOperationStatus(StrEnum):
+    QUEUED = "QUEUED"
+    RUNNING = "RUNNING"
+    RETRY_WAIT = "RETRY_WAIT"
+    READY = "READY"
+    COMPLETED = "COMPLETED"
+    EXPIRED = "EXPIRED"
+    FAILED = "FAILED"
+
+
+class DataOperationPhase(StrEnum):
+    """Durable phase checkpoints (A-draft §4); deletion runs the four phases."""
+
+    EXPORT_COLLECT = "export_collect"
+    EXPORT_PACKAGE = "export_package"
+    EXPORT_VERIFY = "export_verify"
+    DELETE_FENCE = "delete_fence"
+    DELETE_RELATIONAL = "delete_relational"
+    DELETE_OBJECTS = "delete_objects"
+    DELETE_VERIFY = "delete_verify"
+
+
+class CleanupItemState(StrEnum):
+    PENDING = "PENDING"
+    CLAIMED = "CLAIMED"
+    DONE = "DONE"
+    FAILED = "FAILED"
+
+
+class CleanupItemAction(StrEnum):
+    """What the durable cleanup executor must do for one item (P0-3 wires it)."""
+
+    DELETE_RELATIONAL = "delete_relational"
+    DELETE_OBJECT = "delete_object"
+    CLEAR_REDIS = "clear_redis"
+    VERIFY_ABSENT = "verify_absent"
+
+
+class DataBarrierScope(StrEnum):
+    """Barrier breadth (A-draft §2): account fences everything; source/memory
+    fence the target closure plus affected derivations."""
+
+    ACCOUNT = "account"
+    SOURCE = "source"
+    MEMORY = "memory"
+
+
+class DataBarrierState(StrEnum):
+    ACTIVE = "ACTIVE"
+    RELEASED = "RELEASED"
