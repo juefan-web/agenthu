@@ -1,6 +1,8 @@
 # M5 E7 验收草案：导出、删除与恢复双证
 
-Status: **r1 方案，2026-10-05；未执行，待双草冻结后对齐**。
+Status: **r1 方案，2026-10-05；未执行。双草已冻结（D-036），
+E7-7已按P0-2切片1（main `d7d8717`）实现基础预登记，其余用例
+随对应切片落地时同步对齐**。
 依据D-030 M5出口；[总指导](m5-planning-guidance.md)、
 [A稿](m5-data-lifecycle-ops-contract.md)、[B稿](m5-data-controls-grants-client-contract.md)。
 目标是证明系统能长期尊重用户控制权，删除后不再“记住并行动”。
@@ -36,7 +38,7 @@ expected delete/redact/recompute/retain counts及原因；B先核manifest。
 | E7-4 | Memory最新版整链忘记、source导致L2样本不足 | SET NULL不复活旧版；全部live行读者（检索、估时、L1证据血缘、live-key判定）不读valid_to失效行，PATCH不可写valid_to；向量/检索/重算不回写已忘事实；独立用户修正按预期处置 |
 | E7-5 | 账号删除与两个worker在context/dispatch/embed/结果写回各处竞态 | 新业务拒绝，run/action诚实结算；已发外部请求不伪造撤回；无新Task/Memory/回答；一份有效claim，旧结果不落库，V不受影响 |
 | E7-6 | DB已接受后Redis断供、S3超时/403、进程崩溃 | DB清理账本仍有key；状态非COMPLETED，403不当404；恢复继续同operation，最多自动5次，耗尽可核查；对象版本/导出包一起清 |
-| E7-7 | 换账号、离线旧队列、坏备份、Focus草稿、旧客户端/在途闭包 | 无跨账号重传/显示；无主队列隔离；被删来源重采不复活；本机verified需真实清SQLite/WAL、localStorage备份、凭据与临时文件；离线设备标pending |
+| E7-7 | 换账号、离线旧队列、坏备份、Focus草稿、旧客户端/在途闭包 | 无跨账号重传/显示；同上游事件双owner各自保留；换号守卫中止且批N+1不以新token推旧owner队列；无主队列隔离+仅显式adopt/discard；被删来源重采不复活；本机verified需真实清SQLite/WAL、localStorage备份、凭据与临时文件；离线设备标pending（实现基础与逐条预登记见下） |
 | E7-8 | grant管理/窄scope、撤销竞态、模型/资料两类consent | 只有实现目录可授权；错category/channel/window拒绝；到期/撤销阻发；L2不被通知L3绕过；quiet hours/daily budget与grant分别生效 |
 | E7-9 | 2API+2worker共享限流/恢复、trace链、敏感marker扫描 | 限额不翻倍；Redis断供按冻结策略；HTTP/worker/run/外部调用可关联；logs/trace/errors/审计无marker、credential、URL参数/正文 |
 | E7-10 | 从bf02eeb迁移、含删除前数据备份的隔离恢复、配置/key/许可门 | restore先重放抑制再放流量，无已删内容/旧队列复活；RPO/RTO有实测；旧key拒绝/新key可用；许可逐文件有分发结论，未澄清不能发布 |
@@ -45,6 +47,22 @@ E7-8必须验证“实际渠道”而非scope里有channels列表就算覆盖；
 现在notification.delivered仅预算结算，不能当远程设备已收消息。
 E7-10的key真实验证由有权限操作者做；replay用于可重复行为测试，
 不能替代真实key轮换证据。
+
+E7-7存储层基础已由P0-2切片1落地（main `d7d8717`，PR #69）：
+TS localStorage键与Rust offline.sqlite3复合主键
+(owner,client_event_id)/(owner,key)/(owner)两层命名空间——同上游
+事件（同client_event_id）双owner各自保留（旧全局键静默丢行已修）；
+历史行迁移全归unowned、禁自动归户；ownerKey=SHA-256(origin+"\n"+
+userId)前16hex（自包含同步实现，FIPS向量钉住）；换号守卫三道检查
+（循环顶push前/push后/setCursor前），批间换号push计数不增、
+结算不落新命名空间；未登录不推无主队列，处置仅显式
+adopt/discard且目标cursor优先。逐条预登记：①双owner同id两侧
+各自可见、互不可见；②换号中止后旧队列重发由服务端幂等兜底为
+duplicate；③unowned adopt/discard在真实SQLite执行并断言迁移后
+行为；④无主Focus草稿在P0-4处置面落地前仅断言"存在且对各owner
+不可见"（处置缺口已在#69评审记档），P0-4落地后追加处置断言；
+⑤Stronghold分槽随receipt（P0-4/P0-5）落地后追加凭据槽隔离
+断言，此前仅清单记档。
 
 ## 3. 删除后零残留核账
 
