@@ -91,6 +91,9 @@ export class EventSyncCoordinator {
     const rejections: SyncResult["rejections"] = [];
     for (let index = 0; index < pending.length; index += this.batchSize) {
       const batch = pending.slice(index, index + this.batchSize);
+      // push 前先核：上一批结算的 await 间隙可能已换号，此时 getToken
+      // 解出的是新账号 token，会把原账号队列的事件推给新账号的后端身份。
+      assertOwnerUnchanged();
       const response = await this.pushBatchWithRetry(batch);
       // remove/setCursor 都按调用时刻的 owner 落键：换号后继续跑会把结算
       // 写进新账号的命名空间，必须先停（已结算批次的 remove 在守卫之后、
@@ -101,6 +104,7 @@ export class EventSyncCoordinator {
         ...response.duplicate_event_ids,
         ...response.rejected.map((item) => item.client_event_id),
       ]);
+      assertOwnerUnchanged();
       await this.queue.setCursor(response.next_cursor);
       sent += response.accepted_event_ids.length;
       duplicates += response.duplicate_event_ids.length;

@@ -501,6 +501,34 @@ mod tests {
     }
 
     #[test]
+    fn queue_db_dedupes_concurrent_same_owner_overlapping_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Arc::new(QueueDb::new(dir.path().join("offline.sqlite3")));
+        let owner = "owner-same".to_string();
+
+        // 4 线程同 owner、完全重叠的 id 集：复合 PK (owner, client_event_id)
+        // 上的 INSERT OR IGNORE 幂等在锁竞争下必须保持——总量 = 去重后 25，
+        // 无丢失、无重复、无 locked 报错。
+        let mut workers = Vec::new();
+        for _ in 0..4 {
+            let db = Arc::clone(&db);
+            let owner = owner.clone();
+            workers.push(std::thread::spawn(move || {
+                for i in 0..25 {
+                    let id = format!("shared-event-{i}");
+                    db.with(|store| store.add(&owner, vec![event_json(&id)])).unwrap();
+                }
+            }));
+        }
+        for worker in workers {
+            worker.join().expect("queue worker must not panic");
+        }
+
+        let total = db.with(|store| store.list(&owner).map(|events| events.len())).unwrap();
+        assert_eq!(total, 25);
+    }
+
+    #[test]
     fn owner_namespaces_isolate_events_cursor_and_draft() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = QueueStore::open(&dir.path().join("offline.sqlite3")).unwrap();

@@ -42,9 +42,10 @@ export function isolateLegacyUnownedStorage(storage: Storage | null | undefined)
 }
 
 function moveIfTargetAbsent(storage: Storage, legacy: string, target: string): void {
-  if (storage.getItem(legacy) === null) return;
+  const value = storage.getItem(legacy);
+  if (value === null) return;
   if (storage.getItem(target) === null) {
-    storage.setItem(target, storage.getItem(legacy) ?? "null");
+    storage.setItem(target, value);
   }
   storage.removeItem(legacy);
 }

@@ -320,4 +320,74 @@ describe("owner switch guard (P0-2 / D-036)", () => {
     expect(await q.list()).toHaveLength(1);
     expect(await q.getCursor()).toBeNull();
   });
+
+  it("never pushes batch 2 when the account switches between batches", async () => {
+    const event2 = { ...event, client_event_id: "event-2" };
+    const q = queue();
+    await q.add([event2]);
+    let owner: string | null = "owner-a";
+    let calls = 0;
+    const backend = {
+      probeHealth: async () => true,
+      pushEvents: async () => {
+        calls += 1;
+        return {
+          accepted_event_ids: [calls === 1 ? event.client_event_id : event2.client_event_id],
+          duplicate_event_ids: [],
+          rejected: [],
+          next_cursor: "cursor-1",
+        };
+      },
+    } as never;
+    // 换号发生在批 1 完整结算（remove + setCursor 都落在 owner-a）之后、
+    // 循环推进之前：批 2 绝不能用 owner-b 的 token 推 owner-a 的队列
+    const settleCursor = q.setCursor.bind(q);
+    q.setCursor = async (next: string | null) => {
+      await settleCursor(next);
+      owner = "owner-b";
+    };
+    const coordinator = new EventSyncCoordinator(backend, q, {
+      resolveOwner: () => owner,
+      batchSize: 1,
+    });
+    await expect(coordinator.flush()).rejects.toThrow("账号已切换");
+    expect(calls).toBe(1);
+    expect(await q.list()).toEqual([event2]);
+    expect(await q.getCursor()).toBe("cursor-1");
+  });
+
+  it("leaves the cursor unset when the account switches during settlement removal", async () => {
+    const event2 = { ...event, client_event_id: "event-2" };
+    const q = queue();
+    await q.add([event2]);
+    let owner: string | null = "owner-a";
+    let calls = 0;
+    const backend = {
+      probeHealth: async () => true,
+      pushEvents: async () => {
+        calls += 1;
+        return {
+          accepted_event_ids: [calls === 1 ? event.client_event_id : event2.client_event_id],
+          duplicate_event_ids: [],
+          rejected: [],
+          next_cursor: "cursor-1",
+        };
+      },
+    } as never;
+    // 换号落在批 1 remove 的 await 间隙：remove 已按 owner-a 落键（结算
+    // 合法），但 setCursor 必须在写键前复检——否则 cursor 落进 owner-b
+    const settleRemove = q.remove.bind(q);
+    q.remove = async (ids: string[]) => {
+      await settleRemove(ids);
+      owner = "owner-b";
+    };
+    const coordinator = new EventSyncCoordinator(backend, q, {
+      resolveOwner: () => owner,
+      batchSize: 1,
+    });
+    await expect(coordinator.flush()).rejects.toThrow("账号已切换");
+    expect(calls).toBe(1);
+    expect(await q.list()).toEqual([event2]);
+    expect(await q.getCursor()).toBeNull();
+  });
 });
