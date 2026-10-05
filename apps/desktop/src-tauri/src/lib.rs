@@ -18,6 +18,63 @@ struct QueueStore {
     connection: Connection,
 }
 
+/// P0-2（D-036）：owner 维度上线迁移。旧库三表无 owner——历史行一律归
+/// 'unowned' 命名空间，禁止自动归当前账号（无主数据的处置是用户的显式
+/// 决定，走 queue_unowned_adopt / queue_unowned_discard）。重建表是因为
+/// PK 必须纳入 owner：两个账号可采集同一上游事件（client_event_id 同值），
+/// 全局唯一键会把后入队的静默丢掉。
+fn migrate_owner(connection: &Connection) -> Result<(), String> {
+    let has_owner = |table: &str| -> Result<bool, String> {
+        let mut statement = connection
+            .prepare(&format!("PRAGMA table_info({table})"))
+            .map_err(|error| error.to_string())?;
+        let rows = statement.query_map([], |row| row.get::<_, String>(1))
+            .map_err(|error| error.to_string())?;
+        let found = rows.filter_map(|row| row.ok()).any(|name| name == "owner");
+        Ok(found)
+    };
+    if !has_owner("pending_events")? {
+        connection.execute_batch(
+            "ALTER TABLE pending_events RENAME TO pending_events_old;
+             CREATE TABLE pending_events (
+                 owner TEXT NOT NULL,
+                 client_event_id TEXT NOT NULL,
+                 payload TEXT NOT NULL,
+                 PRIMARY KEY (owner, client_event_id)
+             );
+             INSERT OR IGNORE INTO pending_events SELECT 'unowned', client_event_id, payload FROM pending_events_old;
+             DROP TABLE pending_events_old;",
+        ).map_err(|error| error.to_string())?;
+    }
+    if !has_owner("sync_state")? {
+        connection.execute_batch(
+            "ALTER TABLE sync_state RENAME TO sync_state_old;
+             CREATE TABLE sync_state (
+                 owner TEXT NOT NULL,
+                 key TEXT NOT NULL,
+                 value TEXT,
+                 PRIMARY KEY (owner, key)
+             );
+             INSERT OR IGNORE INTO sync_state SELECT 'unowned', key, value FROM sync_state_old;
+             DROP TABLE sync_state_old;",
+        ).map_err(|error| error.to_string())?;
+    }
+    if !has_owner("focus_draft")? {
+        connection.execute_batch(
+            "ALTER TABLE focus_draft RENAME TO focus_draft_old;
+             CREATE TABLE focus_draft (
+                 owner TEXT PRIMARY KEY,
+                 payload TEXT NOT NULL
+             );
+             INSERT OR IGNORE INTO focus_draft SELECT 'unowned', payload FROM focus_draft_old;
+             DROP TABLE focus_draft_old;",
+        ).map_err(|error| error.to_string())?;
+    }
+    connection.execute_batch("CREATE INDEX IF NOT EXISTS idx_pending_events_owner ON pending_events(owner);")
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 impl QueueStore {
     fn open(path: &Path) -> Result<Self, String> {
         let connection = Connection::open(path).map_err(|error| error.to_string())?;
@@ -27,25 +84,30 @@ impl QueueStore {
         connection.pragma_update(None, "journal_mode", "WAL").map_err(|error| error.to_string())?;
         connection.execute_batch(
             "CREATE TABLE IF NOT EXISTS pending_events (
-                client_event_id TEXT PRIMARY KEY NOT NULL,
-                payload TEXT NOT NULL
+                owner TEXT NOT NULL,
+                client_event_id TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                PRIMARY KEY (owner, client_event_id)
             );
             CREATE TABLE IF NOT EXISTS sync_state (
-                key TEXT PRIMARY KEY NOT NULL,
-                value TEXT
+                owner TEXT NOT NULL,
+                key TEXT NOT NULL,
+                value TEXT,
+                PRIMARY KEY (owner, key)
             );
             CREATE TABLE IF NOT EXISTS focus_draft (
-                id INTEGER PRIMARY KEY CHECK (id = 1),
+                owner TEXT PRIMARY KEY,
                 payload TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS backend_origins (
                 origin TEXT PRIMARY KEY NOT NULL
             );",
         ).map_err(|error| error.to_string())?;
+        migrate_owner(&connection)?;
         Ok(Self { connection })
     }
 
-    fn add(&mut self, events: Vec<serde_json::Value>) -> Result<(), String> {
+    fn add(&mut self, owner: &str, events: Vec<serde_json::Value>) -> Result<(), String> {
         let transaction = self.connection.transaction().map_err(|error| error.to_string())?;
         for event in events {
             let id = event.get("client_event_id")
@@ -54,53 +116,58 @@ impl QueueStore {
                 .ok_or("事件缺少 client_event_id")?;
             let payload = serde_json::to_string(&event).map_err(|error| error.to_string())?;
             transaction.execute(
-                "INSERT OR IGNORE INTO pending_events (client_event_id, payload) VALUES (?1, ?2)",
-                params![id, payload],
+                "INSERT OR IGNORE INTO pending_events (owner, client_event_id, payload) VALUES (?1, ?2, ?3)",
+                params![owner, id, payload],
             ).map_err(|error| error.to_string())?;
         }
         transaction.commit().map_err(|error| error.to_string())
     }
 
-    fn list(&self) -> Result<Vec<serde_json::Value>, String> {
-        let mut statement = self.connection.prepare("SELECT payload FROM pending_events ORDER BY rowid")
+    fn list(&self, owner: &str) -> Result<Vec<serde_json::Value>, String> {
+        let mut statement = self.connection
+            .prepare("SELECT payload FROM pending_events WHERE owner = ?1 ORDER BY rowid")
             .map_err(|error| error.to_string())?;
-        let rows = statement.query_map([], |row| row.get::<_, String>(0))
+        let rows = statement.query_map(params![owner], |row| row.get::<_, String>(0))
             .map_err(|error| error.to_string())?;
         Ok(collect_pending_events(rows))
     }
 
-    fn remove(&mut self, client_event_ids: Vec<String>) -> Result<(), String> {
+    fn remove(&mut self, owner: &str, client_event_ids: Vec<String>) -> Result<(), String> {
         let transaction = self.connection.transaction().map_err(|error| error.to_string())?;
         for id in client_event_ids {
-            transaction.execute("DELETE FROM pending_events WHERE client_event_id = ?1", params![id])
-                .map_err(|error| error.to_string())?;
+            transaction.execute(
+                "DELETE FROM pending_events WHERE owner = ?1 AND client_event_id = ?2",
+                params![owner, id],
+            ).map_err(|error| error.to_string())?;
         }
         transaction.commit().map_err(|error| error.to_string())
     }
 
-    fn get_cursor(&self) -> Result<Option<String>, String> {
-        let mut statement = self.connection.prepare("SELECT value FROM sync_state WHERE key = 'event_cursor'")
+    fn get_cursor(&self, owner: &str) -> Result<Option<String>, String> {
+        let mut statement = self.connection
+            .prepare("SELECT value FROM sync_state WHERE owner = ?1 AND key = 'event_cursor'")
             .map_err(|error| error.to_string())?;
-        let mut rows = statement.query([]).map_err(|error| error.to_string())?;
+        let mut rows = statement.query(params![owner]).map_err(|error| error.to_string())?;
         match rows.next().map_err(|error| error.to_string())? {
             Some(row) => row.get(0).map_err(|error| error.to_string()),
             None => Ok(None),
         }
     }
 
-    fn set_cursor(&mut self, cursor: Option<String>) -> Result<(), String> {
+    fn set_cursor(&mut self, owner: &str, cursor: Option<String>) -> Result<(), String> {
         self.connection.execute(
-            "INSERT INTO sync_state (key, value) VALUES ('event_cursor', ?1)
-             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-            params![cursor],
+            "INSERT INTO sync_state (owner, key, value) VALUES (?1, 'event_cursor', ?2)
+             ON CONFLICT(owner, key) DO UPDATE SET value = excluded.value",
+            params![owner, cursor],
         ).map_err(|error| error.to_string())?;
         Ok(())
     }
 
-    fn focus_get_draft(&self) -> Result<Option<serde_json::Value>, String> {
-        let mut statement = self.connection.prepare("SELECT payload FROM focus_draft WHERE id = 1")
+    fn focus_get_draft(&self, owner: &str) -> Result<Option<serde_json::Value>, String> {
+        let mut statement = self.connection
+            .prepare("SELECT payload FROM focus_draft WHERE owner = ?1")
             .map_err(|error| error.to_string())?;
-        let mut rows = statement.query([]).map_err(|error| error.to_string())?;
+        let mut rows = statement.query(params![owner]).map_err(|error| error.to_string())?;
         match rows.next().map_err(|error| error.to_string())? {
             Some(row) => {
                 let payload: String = row.get(0).map_err(|error| error.to_string())?;
@@ -110,19 +177,60 @@ impl QueueStore {
         }
     }
 
-    fn focus_set_draft(&mut self, draft: Option<serde_json::Value>) -> Result<(), String> {
+    fn focus_set_draft(&mut self, owner: &str, draft: Option<serde_json::Value>) -> Result<(), String> {
         if let Some(draft) = draft {
             let payload = serde_json::to_string(&draft).map_err(|error| error.to_string())?;
             self.connection.execute(
-                "INSERT INTO focus_draft (id, payload) VALUES (1, ?1)
-                 ON CONFLICT(id) DO UPDATE SET payload = excluded.payload",
-                params![payload],
+                "INSERT INTO focus_draft (owner, payload) VALUES (?1, ?2)
+                 ON CONFLICT(owner) DO UPDATE SET payload = excluded.payload",
+                params![owner, payload],
             ).map_err(|error| error.to_string())?;
         } else {
-            self.connection.execute("DELETE FROM focus_draft WHERE id = 1", [])
+            self.connection.execute("DELETE FROM focus_draft WHERE owner = ?1", params![owner])
                 .map_err(|error| error.to_string())?;
         }
         Ok(())
+    }
+
+    /// 无主命名空间的显式处置（D-036：禁止自动归户）。adopt 把无主事件与
+    /// cursor 并入目标 owner：目标既有事件/cursor 键优先（INSERT OR IGNORE），
+    /// 服务端按 client_event_id 幂等，被丢弃的无主 cursor 只是顺序提示。
+    fn unowned_count(&self) -> Result<i64, String> {
+        self.connection.query_row(
+            "SELECT COUNT(*) FROM pending_events WHERE owner = 'unowned'",
+            [],
+            |row| row.get(0),
+        ).map_err(|error| error.to_string())
+    }
+
+    fn unowned_adopt(&mut self, target_owner: &str) -> Result<i64, String> {
+        let transaction = self.connection.transaction().map_err(|error| error.to_string())?;
+        let moved = transaction.execute(
+            "INSERT OR IGNORE INTO pending_events (owner, client_event_id, payload)
+             SELECT ?1, client_event_id, payload FROM pending_events WHERE owner = 'unowned'",
+            params![target_owner],
+        ).map_err(|error| error.to_string())? as i64;
+        transaction.execute("DELETE FROM pending_events WHERE owner = 'unowned'", [])
+            .map_err(|error| error.to_string())?;
+        transaction.execute(
+            "INSERT OR IGNORE INTO sync_state (owner, key, value)
+             SELECT ?1, key, value FROM sync_state WHERE owner = 'unowned'",
+            params![target_owner],
+        ).map_err(|error| error.to_string())?;
+        transaction.execute("DELETE FROM sync_state WHERE owner = 'unowned'", [])
+            .map_err(|error| error.to_string())?;
+        transaction.commit().map_err(|error| error.to_string())?;
+        Ok(moved)
+    }
+
+    fn unowned_discard(&mut self) -> Result<i64, String> {
+        let transaction = self.connection.transaction().map_err(|error| error.to_string())?;
+        let removed = transaction.execute("DELETE FROM pending_events WHERE owner = 'unowned'", [])
+            .map_err(|error| error.to_string())? as i64;
+        transaction.execute("DELETE FROM sync_state WHERE owner = 'unowned'", [])
+            .map_err(|error| error.to_string())?;
+        transaction.commit().map_err(|error| error.to_string())?;
+        Ok(removed)
     }
 
     /// B-4：用户显式添加的 Backend 源（allowlist 的持久化部分；构建期默认由
@@ -174,38 +282,53 @@ impl QueueDb {
 }
 
 #[tauri::command]
-fn queue_add(db: tauri::State<QueueDb>, events: Vec<serde_json::Value>) -> Result<(), String> {
-    db.with(|store| store.add(events))
+fn queue_add(db: tauri::State<QueueDb>, owner: String, events: Vec<serde_json::Value>) -> Result<(), String> {
+    db.with(|store| store.add(&owner, events))
 }
 
 #[tauri::command]
-fn queue_list(db: tauri::State<QueueDb>) -> Result<Vec<serde_json::Value>, String> {
-    db.with(|store| store.list())
+fn queue_list(db: tauri::State<QueueDb>, owner: String) -> Result<Vec<serde_json::Value>, String> {
+    db.with(|store| store.list(&owner))
 }
 
 #[tauri::command]
-fn queue_remove(db: tauri::State<QueueDb>, client_event_ids: Vec<String>) -> Result<(), String> {
-    db.with(|store| store.remove(client_event_ids))
+fn queue_remove(db: tauri::State<QueueDb>, owner: String, client_event_ids: Vec<String>) -> Result<(), String> {
+    db.with(|store| store.remove(&owner, client_event_ids))
 }
 
 #[tauri::command]
-fn queue_get_cursor(db: tauri::State<QueueDb>) -> Result<Option<String>, String> {
-    db.with(|store| store.get_cursor())
+fn queue_get_cursor(db: tauri::State<QueueDb>, owner: String) -> Result<Option<String>, String> {
+    db.with(|store| store.get_cursor(&owner))
 }
 
 #[tauri::command]
-fn queue_set_cursor(db: tauri::State<QueueDb>, cursor: Option<String>) -> Result<(), String> {
-    db.with(|store| store.set_cursor(cursor))
+fn queue_set_cursor(db: tauri::State<QueueDb>, owner: String, cursor: Option<String>) -> Result<(), String> {
+    db.with(|store| store.set_cursor(&owner, cursor))
 }
 
 #[tauri::command]
-fn focus_get_draft(db: tauri::State<QueueDb>) -> Result<Option<serde_json::Value>, String> {
-    db.with(|store| store.focus_get_draft())
+fn queue_unowned_count(db: tauri::State<QueueDb>) -> Result<i64, String> {
+    db.with(|store| store.unowned_count())
 }
 
 #[tauri::command]
-fn focus_set_draft(db: tauri::State<QueueDb>, draft: Option<serde_json::Value>) -> Result<(), String> {
-    db.with(|store| store.focus_set_draft(draft))
+fn queue_unowned_adopt(db: tauri::State<QueueDb>, target_owner: String) -> Result<i64, String> {
+    db.with(|store| store.unowned_adopt(&target_owner))
+}
+
+#[tauri::command]
+fn queue_unowned_discard(db: tauri::State<QueueDb>) -> Result<i64, String> {
+    db.with(|store| store.unowned_discard())
+}
+
+#[tauri::command]
+fn focus_get_draft(db: tauri::State<QueueDb>, owner: String) -> Result<Option<serde_json::Value>, String> {
+    db.with(|store| store.focus_get_draft(&owner))
+}
+
+#[tauri::command]
+fn focus_set_draft(db: tauri::State<QueueDb>, owner: String, draft: Option<serde_json::Value>) -> Result<(), String> {
+    db.with(|store| store.focus_set_draft(&owner, draft))
 }
 
 /// One damaged row must not block the whole offline queue: unreadable or
@@ -276,6 +399,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             campus::campus_request, campus::campus_restore, campus::campus_save_session, campus::campus_logout,
             queue_add, queue_list, queue_remove, queue_get_cursor, queue_set_cursor,
+            queue_unowned_count, queue_unowned_adopt, queue_unowned_discard,
             focus_get_draft, focus_set_draft,
             backend_token_get, backend_token_set, backend_token_clear,
             backend_proxy::backend_request, backend_proxy::backend_origin_list,
@@ -300,26 +424,26 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut store = QueueStore::open(&dir.path().join("offline.sqlite3")).unwrap();
 
-        store.add(vec![event_json("event-a"), event_json("event-b")]).unwrap();
-        store.add(vec![event_json("event-a")]).unwrap(); // 幂等
-        let events = store.list().unwrap();
+        store.add("owner-a", vec![event_json("event-a"), event_json("event-b")]).unwrap();
+        store.add("owner-a", vec![event_json("event-a")]).unwrap(); // 幂等
+        let events = store.list("owner-a").unwrap();
         let ids: Vec<&str> = events.iter()
             .filter_map(|event| event.get("client_event_id").and_then(serde_json::Value::as_str))
             .collect();
         assert_eq!(ids, ["event-a", "event-b"]);
 
-        store.set_cursor(Some("cursor-1".into())).unwrap();
-        assert_eq!(store.get_cursor().unwrap().as_deref(), Some("cursor-1"));
+        store.set_cursor("owner-a", Some("cursor-1".into())).unwrap();
+        assert_eq!(store.get_cursor("owner-a").unwrap().as_deref(), Some("cursor-1"));
 
-        store.focus_set_draft(Some(serde_json::json!({ "note": "fixture" }))).unwrap();
-        assert_eq!(store.focus_get_draft().unwrap().unwrap()["note"], "fixture");
-        store.focus_set_draft(None).unwrap();
-        assert!(store.focus_get_draft().unwrap().is_none());
+        store.focus_set_draft("owner-a", Some(serde_json::json!({ "note": "fixture" }))).unwrap();
+        assert_eq!(store.focus_get_draft("owner-a").unwrap().unwrap()["note"], "fixture");
+        store.focus_set_draft("owner-a", None).unwrap();
+        assert!(store.focus_get_draft("owner-a").unwrap().is_none());
 
-        store.remove(vec!["event-a".into(), "event-b".into()]).unwrap();
-        assert!(store.list().unwrap().is_empty());
-        store.set_cursor(None).unwrap();
-        assert!(store.get_cursor().unwrap().is_none());
+        store.remove("owner-a", vec!["event-a".into(), "event-b".into()]).unwrap();
+        assert!(store.list("owner-a").unwrap().is_empty());
+        store.set_cursor("owner-a", None).unwrap();
+        assert!(store.get_cursor("owner-a").unwrap().is_none());
     }
 
     #[test]
@@ -333,13 +457,13 @@ mod tests {
             .unwrap();
         assert_eq!(mode.to_lowercase(), "wal");
 
-        store.add(vec![event_json("event-good")]).unwrap();
+        store.add("owner-a", vec![event_json("event-good")]).unwrap();
         // 直接写入坏载荷（模拟历史损坏行），list 必须隔离而非整体报错
         store.connection.execute(
-            "INSERT INTO pending_events (client_event_id, payload) VALUES ('bad', 'not-json')",
+            "INSERT INTO pending_events (owner, client_event_id, payload) VALUES ('owner-a', 'bad', 'not-json')",
             [],
         ).unwrap();
-        let events = store.list().unwrap();
+        let events = store.list("owner-a").unwrap();
         let ids: Vec<&str> = events.iter()
             .filter_map(|event| event.get("client_event_id").and_then(serde_json::Value::as_str))
             .collect();
@@ -354,11 +478,12 @@ mod tests {
         let mut workers = Vec::new();
         for worker in 0..4 {
             let db = Arc::clone(&db);
+            let owner = format!("owner-{worker}");
             workers.push(std::thread::spawn(move || {
                 for i in 0..25 {
                     let id = format!("worker-{worker}-event-{i}");
-                    db.with(|store| store.add(vec![event_json(&id)])).unwrap();
-                    db.with(|store| store.list().map(|events| events.len())).unwrap();
+                    db.with(|store| store.add(&owner, vec![event_json(&id)])).unwrap();
+                    db.with(|store| store.list(&owner).map(|events| events.len())).unwrap();
                 }
             }));
         }
@@ -366,8 +491,87 @@ mod tests {
             worker.join().expect("queue worker must not panic");
         }
 
-        let total = db.with(|store| store.list().map(|events| events.len())).unwrap();
-        // 4 × 25 全部落库：锁竞争由 busy_timeout 吸收，无丢失无 locked 报错
-        assert_eq!(total, 100);
+        // 4 × 25 全部落库：锁竞争由 busy_timeout 吸收，无丢失无 locked 报错；
+        // 每个 owner 只见自己的 25 条（owner 隔离在并发下同样成立）。
+        for worker in 0..4 {
+            let owner = format!("owner-{worker}");
+            let total = db.with(|store| store.list(&owner).map(|events| events.len())).unwrap();
+            assert_eq!(total, 25);
+        }
+    }
+
+    #[test]
+    fn owner_namespaces_isolate_events_cursor_and_draft() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = QueueStore::open(&dir.path().join("offline.sqlite3")).unwrap();
+
+        // 两 owner 采集同一上游事件（client_event_id 同值）——都必须保留
+        store.add("owner-a", vec![event_json("same-upstream-event")]).unwrap();
+        store.add("owner-b", vec![event_json("same-upstream-event")]).unwrap();
+        assert_eq!(store.list("owner-a").unwrap().len(), 1);
+        assert_eq!(store.list("owner-b").unwrap().len(), 1);
+
+        // cursor 与草稿互不可见
+        store.set_cursor("owner-a", Some("cursor-a".into())).unwrap();
+        store.set_cursor("owner-b", Some("cursor-b".into())).unwrap();
+        assert_eq!(store.get_cursor("owner-a").unwrap().as_deref(), Some("cursor-a"));
+        assert_eq!(store.get_cursor("owner-b").unwrap().as_deref(), Some("cursor-b"));
+
+        store.focus_set_draft("owner-a", Some(serde_json::json!({ "note": "a" }))).unwrap();
+        store.focus_set_draft("owner-b", Some(serde_json::json!({ "note": "b" }))).unwrap();
+        assert_eq!(store.focus_get_draft("owner-a").unwrap().unwrap()["note"], "a");
+        assert_eq!(store.focus_get_draft("owner-b").unwrap().unwrap()["note"], "b");
+
+        // 清一个 owner 不动另一个（「本地删除不清另一账号」）
+        store.remove("owner-a", vec!["same-upstream-event".into()]).unwrap();
+        store.set_cursor("owner-a", None).unwrap();
+        store.focus_set_draft("owner-a", None).unwrap();
+        assert!(store.list("owner-a").unwrap().is_empty());
+        assert!(store.get_cursor("owner-a").unwrap().is_none());
+        assert!(store.focus_get_draft("owner-a").unwrap().is_none());
+        assert_eq!(store.list("owner-b").unwrap().len(), 1);
+        assert_eq!(store.get_cursor("owner-b").unwrap().as_deref(), Some("cursor-b"));
+        assert!(store.focus_get_draft("owner-b").unwrap().is_some());
+    }
+
+    #[test]
+    fn legacy_rows_migrate_to_unowned_and_adoption_is_explicit() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("offline.sqlite3");
+        {
+            // 旧 schema（P0-2 之前）：无 owner 列、focus_draft 单行、cursor 无 owner
+            let legacy = Connection::open(&path).unwrap();
+            legacy.execute_batch(
+                "CREATE TABLE pending_events (client_event_id TEXT PRIMARY KEY NOT NULL, payload TEXT NOT NULL);
+                 CREATE TABLE sync_state (key TEXT PRIMARY KEY NOT NULL, value TEXT);
+                 CREATE TABLE focus_draft (id INTEGER PRIMARY KEY CHECK (id = 1), payload TEXT NOT NULL);
+                 INSERT INTO pending_events VALUES ('legacy-event', '{\"client_event_id\":\"legacy-event\"}');
+                 INSERT INTO sync_state VALUES ('event_cursor', 'legacy-cursor');
+                 INSERT INTO focus_draft VALUES (1, '{\"note\":\"legacy\"}');",
+            ).unwrap();
+        }
+
+        let mut store = QueueStore::open(&path).unwrap();
+        // 历史行全部归 unowned：任何 owner 的视图都不见它们
+        assert!(store.list("owner-a").unwrap().is_empty());
+        assert_eq!(store.unowned_count().unwrap(), 1);
+        // 无主 draft 同样隔离（focus 表迁移后挂 unowned 名下）
+        assert!(store.focus_get_draft("owner-a").unwrap().is_none());
+        assert!(store.focus_get_draft("unowned").unwrap().is_some());
+
+        // adopt：显式归户；目标既有 cursor（owner-a 已设）优先，无主 cursor 不覆盖
+        store.set_cursor("owner-a", Some("cursor-a".into())).unwrap();
+        store.add("owner-a", vec![event_json("legacy-event")]).unwrap(); // 目标已有同 id：保留目标行
+        let moved = store.unowned_adopt("owner-a").unwrap();
+        assert_eq!(moved, 0); // 同 id 未新增（目标优先），但无主侧已清空
+        assert_eq!(store.unowned_count().unwrap(), 0);
+        assert_eq!(store.get_cursor("owner-a").unwrap().as_deref(), Some("cursor-a"));
+
+        // discard：显式丢弃
+        store.add("unowned", vec![event_json("orphan-event")]).unwrap();
+        assert_eq!(store.unowned_count().unwrap(), 1);
+        let removed = store.unowned_discard().unwrap();
+        assert_eq!(removed, 1);
+        assert_eq!(store.unowned_count().unwrap(), 0);
     }
 }

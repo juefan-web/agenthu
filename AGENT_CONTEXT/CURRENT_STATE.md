@@ -1315,6 +1315,24 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   待 A 转录忠实性 head-bound approve → CI 绿转 ready → 协调人合并，
   P0-1（A）/ P0-2（B）随即开工。
 
+- **P0-2 切片一开工（B，2026-10-05 深夜，分支
+  `feature/m5-p0-2-owner-namespace`）**：本地存储 owner 命名空间落前两层
+  ——TS localStorage（LocalEventQueue/LocalFocusDraftStore，键
+  `agenthu.event-queue:{owner}`/`{owner}:corrupt`/`agenthu.focus-draft:
+  {owner}`）+ Rust `offline.sqlite3`（pending_events/sync_state/focus_draft
+  三表迁移入 owner 维度，重建 PK 为 (owner, client_event_id)/(owner,key)/
+  (owner)——两账号同上游事件不再被全局唯一键静默丢弃；历史行全归
+  'unowned'）。ownerKey = SHA-256(origin+"
+  "+userId) 前 16 hex（自包含
+  同步实现，跨环境确定性优先）。会话层 onOwnerChange（login/restore→
+  owner、logout/过期→null，等值守卫）驱动 services 的单一 ownerScope；
+  coordinator 换号守卫（未登录不推无主队列；flush 中途换号即中止）。
+  无主处置面 countUnowned/adoptUnowned/discardUnowned（目标 cursor
+  优先；legacy 键一次性隔离到 unowned，禁自动归户）。Stronghold 分槽
+  延后至 receipt 需要（P0-4）：现单槽 token 登录即覆写、无残留。
+  证据：desktop vitest 200/200 + typecheck 绿；cargo test 20/20
+  （含 owner 隔离/legacy 迁移/adopt-discard 新例）。待 A head-bound
+  互审 → 协调人实测合并。
 - **P0-1 切片 1 落地 + 切片 2 交审（A，2026-10-05，main `3f023ca` =
   #68 合并）**：切片 1（统一 live 谓词 + validity 移出可写面 + 索引
   窄化 45b7db4cb2cb）经 B approve @`e617ae2` 合并；合并前远端红一次

@@ -8,6 +8,10 @@ export interface BackendSessionOptions {
   store?: TokenStore;
   fetcher?: typeof fetch;
   now?: () => number;
+  /** P0-2（D-036）：身份落定/清除时回调（login/restore 成功 → owner；
+   *  logout/过期/失效 → null）。services 层据此切换本地存储的 owner
+   *  命名空间；回调在会话串行队列内 await，切号先于任何后续操作完成。 */
+  onOwnerChange?: (owner: { origin: string; userId: string } | null) => void | Promise<void>;
 }
 
 export interface BackendSession {
@@ -25,6 +29,7 @@ type SessionSnapshot = {
   status: ReturnType<typeof useBackendSessionStore.getState>["status"];
   email: string | null;
   displayName: string | null;
+  userId: string | null;
   message: string | null;
   expiresAt: string | null;
 };
@@ -38,7 +43,9 @@ type SessionSnapshot = {
 export function createBackendSession(options: BackendSessionOptions): BackendSession {
   const store = options.store ?? createTokenStore();
   const now = options.now ?? (() => Date.now());
+  const canonicalOrigin = new URL(options.baseUrl).origin;
   let current: StoredToken | null = null;
+  let currentUserId: string | null = null;
   let validatingToken: string | null = null;
   let operationTail: Promise<void> = Promise.resolve();
 
@@ -50,6 +57,7 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
       status: currentState.status,
       email: currentState.email,
       displayName: currentState.displayName,
+      userId: currentState.userId,
       message: currentState.message,
       expiresAt: currentState.expiresAt,
     };
@@ -57,6 +65,13 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
 
   function restoreState(snapshot: SessionSnapshot): void {
     state().setState(snapshot);
+  }
+
+  /** owner 通知在会话串行队列内执行；同一 userId 不重复通知。 */
+  async function setOwner(userId: string | null): Promise<void> {
+    if (userId === currentUserId) return;
+    currentUserId = userId;
+    await options.onOwnerChange?.(userId ? { origin: canonicalOrigin, userId } : null);
   }
 
   function storageError(error: unknown): string {
@@ -86,6 +101,7 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
         if (current?.access_token !== token) return;
         current = null;
         state().setState({ status: "error", message: BACKEND_SESSION_EXPIRED });
+        await setOwner(null);
         try {
           await store.clear();
         } catch (error) {
@@ -99,15 +115,17 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
     return Date.parse(token.expires_at) <= now();
   }
 
-  function markReady(token: StoredToken, user: User): void {
+  async function markReady(token: StoredToken, user: User): Promise<void> {
     current = token;
     state().setState({
       status: "ready",
       email: user.email,
       displayName: user.display_name,
+      userId: user.id,
       expiresAt: token.expires_at,
       message: null,
     });
+    await setOwner(user.id);
   }
 
   return {
@@ -136,11 +154,12 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
             }
           }
           state().reset();
+          await setOwner(null);
           return;
         }
         current = stored;
         try {
-          markReady(stored, await client.me());
+          await markReady(stored, await client.me());
         } catch (error) {
           if (!(error instanceof BackendAuthError)) {
             // Network and server failures do not prove that the credential is
@@ -157,6 +176,7 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
             return;
           }
           state().reset();
+          await setOwner(null);
         }
       });
     },
@@ -178,6 +198,7 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
         } catch (error) {
           current = previous;
           restoreState(previousState);
+          await setOwner(previousState.userId);
           throw error;
         } finally {
           validatingToken = null;
@@ -188,6 +209,7 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
         } catch (error) {
           current = previous;
           restoreState(previousState);
+          await setOwner(previousState.userId);
           try {
             if (previous) await store.write(previous);
             else await store.clear();
@@ -196,7 +218,7 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
           }
           throw error;
         }
-        markReady(stored, user);
+        await markReady(stored, user);
       });
     },
 
@@ -210,6 +232,7 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
       return enqueue(async () => {
         current = null;
         state().reset();
+        await setOwner(null);
         try {
           await store.clear();
         } catch (error) {

@@ -280,3 +280,44 @@ describe("EventSyncCoordinator", () => {
     expect(attempts).toBe(2);
   });
 });
+
+describe("owner switch guard (P0-2 / D-036)", () => {
+  it("does not push the unowned queue before login", async () => {
+    const q = queue(); // 预置 event-1（未登录 → unowned）
+    let calls = 0;
+    const backend = {
+      probeHealth: async () => true,
+      pushEvents: async () => {
+        calls += 1;
+        return { accepted_event_ids: [], duplicate_event_ids: [], rejected: [], next_cursor: null };
+      },
+    } as never;
+    const coordinator = new EventSyncCoordinator(backend, q, { resolveOwner: () => null });
+    const result = await coordinator.flush();
+    expect(calls).toBe(0);
+    expect(result).toEqual({ sent: 0, duplicates: 0, rejected: 0, rejections: [], pending: 1 });
+  });
+
+  it("aborts the flush when the account switches mid-flight", async () => {
+    const q = queue();
+    let owner: string | null = "owner-a";
+    const backend = {
+      probeHealth: async () => true,
+      pushEvents: async () => {
+        // 服务端响应返回的瞬间完成换号：结算若继续会写进新 owner 命名空间
+        owner = "owner-b";
+        return {
+          accepted_event_ids: [event.client_event_id],
+          duplicate_event_ids: [],
+          rejected: [],
+          next_cursor: "cursor-1",
+        };
+      },
+    } as never;
+    const coordinator = new EventSyncCoordinator(backend, q, { resolveOwner: () => owner });
+    await expect(coordinator.flush()).rejects.toThrow("账号已切换");
+    // 结算未落库：事件与 cursor 都保留给原 owner（服务端幂等兜底重发）
+    expect(await q.list()).toHaveLength(1);
+    expect(await q.getCursor()).toBeNull();
+  });
+});

@@ -5,8 +5,9 @@ import type { BackendClient } from "../backend/client";
 import { backendFetch } from "../backend/transport";
 import type { FocusDraftStore } from "../focus/draft";
 import { createFocusDraftStore } from "../focus/draft";
-import type { EventQueue } from "../sync/queue";
+import type { EventQueue, UnownedQueueApi } from "../sync/queue";
 import { createEventQueue } from "../sync/queue";
+import { deriveOwnerKey } from "../sync/owner";
 import { EventSyncCoordinator } from "../sync/coordinator";
 
 const BUILD_TIME_BACKEND_URL = import.meta.env.VITE_BACKEND_URL?.replace(/\/$/, "") ?? "";
@@ -31,21 +32,29 @@ export interface AppServices {
   backendUrl: string;
   backendSession: BackendSession | null;
   backend: BackendClient | null;
-  queue: EventQueue;
+  queue: EventQueue & UnownedQueueApi;
   focusDraft: FocusDraftStore;
   sync: EventSyncCoordinator | null;
 }
 
 export function createAppServices(): AppServices {
   const backendUrl = readBackendUrlPreference();
+  // P0-2（D-036）：owner 命名空间的单一事实点。队列/草稿每次操作现解
+  // 当前 owner——切账号（登录/登出）后同实例自动落新命名空间，旧账号
+  // 数据原地保留；未登录（null）= unowned 命名空间（含 legacy 隔离件）。
+  const ownerScope: { key: string | null } = { key: null };
+  const resolveOwner = (): string | null => ownerScope.key;
+  const queue = createEventQueue({ resolveOwner });
+  const focusDraft = createFocusDraftStore({ resolveOwner });
   const backendSession = backendUrl ? createBackendSession({
     baseUrl: backendUrl,
     fetcher: isTauriRuntime() ? backendFetch : undefined,
+    onOwnerChange: (owner) => {
+      ownerScope.key = owner ? deriveOwnerKey(owner.origin, owner.userId) : null;
+    },
   }) : null;
   const backend = backendSession?.client ?? null;
-  const queue = createEventQueue();
-  const focusDraft = createFocusDraftStore();
-  const sync = backend ? new EventSyncCoordinator(backend, queue) : null;
+  const sync = backend ? new EventSyncCoordinator(backend, queue, { resolveOwner }) : null;
   return { buildTimeBackendUrl: BUILD_TIME_BACKEND_URL, backendUrl, backendSession, backend, queue, focusDraft, sync };
 }
 
