@@ -20,6 +20,11 @@ export interface CoordinatorOptions {
   /** 批失败后 /health 探测的预算（毫秒）；探测失败 = 不可达，跳过重试梯
    *  （round-5 D1：断网 flush 从 ~13s 压到 ≤5s——首攻快速失败 + 探测 ≤2s）。 */
   healthProbeTimeoutMs?: number;
+  /** P0-2（D-036）：当前 owner 解析器。提供时——未登录（null）不推无主
+   *  队列；flush 期间账号切换立即中止（队列按调用现解 owner，换号后
+   *  remove/setCursor 会写进新命名空间，必须先停）。不提供 = 旧行为
+   *  （单命名空间，测试用）。 */
+  resolveOwner?: () => string | null;
 }
 
 const DEFAULT_BATCH_SIZE = 500;
@@ -37,6 +42,7 @@ export class EventSyncCoordinator {
   private readonly maxBatchAttempts: number;
   private readonly retryBaseDelayMs: number;
   private readonly healthProbeTimeoutMs: number;
+  private readonly resolveOwner?: () => string | null;
 
   constructor(
     private readonly backend: BackendClient,
@@ -47,6 +53,7 @@ export class EventSyncCoordinator {
     this.maxBatchAttempts = Math.max(1, options.maxBatchAttempts ?? DEFAULT_MAX_BATCH_ATTEMPTS);
     this.retryBaseDelayMs = options.retryBaseDelayMs ?? DEFAULT_RETRY_BASE_DELAY_MS;
     this.healthProbeTimeoutMs = options.healthProbeTimeoutMs ?? DEFAULT_HEALTH_PROBE_TIMEOUT_MS;
+    this.resolveOwner = options.resolveOwner;
   }
 
   async enqueue(events: EventEnvelope[]): Promise<void> {
@@ -65,6 +72,18 @@ export class EventSyncCoordinator {
   }
 
   private async flushOnce(): Promise<SyncResult> {
+    // 未登录不推无主队列：无主事件的处置是用户的显式决定（adopt/discard），
+    // 不是「下一个登录的人替他同步」。
+    if (this.resolveOwner && this.resolveOwner() === null) {
+      return { sent: 0, duplicates: 0, rejected: 0, rejections: [], pending: (await this.queue.list()).length };
+    }
+    const ownerAtStart = this.resolveOwner?.() ?? null;
+    const assertOwnerUnchanged = () => {
+      if (this.resolveOwner && this.resolveOwner() !== ownerAtStart) {
+        throw new Error("同步期间 Backend 账号已切换，本次中止；事件保留在原账号队列中");
+      }
+    };
+
     const pending = await this.queue.list();
     let sent = 0;
     let duplicates = 0;
@@ -72,12 +91,20 @@ export class EventSyncCoordinator {
     const rejections: SyncResult["rejections"] = [];
     for (let index = 0; index < pending.length; index += this.batchSize) {
       const batch = pending.slice(index, index + this.batchSize);
+      // push 前先核：上一批结算的 await 间隙可能已换号，此时 getToken
+      // 解出的是新账号 token，会把原账号队列的事件推给新账号的后端身份。
+      assertOwnerUnchanged();
       const response = await this.pushBatchWithRetry(batch);
+      // remove/setCursor 都按调用时刻的 owner 落键：换号后继续跑会把结算
+      // 写进新账号的命名空间，必须先停（已结算批次的 remove 在守卫之后、
+      // 服务端幂等兜底重发）。
+      assertOwnerUnchanged();
       await this.queue.remove([
         ...response.accepted_event_ids,
         ...response.duplicate_event_ids,
         ...response.rejected.map((item) => item.client_event_id),
       ]);
+      assertOwnerUnchanged();
       await this.queue.setCursor(response.next_cursor);
       sent += response.accepted_event_ids.length;
       duplicates += response.duplicate_event_ids.length;
