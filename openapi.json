@@ -5599,6 +5599,361 @@
         }
       }
     },
+    "/v1/data/capabilities": {
+      "get": {
+        "tags": [
+          "data"
+        ],
+        "summary": "Capabilities",
+        "operationId": "capabilities_v1_data_capabilities_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataCapabilities"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/data/previews": {
+      "post": {
+        "tags": [
+          "data"
+        ],
+        "summary": "Create Preview",
+        "operationId": "create_preview_v1_data_previews_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/AccountTarget"
+                  },
+                  {
+                    "$ref": "#/components/schemas/SourceTarget"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MemoryTarget"
+                  }
+                ],
+                "title": "Target",
+                "discriminator": {
+                  "propertyName": "kind",
+                  "mapping": {
+                    "account": "#/components/schemas/AccountTarget",
+                    "source": "#/components/schemas/SourceTarget",
+                    "memory": "#/components/schemas/MemoryTarget"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataPreviewOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/data/deletions": {
+      "post": {
+        "tags": [
+          "data"
+        ],
+        "summary": "Confirm Deletion",
+        "operationId": "confirm_deletion_v1_data_deletions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeletionConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataOperationOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/data/operations/{operation_id}": {
+      "get": {
+        "tags": [
+          "data"
+        ],
+        "summary": "Get Operation",
+        "operationId": "get_operation_v1_data_operations__operation_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "operation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Operation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataOperationOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/grounding-consent": {
       "get": {
         "tags": [
@@ -7882,6 +8237,22 @@
   },
   "components": {
     "schemas": {
+      "AccountTarget": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "account",
+            "title": "Kind"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "AccountTarget",
+        "description": "DeleteTarget variant: the whole account and everything derived."
+      },
       "ActionDisplay": {
         "properties": {
           "summary": {
@@ -9308,6 +9679,336 @@
         "title": "CurrentStateUpdate",
         "description": "User-controlled overrides applied before the next projection."
       },
+      "DataCapabilities": {
+        "properties": {
+          "schema_version": {
+            "type": "string",
+            "title": "Schema Version"
+          },
+          "graph_version": {
+            "type": "string",
+            "title": "Graph Version"
+          },
+          "export_enabled": {
+            "type": "boolean",
+            "title": "Export Enabled"
+          },
+          "deletion_enabled": {
+            "type": "boolean",
+            "title": "Deletion Enabled"
+          },
+          "supported_source_kinds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Supported Source Kinds"
+          },
+          "minimum_client_version": {
+            "type": "string",
+            "title": "Minimum Client Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "schema_version",
+          "graph_version",
+          "export_enabled",
+          "deletion_enabled",
+          "supported_source_kinds",
+          "minimum_client_version"
+        ],
+        "title": "DataCapabilities"
+      },
+      "DataEffect": {
+        "properties": {
+          "resource_type": {
+            "type": "string",
+            "title": "Resource Type"
+          },
+          "delete_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Delete Count"
+          },
+          "redact_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Redact Count"
+          },
+          "recompute_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Recompute Count"
+          },
+          "retain_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Retain Count"
+          },
+          "reason_code": {
+            "type": "string",
+            "title": "Reason Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "resource_type",
+          "delete_count",
+          "redact_count",
+          "recompute_count",
+          "retain_count",
+          "reason_code"
+        ],
+        "title": "DataEffect",
+        "description": "One family's outcome counts; never carries titles or content."
+      },
+      "DataOperationKind": {
+        "type": "string",
+        "enum": [
+          "EXPORT",
+          "DELETION"
+        ],
+        "title": "DataOperationKind",
+        "description": "Lifecycle operation kinds (M5 A-draft §4): export or deletion only."
+      },
+      "DataOperationOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/DataOperationKind"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DataOperationStatus"
+          },
+          "phase": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DataOperationPhase"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "data_generation": {
+            "type": "integer",
+            "title": "Data Generation"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "next_retry_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Retry At"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/OperationProgress"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DataSafeError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "receipt_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Receipt Id"
+          },
+          "receipt_capability": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Receipt Capability"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "target",
+          "status",
+          "phase",
+          "version",
+          "data_generation",
+          "created_at",
+          "updated_at",
+          "progress"
+        ],
+        "title": "DataOperationOut"
+      },
+      "DataOperationPhase": {
+        "type": "string",
+        "enum": [
+          "EXPORT_COLLECT",
+          "EXPORT_PACKAGE",
+          "EXPORT_VERIFY",
+          "DELETE_FENCE",
+          "DELETE_RELATIONAL",
+          "DELETE_OBJECTS",
+          "DELETE_VERIFY"
+        ],
+        "title": "DataOperationPhase",
+        "description": "Durable phase checkpoints (A-draft §4); deletion runs the four phases."
+      },
+      "DataOperationStatus": {
+        "type": "string",
+        "enum": [
+          "QUEUED",
+          "RUNNING",
+          "RETRY_WAIT",
+          "READY",
+          "COMPLETED",
+          "EXPIRED",
+          "FAILED"
+        ],
+        "title": "DataOperationStatus"
+      },
+      "DataPreviewOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "target": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Target"
+          },
+          "graph_version": {
+            "type": "string",
+            "title": "Graph Version"
+          },
+          "data_generation": {
+            "type": "integer",
+            "title": "Data Generation"
+          },
+          "preview_digest": {
+            "type": "string",
+            "title": "Preview Digest"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          },
+          "effects": {
+            "items": {
+              "$ref": "#/components/schemas/DataEffect"
+            },
+            "type": "array",
+            "title": "Effects"
+          },
+          "limitations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Limitations"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "target",
+          "graph_version",
+          "data_generation",
+          "preview_digest",
+          "expires_at",
+          "effects",
+          "limitations"
+        ],
+        "title": "DataPreviewOut"
+      },
+      "DataSafeError": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "retryable": {
+            "type": "boolean",
+            "title": "Retryable"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "retryable"
+        ],
+        "title": "DataSafeError",
+        "description": "Sanitized failure info: no raw text, object keys or credentials."
+      },
       "DecisionBasis": {
         "properties": {
           "basis_version": {
@@ -9526,6 +10227,42 @@
           "label"
         ],
         "title": "DecisionReference"
+      },
+      "DeletionConfirmRequest": {
+        "properties": {
+          "preview_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Preview Id"
+          },
+          "preview_digest": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Preview Digest"
+          },
+          "client_request_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "Client Request Id"
+          },
+          "confirmed": {
+            "type": "boolean",
+            "const": true,
+            "title": "Confirmed"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "preview_id",
+          "preview_digest",
+          "client_request_id",
+          "confirmed"
+        ],
+        "title": "DeletionConfirmRequest",
+        "description": "Level 2 confirmation: references the exact preview the user saw."
       },
       "DisplayParameter": {
         "properties": {
@@ -11061,6 +11798,39 @@
         ],
         "title": "MemoryRead"
       },
+      "MemoryTarget": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "memory",
+            "title": "Kind"
+          },
+          "ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Ids"
+          },
+          "include_history": {
+            "type": "boolean",
+            "const": true,
+            "title": "Include History"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "ids",
+          "include_history"
+        ],
+        "title": "MemoryTarget",
+        "description": "DeleteTarget variant: whole memory chains (history is always included)."
+      },
       "MemoryUpdate": {
         "properties": {
           "content": {
@@ -11408,6 +12178,37 @@
           "budget_date"
         ],
         "title": "NotificationPreferencesRead"
+      },
+      "OperationProgress": {
+        "properties": {
+          "processed": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Processed"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          },
+          "outstanding_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Outstanding Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "processed",
+          "outstanding_count"
+        ],
+        "title": "OperationProgress"
       },
       "Page_AgentRunRead_": {
         "properties": {
@@ -12820,6 +13621,44 @@
           "expires_in"
         ],
         "title": "SignedUrl"
+      },
+      "SourceTarget": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "source",
+            "title": "Kind"
+          },
+          "source_kind": {
+            "type": "string",
+            "enum": [
+              "event",
+              "file",
+              "chat_session",
+              "chat_message"
+            ],
+            "title": "Source Kind"
+          },
+          "ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "source_kind",
+          "ids"
+        ],
+        "title": "SourceTarget",
+        "description": "DeleteTarget variant: one source batch and its derivation closure."
       },
       "TaskCreate": {
         "properties": {

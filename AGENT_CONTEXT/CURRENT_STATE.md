@@ -1349,3 +1349,33 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   任务书 §5 待 B 核。#69（B 的 P0-2 切片 1）A 已 RC：换号守卫窗口
   一项必改（多批循环顶部无 assert，A→B 直切可致 A 事件带 B token
   上推）+ 四 advisory；待 B 修复后新头复核。
+
+- **P0-3 开工（A，2026-10-05，基线 main `824ab5a` = #70 合并头）**：#70
+  经 B head-bound approve 合并（B 互审三条 P0-3 携带项 + memories.embedding
+  should-fix + enums 名=值 advisory，产出并入任务书）；#69 修复头
+  `3b97927` A 复核 approve（三道守卫 + 多批测试 + 补交 session 测试），
+  待协调人合并。P0-3 = 删除/导出 API 与执行，切片计划与六项强制携带
+  清单见 TASKS/m5-p0-3-data-api.md；首提交落：embedding 补录、
+  matching_barrier fail-closed、N1 全谓词升级、enums 名=值对齐（零迁移）、
+  DECISIONS 回填范式注记、N2/N3 档位记录。
+
+- **P0-3 切片 1 主体交审（A，2026-10-05，分支 feature/m5-p0-3-data-api）**：
+  /v1/data 四路由（capabilities/previews/deletions/operations + 
+  X-Data-Generation 响应头）+ 闭包枚举一图（五 source kind + memory 整链
+  + account 全 registry 扫描，所有权 404）+ preview 10min digest 绑定
+  （graph_version=REGISTRY 摘要）+ confirm 事务（幂等重放优先/preview_stale/
+  deletion_in_progress/users 行锁串行化 + savepoint IntegrityError 收敛=
+  B 携带①/屏障/清理项 payload ids/account 停用+撤权+receipt 能力一次
+  吐出摘要落账/source 抑制 HMAC）+ 迁移 a9c41f7d2e83（三新表，
+  receipts/suppressions 值键控无 FK）+ registry 三新表登记（inventory
+  开发期自证一次）。OpenAPI 65 路径重生、漂移绿；DataSafeError 组件名
+  避让 agent 域 SafeError。四条实现期判断见任务书 §5（败者 bump 多耗/
+  抑制上游锚点/audit redact 复用枚举/ChatMessage 版本戳）。待 B 互审。
+
+- **P0-3 切片 1 RC 修复（A，2026-10-06）**：B 互审 @ `77c38e1` 全签
+  （四判断 + 五核点）唯一必改 = 核点 4 组合测试缺失——已补
+  "过期 preview × 幂等命中 → 202 同 op"（source 域；account 域首次
+  confirm 即停用无法测该组合）。切片 2 强携两条（executor 先读
+  payload 再分派、多事件派生 task 部分源删除语义正面裁定）、切片 3
+  强携三条（upstream_id 前置纪律入任务书、E7-7 seed 带 upstream_id、
+  assert_writable/孤儿流/抑制解除）已录入任务队列。

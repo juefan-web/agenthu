@@ -104,8 +104,8 @@ class AuditDecision(StrEnum):
 class DataOperationKind(StrEnum):
     """Lifecycle operation kinds (M5 A-draft §4): export or deletion only."""
 
-    EXPORT = "export"
-    DELETION = "deletion"
+    EXPORT = "EXPORT"
+    DELETION = "DELETION"
 
 
 class DataOperationStatus(StrEnum):
@@ -121,13 +121,13 @@ class DataOperationStatus(StrEnum):
 class DataOperationPhase(StrEnum):
     """Durable phase checkpoints (A-draft §4); deletion runs the four phases."""
 
-    EXPORT_COLLECT = "export_collect"
-    EXPORT_PACKAGE = "export_package"
-    EXPORT_VERIFY = "export_verify"
-    DELETE_FENCE = "delete_fence"
-    DELETE_RELATIONAL = "delete_relational"
-    DELETE_OBJECTS = "delete_objects"
-    DELETE_VERIFY = "delete_verify"
+    EXPORT_COLLECT = "EXPORT_COLLECT"
+    EXPORT_PACKAGE = "EXPORT_PACKAGE"
+    EXPORT_VERIFY = "EXPORT_VERIFY"
+    DELETE_FENCE = "DELETE_FENCE"
+    DELETE_RELATIONAL = "DELETE_RELATIONAL"
+    DELETE_OBJECTS = "DELETE_OBJECTS"
+    DELETE_VERIFY = "DELETE_VERIFY"
 
 
 class CleanupItemState(StrEnum):
@@ -140,19 +140,19 @@ class CleanupItemState(StrEnum):
 class CleanupItemAction(StrEnum):
     """What the durable cleanup executor must do for one item (P0-3 wires it)."""
 
-    DELETE_RELATIONAL = "delete_relational"
-    DELETE_OBJECT = "delete_object"
-    CLEAR_REDIS = "clear_redis"
-    VERIFY_ABSENT = "verify_absent"
+    DELETE_RELATIONAL = "DELETE_RELATIONAL"
+    DELETE_OBJECT = "DELETE_OBJECT"
+    CLEAR_REDIS = "CLEAR_REDIS"
+    VERIFY_ABSENT = "VERIFY_ABSENT"
 
 
 class DataBarrierScope(StrEnum):
     """Barrier breadth (A-draft §2): account fences everything; source/memory
     fence the target closure plus affected derivations."""
 
-    ACCOUNT = "account"
-    SOURCE = "source"
-    MEMORY = "memory"
+    ACCOUNT = "ACCOUNT"
+    SOURCE = "SOURCE"
+    MEMORY = "MEMORY"
 
 
 class DataBarrierState(StrEnum):

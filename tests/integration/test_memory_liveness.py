@@ -18,12 +18,19 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.core.errors import ConflictError
 from backend.models.enums import MemoryCorrectionStatus, MemoryKind
 from backend.models.memory import Memory
 from backend.models.user import User
 from backend.services.estimates import live_key_row
 from backend.services.event_handlers import _recent_episode_ids
-from backend.services.memory_lifecycle import live_memory_conditions, upsert_keyed_memory
+from backend.services.memory_lifecycle import (
+    confirm_memory,
+    correct_memory,
+    live_memory_conditions,
+    reject_memory,
+    upsert_keyed_memory,
+)
 from backend.services.memory_retrieval import retrieve_memories
 
 pytestmark = pytest.mark.integration
@@ -237,3 +244,31 @@ def test_keyed_upsert_ignores_retired_squatter(db_session, client, auth_headers)
     assert result is not None
     assert result.supersedes_id is None  # fresh row, not a supersede of the dead one
     assert result.subject_key == subject
+
+
+def test_lifecycle_actions_require_full_live_predicate(db_session, client, auth_headers) -> None:
+    """N1 (D-036): confirm/reject/correct gate on the FULL predicate, not the
+    pointer alone — acting on a time-retired row must fail loud, because
+    correct-on-retired would resurrect lifecycle-retired content as a fresh
+    live row (the E7-3/E7-7 resurrection shape)."""
+
+    user = _user(db_session)
+    retired = _memory(user.id, valid_to=datetime.now(UTC) - timedelta(hours=1))
+    future = _memory(user.id, valid_from=datetime.now(UTC) + timedelta(hours=1))
+    live = _memory(user.id)
+    db_session.add_all([retired, future, live])
+    db_session.commit()
+
+    for row in (retired, future):
+        with pytest.raises(ConflictError):
+            confirm_memory(db_session, row)
+        with pytest.raises(ConflictError):
+            reject_memory(db_session, row)
+        with pytest.raises(ConflictError):
+            correct_memory(db_session, row, content="replacement", confidence=None)
+
+    confirmed = confirm_memory(db_session, live)
+    assert confirmed.correction_status is MemoryCorrectionStatus.CONFIRMED
+    replacement = correct_memory(db_session, live, content="user fix", confidence=0.9)
+    assert replacement.supersedes_id is None
+    assert live.supersedes_id == replacement.id

@@ -55,11 +55,26 @@ def live_memory_conditions(
     ]
 
 
-def _require_live(memory: Memory) -> None:
+def _require_live(memory: Memory, now: datetime | None = None) -> None:
+    """Lifecycle actions require the row to be live under the FULL predicate.
+
+    Pointer-only checking (the pre-N1 form) was safe while no writer ever set
+    valid_to without also setting the pointer, but the deletion epoch retires
+    rows by time: correct-on-retired would re-derive a fresh live row from
+    content the lifecycle already retired — the resurrection shape E7-3/E7-7
+    must not allow.
+    """
+
     if memory.supersedes_id is not None:
         raise ConflictError(
             "Memory is superseded by a newer version; operate on the live row instead"
         )
+    if now is None:
+        now = utcnow()
+    if memory.valid_to is not None and memory.valid_to <= now:
+        raise ConflictError("Memory is retired by valid_to; it can no longer be acted on")
+    if memory.valid_from is not None and memory.valid_from > now:
+        raise ConflictError("Memory is not yet live (valid_from is in the future)")
 
 
 def confirm_memory(session: Session, memory: Memory) -> Memory:

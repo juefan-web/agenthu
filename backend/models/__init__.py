@@ -8,7 +8,14 @@ from backend.models.audit import AuditLog
 from backend.models.chat import ChatMessage, ChatSession
 from backend.models.consent import ModelContextConsent
 from backend.models.current_state import CurrentState
-from backend.models.data_lifecycle import DataBarrier, DataCleanupItem, DataOperation
+from backend.models.data_lifecycle import (
+    DataBarrier,
+    DataCleanupItem,
+    DataOperation,
+    DataPreview,
+    DataReceipt,
+    DataSuppression,
+)
 from backend.models.enums import (
     AuditActor,
     AuditDecision,
@@ -57,6 +64,9 @@ __all__ = [
     "DataOperationKind",
     "DataOperationPhase",
     "DataOperationStatus",
+    "DataPreview",
+    "DataReceipt",
+    "DataSuppression",
     "Event",
     "FileObject",
     "FocusSession",

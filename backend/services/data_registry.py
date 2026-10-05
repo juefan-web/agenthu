@@ -21,6 +21,8 @@ enumerate them.
 from __future__ import annotations
 
 import ast
+import hashlib
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -159,7 +161,7 @@ REGISTRY: tuple[DataResource, ...] = (
         "memories",
         "memories",
         "user_id",
-        ("content", "source", "source_event_ids", "evidence", "subject_key"),
+        ("content", "source", "source_event_ids", "evidence", "embedding", "subject_key"),
         Classification.USER_CONTENT,
         "Forgetting follows the supersedes closure; source deletion "
         "invalidates then recomputes from remaining evidence; independent "
@@ -304,6 +306,31 @@ REGISTRY: tuple[DataResource, ...] = (
         "Barrier state; restore replays suppression + generation from the "
         "ledger family, never from the users row.",
     ),
+    _pg(
+        "data_previews",
+        "data_previews",
+        "user_id (transient; CASCADE with the account)",
+        ("target", "effects"),
+        Classification.OPS,
+        "10-minute digest-bound previews; lazy TTL purge on create.",
+    ),
+    _pg(
+        "data_receipts",
+        "data_receipts",
+        "owner_handle value (opaque, no FK)",
+        ("capability_digest",),
+        Classification.OPS,
+        "90-day account-deletion receipts; digest only, token never stored.",
+    ),
+    _pg(
+        "data_suppressions",
+        "data_suppressions",
+        "owner_handle value (opaque, no FK)",
+        ("upstream_hmac",),
+        Classification.OPS,
+        "Source re-import suppression (A-draft §2.6); HMAC identifiers, no "
+        "content; personal data per §5 despite opacity.",
+    ),
     # --- redis ---------------------------------------------------------------
     DataResource(
         key="redis:trigger-dirty",
@@ -386,6 +413,22 @@ class InventoryReport:
             or self.unregistered_redis_literals
             or self.stale_redis_entries
         )
+
+
+def graph_version() -> str:
+    """Stable content digest of the dependency-graph definition itself.
+
+    Previews and confirmations bind to it, so a registry change (new family,
+    corrected closure rule) between preview and confirm yields preview_stale
+    instead of a silently different deletion scope.
+    """
+
+    payload = [
+        [entry.key, entry.store, entry.table or "", entry.owner, list(entry.content_fields)]
+        for entry in REGISTRY
+    ]
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
 
 
 def redis_literals_in_source() -> set[str]:

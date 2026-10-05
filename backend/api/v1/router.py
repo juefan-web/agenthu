@@ -8,6 +8,7 @@ from backend.api.v1 import (
     auth,
     chat,
     current_state,
+    data,
     events,
     files,
     focus_sessions,
@@ -37,6 +38,7 @@ api_router.include_router(files.router)
 api_router.include_router(permissions.router)
 api_router.include_router(audit.router)
 api_router.include_router(jobs.router)
+api_router.include_router(data.router)
 api_router.include_router(material.router)
 api_router.include_router(material_answers.router)
 api_router.include_router(agent_runs.router)
