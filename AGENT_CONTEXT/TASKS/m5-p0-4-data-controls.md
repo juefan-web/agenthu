@@ -98,6 +98,9 @@ Status: 开工 2026-10-06；基线 main `31e4743`（#74 合并头，P0-3 全链�
   check_contract_drift --require-zod 无漂移（14 新映射全过）。
   环境注记：worktree node_modules 因早前 /tmp 工作树复制事故损坏，
   全清 pnpm install 重建（与代码无关，如实记）。
+- 切片 1 CI 实测回填（推送头 9768a7d，Actions 日志取数）：
+  desktop **220/220**（28 文件）+ contracts 17/17；tauri-rust cargo
+  **23/23**；Backend/Compose/Docker/audit 全绿；同机数一致。
 
 ## 5. 实现期判断（待 A 核）
 
