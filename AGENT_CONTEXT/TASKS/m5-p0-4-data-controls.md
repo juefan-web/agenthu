@@ -112,6 +112,16 @@ Status: 开工 2026-10-06；基线 main `31e4743`（#74 合并头，P0-3 全链�
 - 切片 1 CI 实测回填（推送头 9768a7d，Actions 日志取数）：
   desktop **220/220**（28 文件）+ contracts 17/17；tauri-rust cargo
   **23/23**；Backend/Compose/Docker/audit 全绿；同机数一致。
+- 切片 1 RC 修复（本机 @0d4050f）：drift 单测 **21/21**（+5：const 展开
+  两例/fixture 枚举探针/双变异钉）；全 unit 121 passed；drift
+  --require-zod 双源无漂移（7 处存量缺口修复后）；ruff 同形双绿；
+  contracts 17/17 + tsc 零错；desktop vitest **220/220** + tsc 零错
+  （plans 测试 fmt 助手可空化）。
+- 切片 1 RC 修复 CI 实测回填（推送头 0d4050f，双跑取数）：
+  Backend 双跑均 **444 passed + 7 skipped**（skip 全为晚间断言守卫
+  conftest.py:65——CI 时点北京 22:5x 撞 <130/65 分钟窗，非本片测试；
+  算术：437 存量 + 7 新增 = 444）；drift 步双跑 "No contract drift
+  detected"；frontend/tauri-rust/Compose/Docker/audit 12/12 全绿。
 
 ## 5. 实现期判断（待 A 核）
 
