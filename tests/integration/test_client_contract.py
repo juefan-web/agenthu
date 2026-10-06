@@ -148,6 +148,61 @@ def test_event_batch_matches_client_schema(client, auth_headers) -> None:
     _assert_matches_contract("EventBatchResponseSchema", again)
 
 
+def test_data_capabilities_matches_client_schema(client, auth_headers) -> None:
+    """PR #75 review: /v1/data response payloads through the frozen Zod
+    snapshot — capabilities is the capabilities-face DTO sample."""
+
+    response = client.get("/v1/data/capabilities", headers=auth_headers)
+    assert response.status_code == 200
+    _assert_matches_contract("DataCapabilitiesSchema", response.json())
+
+
+def test_data_preview_confirm_operation_match_client_schema(client, auth_headers) -> None:
+    """One preview -> confirm -> read walk covers the kind/status/phase enums
+    and every always-nullable key of ``DataOperationOut`` in the QUEUED state
+    (no worker runs here, which is exactly the shape plain client reads see).
+
+    Receipt payloads are deliberately NOT sampled: receipt rows are produced
+    by the worker's completion path, which this environment does not run;
+    the receipt shape stays pinned end-to-end by the E7 stack instead
+    (E7-2/E7-5 pre-registered expectations, tests/e7/manifest.json)."""
+
+    session = client.post(
+        "/v1/chat/sessions", json={"title": "contract smoke"}, headers=auth_headers
+    )
+    assert session.status_code == 201, session.text
+
+    preview = client.post(
+        "/v1/data/previews",
+        json={"kind": "source", "source_kind": "chat_session", "ids": [session.json()["id"]]},
+        headers=auth_headers,
+    )
+    assert preview.status_code == 201, preview.text
+    preview_body = preview.json()
+    _assert_matches_contract("DataPreviewOutSchema", preview_body)
+
+    confirm = client.post(
+        "/v1/data/deletions",
+        json={
+            "preview_id": preview_body["id"],
+            "preview_digest": preview_body["preview_digest"],
+            "client_request_id": "contract-smoke-0001",
+            "confirmed": True,
+        },
+        headers=auth_headers,
+    )
+    assert confirm.status_code == 202, confirm.text
+    operation = confirm.json()
+    assert operation["kind"] == "DELETION"
+    assert operation["status"] == "QUEUED"
+    assert operation["phase"] is None
+    _assert_matches_contract("DataOperationOutSchema", operation)
+
+    fetched = client.get(f"/v1/data/operations/{operation['id']}", headers=auth_headers)
+    assert fetched.status_code == 200
+    _assert_matches_contract("DataOperationOutSchema", fetched.json())
+
+
 def test_missing_token_returns_401(client) -> None:
     response = client.get("/v1/tasks")
     assert response.status_code == 401

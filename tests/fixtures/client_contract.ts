@@ -1,11 +1,10 @@
 // Frozen snapshot of the desktop client's authoritative Zod contract.
 //
-// Source: `packages/contracts/src/index.ts` on branch
-// `feature/client-tauri-campus-adapter` @ c581226ca702ba66a484576547bc37bc893a2e0f.
-//
-// Backend-side contract freeze (2026-09-28, integration review): `title` was
-// added to `PlanItemSchema` to match the served `ClientPlanItem` (OpenAPI
-// already had it as required). Developer B must mirror this exact line in
+// Regenerated verbatim from `packages/contracts/src/index.ts` whenever that
+// contract changes. When `packages/contracts` is absent (backend CI), this
+// snapshot is the ONLY copy of the contract the drift checker sees.
+// Do not hand-edit this file to make a check pass: fix the source contract
+// and regenerate, or the two copies silently diverge.
 import { z } from "zod";
 
 const IsoDateTime = z.string().datetime({ offset: true });
@@ -61,7 +60,9 @@ export const TaskSchema = z.object({
 
 export const CurrentStateSchema = z.object({
   version: z.number().int().nonnegative(),
-  updated_at: IsoDateTime,
+  // Backend `datetime | None` serializes an explicit null; the mirror must
+  // accept it (caught by the strengthened drift checker, PR #75 RC).
+  updated_at: IsoDateTime.nullable(),
   now: IsoDateTime,
   context: z.string().nullable(),
   tasks: z.array(TaskSchema),
@@ -72,10 +73,13 @@ export const CurrentStateSchema = z.object({
 });
 
 export const PlanItemSchema = z.object({
-  task_id: z.string(),
+  // Backend `uuid.UUID | None` / `UTCDatetime | None` serialize explicit
+  // nulls (placement may leave a windowless or taskless item); the mirrors
+  // must accept them (caught by the strengthened drift checker, PR #75 RC).
+  task_id: z.string().nullable(),
   title: z.string(),
-  start_at: IsoDateTime,
-  end_at: IsoDateTime,
+  start_at: IsoDateTime.nullable(),
+  end_at: IsoDateTime.nullable(),
   reason: z.string(),
   // D-031 §1：结构化依据（「为什么」面板/审计用），形状可演进不锁契约；
   // reason 保留为人话渲染层。服务端 None 归一为空对象，线上永不见 null。
@@ -419,6 +423,10 @@ const DATA_OPERATION_PHASES = [
   "DELETE_OBJECTS",
   "DELETE_VERIFY",
 ] as const;
+// Backend is Literal["controlled_live"] (A-r2 §4): a new scope value must
+// parse red here, not silently render — same philosophy as kind/status/phase
+// (PR #75 review note 1).
+const DATA_COMPLETION_SCOPES = ["controlled_live"] as const;
 
 export const AccountTargetSchema = z.object({
   kind: z.literal("account"),
@@ -521,7 +529,7 @@ export const DataReceiptOutSchema = z.object({
   id: z.string().uuid(),
   operation_id: z.string().uuid(),
   completed_at: IsoDateTime.nullable(),
-  completion_scope: z.string(),
+  completion_scope: z.enum(DATA_COMPLETION_SCOPES),
   effects: z.array(DataEffectSchema),
   outstanding_count: z.number().int().nonnegative(),
   backup_expires_at: IsoDateTime.nullable(),
@@ -533,6 +541,7 @@ export const DataReceiptOutSchema = z.object({
 export type DataOperationKind = (typeof DATA_OPERATION_KINDS)[number];
 export type DataOperationStatus = (typeof DATA_OPERATION_STATUSES)[number];
 export type DataOperationPhase = (typeof DATA_OPERATION_PHASES)[number];
+export type DataCompletionScope = (typeof DATA_COMPLETION_SCOPES)[number];
 export type AccountTarget = z.infer<typeof AccountTargetSchema>;
 export type SourceTarget = z.infer<typeof SourceTargetSchema>;
 export type MemoryTarget = z.infer<typeof MemoryTargetSchema>;

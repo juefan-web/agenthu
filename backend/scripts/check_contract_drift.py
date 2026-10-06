@@ -130,7 +130,7 @@ ZOD_DIRECTION: dict[str, str] = {
 _BRACKETS = {"(": ")", "[": "]", "{": "}"}
 _CLOSERS = frozenset(_BRACKETS.values())
 _SCHEMA_RE = re.compile(r"export const (\w+Schema)\s*=\s*z\.object\(\{")
-_CONST_RE = re.compile(r"^const (\w+)\s*=\s*([^\n;]+);", re.MULTILINE)
+_CONST_START_RE = re.compile(r"^const (\w+)\s*=", re.MULTILINE)
 
 
 @dataclass
@@ -244,11 +244,34 @@ def _split_top_level(body: str) -> list[tuple[str, str]]:
 
 
 def _collect_consts(source: str) -> dict[str, str]:
-    return {
-        match.group(1): match.group(2).strip()
-        for match in _CONST_RE.finditer(source)
-        if not match.group(1).endswith("Schema")
-    }
+    """Top-level ``const`` declarations, including multi-line array literals.
+
+    A single-line regex used to be enough until const arrays were laid out
+    across lines (``const STATUSES = [\\n ...\\n] as const;``) — those were
+    never captured and every ``z.enum(STATUSES)`` field parsed as an EMPTY
+    enum, so member checks silently passed (PR #75 review, blind spot #4 in
+    the D-035 implementation note). Array values are now captured with
+    bracket balancing; other values keep the single-line capture.
+    """
+
+    consts: dict[str, str] = {}
+    for match in _CONST_START_RE.finditer(source):
+        name = match.group(1)
+        if name.endswith("Schema"):
+            continue
+        rest = source[match.end() :]
+        stripped = rest.lstrip()
+        if stripped.startswith("["):
+            try:
+                close = _match_delim(stripped, 0)
+            except ValueError:
+                continue
+            consts[name] = stripped[: close + 1]
+            continue
+        single_line = re.match(r"[^\n;]+;", stripped)
+        if single_line:
+            consts[name] = single_line.group(0)[:-1].rstrip()
+    return consts
 
 
 def _ztype(expr: str, consts: dict[str, str], *, depth: int = 0) -> ZType:
@@ -292,6 +315,17 @@ def _ztype(expr: str, consts: dict[str, str], *, depth: int = 0) -> ZType:
         types.add("string")
         body = _call_body(expr, "z.enum(")
         if body is not None:
+            body = body.strip()
+            if re.fullmatch(r"[A-Za-z_]\w*", body):
+                if body not in consts:
+                    # A bare identifier inside z.enum() can only be a const
+                    # array reference; letting it parse as an empty enum is
+                    # how enum member checks silently stopped happening.
+                    raise ValueError(
+                        f"z.enum({body}): unresolved const reference — the enum "
+                        "would parse empty and member checks would pass silently"
+                    )
+                body = consts[body]
             enum_values = tuple(
                 first or second for first, second in re.findall(r"\"([^\"]*)\"|'([^']*)'", body)
             )
@@ -449,6 +483,37 @@ def _openapi_json_types(node: Any, schemas: dict[str, Any]) -> set[str]:
     return set()
 
 
+def _openapi_allows_null(node: Any, schemas: dict[str, Any], *, depth: int = 0) -> bool:
+    """Whether the node can serialize an explicit JSON ``null``.
+
+    ``_resolve`` unwraps ``anyOf: [$ref, {type: null}]`` down to the non-null
+    branch, so nullability has to be read from the raw node: a ``null``-typed
+    entry in ``type`` or in an ``anyOf``/``oneOf`` branch is the OpenAPI 3.1
+    rendering of Pydantic's ``X | None`` (PR #75 review: nullability was
+    previously excluded from the comparison on both sides and only pinned by
+    runtime samples, which /v1/data did not have).
+    """
+
+    if not isinstance(node, dict) or depth > 20:
+        return False
+    if "$ref" in node:
+        return _openapi_allows_null(
+            schemas.get(str(node["$ref"]).rsplit("/", 1)[-1]), schemas, depth=depth + 1
+        )
+    declared = node.get("type")
+    if declared == "null":
+        return True
+    if isinstance(declared, list) and "null" in {str(item) for item in declared}:
+        return True
+    for keyword in ("anyOf", "oneOf"):
+        branches = node.get(keyword)
+        if isinstance(branches, list) and any(
+            _openapi_allows_null(branch, schemas, depth=depth + 1) for branch in branches
+        ):
+            return True
+    return False
+
+
 class _Alignment:
     def __init__(
         self,
@@ -516,6 +581,34 @@ class _Alignment:
             self.errors.append(
                 f"{path}: OpenAPI declares {sorted(openapi_types)} but the client expects "
                 f"{sorted(expected.types)}"
+            )
+
+        # Enum members: compare the full sets whenever both sides declare
+        # them. Without this, the two TS copies could rename a member in
+        # lockstep and stay green while real payloads stopped parsing
+        # (PR #75 review mutation A).
+        if isinstance(resolved, dict):
+            api_enum = resolved.get("enum")
+            if isinstance(api_enum, list) and expected.enum:
+                api_members = {str(item) for item in api_enum}
+                client_members = set(expected.enum)
+                if api_members != client_members:
+                    self.errors.append(
+                        f"{path}: enum members differ: OpenAPI {sorted(api_members)} "
+                        f"vs client {sorted(client_members)}"
+                    )
+
+        # Nullability, response direction: the Backend serializes ``X | None``
+        # as an explicit null key, so a client field that rejects null fails
+        # parsing real payloads. Null widening on the client side stays
+        # allowed (see the direction note above).
+        if (
+            direction == "response"
+            and "null" not in expected.types
+            and _openapi_allows_null(node, self.components)
+        ):
+            self.errors.append(
+                f"{path}: OpenAPI may serialize null but the client contract rejects null"
             )
 
 

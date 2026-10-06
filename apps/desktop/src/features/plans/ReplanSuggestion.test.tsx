@@ -64,7 +64,7 @@ function renderSuggestion(current: Plan | undefined) {
 describe("diffPlans", () => {
   it("按 task_id 归类 moved/added/dropped", () => {
     const diff = diffPlans(currentPlan, suggestion);
-    const fmt = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const fmt = (iso: string | null) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—");
     expect(diff.moved).toEqual([{ title: "线性代数 HW2", from: fmt(currentPlan.items[0]!.start_at), to: fmt(suggestion.items[0]!.start_at) }]);
     expect(diff.added.map((item) => item.title)).toEqual(["数据结构实验"]);
     expect(diff.droppedTitles).toEqual(["人工智能作业"]);
@@ -75,7 +75,7 @@ describe("ReplanSuggestion（D-031 §2 Level 1 建议 UI）", () => {
   it("发现 replaces_plan_id 非空的最新草稿并展示理由与 diff", async () => {
     renderSuggestion(currentPlan);
     expect(await screen.findByText(/Focus 超时 42 分钟/)).toBeTruthy();
-    const fmt = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const fmt = (iso: string | null) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—");
     expect(screen.getByText(new RegExp(`调整 线性代数 HW2：${fmt(currentPlan.items[0]!.start_at).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} →`))).toBeTruthy();
     expect(screen.getByText(/新增 数据结构实验/)).toBeTruthy();
     expect(screen.getByText(/移出 人工智能作业/)).toBeTruthy();

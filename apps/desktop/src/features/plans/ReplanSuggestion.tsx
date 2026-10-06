@@ -15,7 +15,9 @@ interface PlanItemDiff {
 }
 
 function timeOf(item: Plan["items"][number]): string {
-  return new Date(item.start_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  // start_at is nullable in the backend contract (windowless placement);
+  // the diff only calls this when both sides carry a timestamp.
+  return item.start_at ? new Date(item.start_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—";
 }
 
 export function diffPlans(current: Plan | undefined, suggestion: Plan): PlanItemDiff {

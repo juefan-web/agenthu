@@ -87,6 +87,17 @@ Status: 开工 2026-10-06；基线 main `31e4743`（#74 合并头，P0-3 全链�
     coordinator dataGeneration 选项（捕获回写/兼容窗不补值/
     generation_stale → GenerationStaleError 即时中止清空存储）+
     services.tsx 注入 + AppServices.receipts。
+- 切片 1 RC 修复（2026-10-06，A 互审 @f444951 唯一必改 + 三注记）：
+  - **解析器兑现枚举/nullability 钉**：_collect_consts 多行 const 数组
+    （bracket-balance）；z.enum 参数展开 consts（不可解析裸引用构造性
+    报错——空枚举盲区变硬失败）；对齐段增枚举全集比较 + response 向
+    nullability 不对称检查；变异单测双钉（改枚举值红/去 .nullable() 红）。
+  - **/v1/data 三真实响应样本**（capabilities GET + preview POST +
+    confirm→operation GET，集成无 worker 形态）；receipt 样本缓释
+    （原因见 §5-8）。
+  - **completion_scope 收紧** z.string() → const 数组枚举；**存量镜像
+    缺口 7 处修复**（§5-7）+ UI 两处可空守卫；fixtures 头部恢复角色与
+    禁手编纪律注记（CI 唯一契约源）。
 
 ## 4. 验证证据（随切片填）
 
@@ -118,3 +129,27 @@ Status: 开工 2026-10-06；基线 main `31e4743`（#74 合并头，P0-3 全链�
    唯一新攻击面；TS 侧不重复校验（单一防线在边界）。
 4. **TS adopt 返回值对齐 Rust**（实际迁移数而非存在数）：首轮测试
    抓到两侧语义分叉后修齐——目标已有草稿时清除无主行返回 0。
+5. **解析器四盲区收口（RC，A 双变异实证）**：const 数组方案原未兑现
+   "作为嵌套字段已覆盖"——`_CONST_RE` 单行正则不捕多行 const 数组、
+   `z.enum(CONST)` 参数不展开 consts，三组枚举解析为空集（探针
+   `enum=()`）；双副本同改枚举值/去 `.nullable()` 双变异均仍绿（后端
+   加枚举值→快照重生→镜像未跟→CI 绿→用户面前 parse 红的后果链）。
+   修复后变异即红；残留已知面：`z.literal` 字段（targets kind /
+   confirmed / include_history）不进枚举比较——zod 运行时 + 真实载荷
+   样本兜底。字段级人工交叉评审仍是主防线（D-035 注记第四例再证）。
+6. **completion_scope 收紧为枚举**（注记①处置）：后端
+   `Literal["controlled_live"]`，镜像 z.string() → const 数组枚举——新
+   scope 值 parse 红而非静默渲染，与 kind/status/phase 同哲学；不采
+   松动记由路线。
+7. **强化检查器首跑即抓 7 处存量镜像缺口并修复**：ClientCurrentState
+   .updated_at 与 ClientPlanItem.task_id/start_at/end_at（后端 `X | None`
+   序列化显式 null，M4 期 null 加宽盲区残留）镜像补 `.nullable()`；
+   PlanView/ReplanSuggestion 两处 `new Date(start_at)` 补可空守卫
+   （无窗 plan item 为真实可达形状）。
+8. **receipt 样本缓释**：receipt 行由 worker 完成态产生，集成环境无
+   worker 面；receipt 形状由 E7 栈端到端钉（E7-2/E7-5 预登记面）。
+   capabilities/preview/confirm→operation 三样本覆盖 kind/status/phase
+   与全部恒 null 键。
+9. **TS unowned adopt 静默返 0 vs Rust 报错**（注记③处置）：可接受
+   不对称——Stronghold 命令层对 unowned 目标显式报错，Web fallback
+   （无命令层）返 0 无副作用；单一显式防线在命令层。

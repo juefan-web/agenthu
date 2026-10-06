@@ -11,6 +11,8 @@ import copy
 import json
 from pathlib import Path
 
+import pytest
+
 from backend.main import app
 from backend.scripts.check_contract_drift import (
     ZOD_TO_OPENAPI,
@@ -192,6 +194,94 @@ def test_alignment_detects_nested_client_field_drift() -> None:
 
     errors = check_client_alignment(_fixture_source(), broken)
     assert any("EventEnvelope.provenance.upstream_id" in error for error in errors)
+
+
+def test_zod_parser_expands_const_array_enum_references() -> None:
+    """PR #75 review, blind spot #4 (D-035 note): a multi-line const array was
+    never captured and ``z.enum(CONST)`` arguments were never expanded, so
+    every const-referenced enum parsed as an EMPTY set and member checks
+    silently passed for both TS copies."""
+
+    source = """
+const STATUSES = [
+  "QUEUED",
+  "READY",
+] as const;
+export const ProbeSchema = z.object({
+  status: z.enum(STATUSES).nullable(),
+  inline: z.enum(["A", "B"]),
+});
+"""
+    schemas = parse_zod_schemas(source)
+    assert schemas["ProbeSchema"]["status"].enum == ("QUEUED", "READY")
+    assert schemas["ProbeSchema"]["status"].types == frozenset({"string", "null"})
+    assert schemas["ProbeSchema"]["inline"].enum == ("A", "B")
+
+
+def test_zod_parser_rejects_unresolved_enum_const_reference() -> None:
+    """An unresolvable bare identifier in z.enum() is a parse failure, not an
+    empty enum — otherwise the blind spot would come back silently."""
+
+    source = """
+export const ProbeSchema = z.object({
+  status: z.enum(UNKNOWN_STATUSES),
+});
+"""
+    with pytest.raises(ValueError, match="UNKNOWN_STATUSES"):
+        parse_zod_schemas(source)
+
+
+def test_fixture_data_enums_parse_non_empty() -> None:
+    schemas = parse_zod_schemas(_fixture_source())
+    assert schemas["DataOperationOutSchema"]["status"].enum == (
+        "QUEUED",
+        "RUNNING",
+        "RETRY_WAIT",
+        "READY",
+        "COMPLETED",
+        "EXPIRED",
+        "FAILED",
+    )
+    assert schemas["DataOperationOutSchema"]["kind"].enum == ("EXPORT", "DELETION")
+    assert schemas["DataOperationOutSchema"]["phase"].enum == (
+        "EXPORT_COLLECT",
+        "EXPORT_PACKAGE",
+        "EXPORT_VERIFY",
+        "DELETE_FENCE",
+        "DELETE_RELATIONAL",
+        "DELETE_OBJECTS",
+        "DELETE_VERIFY",
+    )
+    assert schemas["DataReceiptOutSchema"]["completion_scope"].enum == ("controlled_live",)
+
+
+def test_alignment_detects_enum_member_drift() -> None:
+    """Mutation pin (PR #75 review, mutation A): renaming one enum member in
+    the client contract used to stay green because member sets were never
+    compared — the very drift this check exists to catch."""
+
+    mutated = _fixture_source().replace('"RETRY_WAIT",', '"RETRY_WAIT_MUTATED",')
+    assert '"RETRY_WAIT_MUTATED",' in mutated  # the mutation actually landed
+
+    errors = check_client_alignment(mutated, app.openapi())
+    assert any("DataOperationOut.status: enum members differ" in error for error in errors)
+
+
+def test_alignment_detects_client_null_rejection() -> None:
+    """Mutation pin (PR #75 review, mutation B): dropping ``.nullable()`` from
+    a field the Backend serializes as an explicit null used to stay green —
+    null was excluded from the comparison on both sides and only runtime
+    samples could catch it, which /v1/data did not have."""
+
+    mutated = _fixture_source().replace(
+        "next_retry_at: IsoDateTime.nullable(),", "next_retry_at: IsoDateTime,"
+    )
+    assert "next_retry_at: IsoDateTime," in mutated
+
+    errors = check_client_alignment(mutated, app.openapi())
+    assert any(
+        "DataOperationOut.next_retry_at: OpenAPI may serialize null" in error for error in errors
+    )
 
 
 def test_artifact_comparison_detects_stale_openapi() -> None:
