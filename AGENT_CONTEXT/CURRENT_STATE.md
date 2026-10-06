@@ -1395,3 +1395,27 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   迁移往返零漂移。九条实现期判断见任务书 §5（密钥流替代新依赖/
   Retry-After 挂错误头/限流进程内为缝/统一 ids 消 sweep 等）。待
   B 互审。
+
+- **P0-3 切片 2 合并 + 切片 3 交审（A，2026-10-06，main 4348739）**：
+  #73 B approve 后合并（M5 链六连绿）；锚定判据"暂态编辑随整删"
+  经协调人合并记录追认入 DECISIONS。切片 3（分支
+  feature/m5-p0-3-write-guards）：write_guards 门面 + §2.3 全面接线
+  （events 入口/batch X-Data-Generation/chat/memory_lifecycle/focus/
+  agent_runner §2.4 终态/material_ingestion 写回复查/投影 account
+  豁免）+ 抑制拦截（create_event 锚拦 + batch 逐 envelope rejected）
+  + 解除路径（服务层 release，触发面随 P0-6）+ 孤儿账本
+  （storage_orphan_keys 表 + 迁移 c7a3f02d9e51 + files 同事务登记 +
+  drain DB 领取，Redis 退出删除流）+ account 闭包补抑制行终结 +
+  memory confirm 抑制 KeyError 潜伏 bug 修复。新增
+  test_write_guards.py 19 例。验证：442 passed/1 skipped（S3 env）、
+  ruff 同形双绿、pyright 0、OpenAPI 70 路径 drift 绿、迁移往返零
+  漂移。强携③条全落（upstream_id 纪律入 §1-7、E7-7 seed 记 E7 行、
+  assert_writable 全面接线即本片主体）；切片 3 判断 §5-10..15。
+  B 互审 Request Changes 一项（核点 3：抑制先于 dedupe 次序未钉——
+  helper 随机 dedupe_key 致重放永不命中 dedupe 查找）已修：新增
+  次序钉死测试（seed/replay 共享后端计算键 + 屏障前 dedupe 命中
+  实证 + confirm 后 409，变异验证转红复绿），文件 20 例、全量
+  444 passed/0 skipped（本地与 CI 实测同值；S3 项两侧实跑）、三查
+  绿；测试独
+  delta，生产码零变更，其余六核点 B 全过。待 B delta 复核转
+  approve 后协调人合并。

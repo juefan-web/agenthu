@@ -17,12 +17,13 @@ from sqlalchemy.orm import Session
 
 from backend.core.errors import ConflictError, ValidationError
 from backend.db.base import utcnow
-from backend.models.enums import FocusSessionStatus, TaskStatus
+from backend.models.enums import DataBarrierScope, FocusSessionStatus, TaskStatus
 from backend.models.focus_session import FocusSession
 from backend.models.task import Task
 from backend.schemas.client_contract import FocusSessionUpdate
 from backend.schemas.event import EventCreate
 from backend.services.events import create_event
+from backend.services.write_guards import assert_write_allowed
 
 _ALLOWED_TRANSITIONS: dict[FocusSessionStatus, set[FocusSessionStatus]] = {
     FocusSessionStatus.RUNNING: {
@@ -97,6 +98,13 @@ def lock_focus_start(session: Session, *, user_id: uuid.UUID, task_id: uuid.UUID
 
 
 def create_focus_session(session: Session, *, user_id: uuid.UUID, task: Task) -> FocusSession:
+    # Entry guard (A-draft §2.3 names Focus explicitly). Task ids are not in
+    # any current barrier's target space (source barriers carry event/file/
+    # chat ids), so today this only ever trips on the account barrier — the
+    # discipline keeps the check honest if barrier id spaces ever widen.
+    assert_write_allowed(
+        session, user_id=user_id, scope=DataBarrierScope.SOURCE, target_ids={str(task.id)}
+    )
     lock_focus_start(session, user_id=user_id, task_id=task.id)
     existing = active_session_for_task(session, user_id=user_id, task_id=task.id)
     if existing is not None:
@@ -126,6 +134,10 @@ def update_focus_session(
     if focus.status in _TERMINAL:
         # Completion/abandonment is idempotent: return the stored result.
         return focus
+
+    assert_write_allowed(
+        session, user_id=user_id, scope=DataBarrierScope.SOURCE, target_ids={str(task.id)}
+    )
 
     if payload.deviation_note is not None:
         focus.deviation_note = payload.deviation_note

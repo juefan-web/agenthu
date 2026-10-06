@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 
 from backend.api.deps import CurrentUser, DBSession, PaginationDep
 from backend.core.errors import ConflictError
-from backend.models.enums import MemoryCorrectionStatus
+from backend.models.enums import DataBarrierScope, MemoryCorrectionStatus
 from backend.models.memory import Memory
 from backend.schemas.common import Page
 from backend.schemas.memory import (
@@ -27,6 +27,7 @@ from backend.services.memory_lifecycle import (
     live_memory_conditions,
     reject_memory,
 )
+from backend.services.write_guards import assert_write_allowed
 
 router = APIRouter(prefix="/memory", tags=["memory"])
 
@@ -58,6 +59,17 @@ def _live_key_owner(db: DBSession, user_id: uuid.UUID, subject_key: str | None) 
 
 @router.post("", response_model=MemoryRead, status_code=status.HTTP_201_CREATED)
 def create(payload: MemoryCreate, user: CurrentUser, db: DBSession) -> Memory:
+    # Entry guard (A-draft §2.3): a new memory citing events that are being
+    # deleted must not be written — the cited ids ride the SOURCE barrier's
+    # identity space. (A fresh row's own id can't be barred, so the MEMORY
+    # side of the guard is the account check only.)
+    assert_write_allowed(
+        db,
+        user_id=user.id,
+        scope=DataBarrierScope.SOURCE,
+        target_ids={str(value) for value in payload.source_event_ids}
+        | {str(value) for value in _evidence_event_ids(payload.evidence)},
+    )
     # P2: every referenced source event must belong to the current user.
     ensure_owned_events(db, user_id=user.id, event_ids=payload.source_event_ids)
     ensure_owned_events(db, user_id=user.id, event_ids=_evidence_event_ids(payload.evidence))

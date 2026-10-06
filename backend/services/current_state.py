@@ -31,7 +31,7 @@ from sqlalchemy.orm import Session
 from backend.config import get_settings
 from backend.db.base import utcnow
 from backend.models.current_state import CurrentState
-from backend.models.enums import FocusSessionStatus, PlanStatus, TaskStatus
+from backend.models.enums import DataBarrierScope, FocusSessionStatus, PlanStatus, TaskStatus
 from backend.models.event import Event
 from backend.models.focus_session import FocusSession
 from backend.models.plan import Plan
@@ -41,6 +41,7 @@ from backend.schemas.plan import PlanRead
 from backend.schemas.task import TaskRead
 from backend.services.lookup import ensure_owned_tasks
 from backend.services.plan_validity import client_invalid_item_exists
+from backend.services.write_guards import WriteBlocked, assert_write_allowed
 
 _PENDING_STATUSES = (TaskStatus.TODO, TaskStatus.IN_PROGRESS)
 _RECENT_WINDOW = timedelta(hours=24)
@@ -166,6 +167,19 @@ def flush_state_recompute(session: Session) -> None:
     if not dirty:
         return
     for user_id in sorted(dirty, key=str):
+        # Final-write guard (A-draft §2.3 lists the projection): under an
+        # account barrier the owner is being deleted and a projection freshly
+        # derived from soon-deleted rows is work the executor's fence clears
+        # anyway — skip instead of raising (the triggering write itself was
+        # legitimately accepted). Source/memory barriers do NOT block here:
+        # the projection is not id-partitioned, and the fence/recompute
+        # cycle converges it after the closure lands.
+        try:
+            assert_write_allowed(
+                session, user_id=user_id, scope=DataBarrierScope.SOURCE, target_ids=set()
+            )
+        except WriteBlocked:
+            continue
         recompute_current_state(session, user_id)
 
 

@@ -1051,3 +1051,20 @@ text("1")，两侧一致）不受影响。往返升降级 + autogenerate 零漂�
    `redact: true` 仅 audit 家族合法（错路由即拒执行、测试双钉）；
    audit redact 以真实行 id 定位（users 行删除 SET NULL 后属主不可
    寻）；账号清理项统一携带 ids（顺序无关 + audit 寻址一致）。
+
+## D-036 实现注记 — 锚定判据追认与暂态编辑（2026-10-06，切片 3，协调人合并记录转录）
+
+切片 2 裁定①的锚定判据经协调人合并确认（"裁定①的最锐边结论接受并
+记录"）：`handle_assignment_event` 对锚定 task 无条件重写投影字段——
+投影字段本就不是稳定独立编辑面，同步间隙的用户编辑按投影设计属暂态，
+判据无失明；E7-3 账面记"暂态编辑随整删"为既定行为（用例随切片 3 落，
+test_write_guards::test_anchored_task_with_edited_projection_still_whole_deletes）。
+
+另两项实现账（切片 3）：
+1. **memory 域 confirm 曾走抑制登记的潜在 KeyError**——
+   `_register_suppressions` 读 `target["source_kind"]`，既有测试只确认过
+   account/event/file 域故未触达；守卫测试确认 memory 域即炸。修复为
+   抑制登记仅限 source 域（A-draft §2.6 语义：memory 整链无可重采上游）。
+2. **异常路径丢自定义响应头（判断④的第二次实证）**——batch 路由的
+   X-Data-Generation 挂 route response 后抛 409 即被异常响应替换；
+   live 值改挂 ConflictError.headers（Retry-After 同款通道）。

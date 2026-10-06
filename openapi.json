@@ -647,15 +647,38 @@
         "summary": "Ingest Batch",
         "description": "Batch ingestion contract used by the desktop client sync coordinator.\n\n``accepted_event_ids`` / ``duplicate_event_ids`` contain the client\n``client_event_id`` values so the client can clear its pending queue.",
         "operationId": "ingest_batch_v1_events_batch_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Data-Generation",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Data-Generation"
+            }
+          }
+        ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/EventBatchRequest"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
@@ -718,12 +741,7 @@
               }
             }
           }
-        },
-        "security": [
-          {
-            "OAuth2PasswordBearer": []
-          }
-        ]
+        }
       }
     },
     "/v1/events/{event_id}": {

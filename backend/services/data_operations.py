@@ -497,7 +497,12 @@ def confirm_deletion(
             .values(revoked)
         )
         capability = _issue_receipt(session, operation=operation, handle=handle)
-    else:
+    elif preview.target["kind"] == "source":
+        # Suppression anchors exist for re-importable sources only; a
+        # memory-chain deletion has no upstream identity to suppress
+        # (A-draft §2.6). Reached here by memory confirms too — they must
+        # not read target["source_kind"] (latent KeyError, unfixed until
+        # this slice's guard tests confirmed a memory scope).
         _register_suppressions(
             session, handle=handle, target=preview.target, closure=closure, generation=generation
         )

@@ -342,14 +342,17 @@ REGISTRY: tuple[DataResource, ...] = (
         notes="literal agenthu:trigger:dirty",
     ),
     DataResource(
-        key="redis:storage-orphans",
-        store=Store.REDIS,
-        owner="member = object key (user-resolvable via file_objects)",
+        key="storage_orphan_keys",
+        store=Store.POSTGRES,
+        table="storage_orphan_keys",
+        owner="no owner column (keys embed a uuid; user-resolvable via file_objects)",
         classification=Classification.OPS,
-        disposal="Best-effort orphan object markers (worker/enqueue.py SPOP "
-        "is destructive); the durable data_cleanup_items queue supersedes "
-        "this pattern for lifecycle cleanup (A-draft §2.5).",
-        notes="literal agenthu:storage:orphans",
+        disposal="Durable object-delete work records for the plain "
+        "file-delete path (A-draft §2.5): registered in the same "
+        "transaction as the relational delete, claimed with a lease by the "
+        "drain cron, row deleted on success. Supersedes the r1 Redis "
+        "SPOP set, which a crash after pop could empty silently.",
+        notes="state reuses the data_cleanup_state values",
     ),
     DataResource(
         key="redis:arq-managed",

@@ -47,7 +47,12 @@ from backend.services.material_ingestion import (
 )
 from backend.services.replan_triggers import evaluate_replan_triggers
 from backend.services.storage import get_storage
-from backend.worker.enqueue import drain_dirty_users, mark_storage_orphan, pop_storage_orphans
+from backend.services.storage_orphans import (
+    claim_due_storage_orphans,
+    fail_storage_orphan,
+    release_storage_orphan,
+)
+from backend.worker.enqueue import drain_dirty_users
 
 logger = logging.getLogger(__name__)
 
@@ -255,29 +260,38 @@ async def drain_pending_extractions(ctx: dict[str, Any] | None = None) -> dict[s
 
 
 async def drain_storage_orphans(ctx: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Retry best-effort object deletions whose DB rows are already gone."""
+    """Retry object deletions whose DB rows are already gone (A-draft §2.5).
+
+    Membership lives in the durable ``storage_orphan_keys`` ledger (the
+    slice-3 cutover): rows are claimed FOR UPDATE SKIP LOCKED with a lease,
+    failures walk the frozen backoff ladder, and success deletes the row.
+    The cron's cadence is the wake — Redis holds nothing for this flow.
+    """
 
     storage = get_storage()
     deleted = 0
-    for key in pop_storage_orphans():
-        try:
-            with session_scope() as session:
+    with session_scope() as session:
+        for orphan in claim_due_storage_orphans(session, limit=100):
+            key = orphan.storage_key
+            try:
                 row_exists = session.scalar(
                     select(FileObject.id).where(FileObject.storage_key == key)
                 )
-            if row_exists is not None:
-                # Keys embed a uuid and are never reused; if a live row shows
-                # up under a supposedly deleted key, dropping the marker beats
-                # looping forever.
-                logger.warning("Orphan key %r has a live row; dropping marker", key)
-                continue
-            storage.delete(key)
-            deleted += 1
-        except Exception:
-            logger.warning("Orphan object delete failed for %r", key, exc_info=True)
-            # Best-effort stays best-effort; keys that failed this round are
-            # re-marked so a later cron pass retries them.
-            mark_storage_orphan(key)
+                if row_exists is not None:
+                    # Keys embed a uuid and are never reused; if a live row
+                    # shows up under a supposedly deleted key, dropping the
+                    # marker beats looping forever.
+                    logger.warning("Orphan key %r has a live row; dropping marker", key)
+                    release_storage_orphan(session, key)
+                    continue
+                storage.delete(key)
+                deleted += 1
+                release_storage_orphan(session, key)
+            except Exception as exc:
+                logger.warning("Orphan object delete failed for %r", key, exc_info=True)
+                fail_storage_orphan(
+                    session, orphan.id, error_summary=f"object delete failed: {type(exc).__name__}"
+                )
     return {"deleted": deleted}
 
 

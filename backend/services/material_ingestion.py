@@ -22,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.adapters.model_provider.base import EmbeddingResult, ModelProvider
+from backend.models.enums import DataBarrierScope
 from backend.models.file import FileObject
 from backend.models.material import GroundingConsent, MaterialChunk
 from backend.services.content_scanner import scan_text
@@ -31,6 +32,7 @@ from backend.services.material_extraction import (
     extract_pages,
 )
 from backend.services.storage import ObjectStorage
+from backend.services.write_guards import WriteBlocked, assert_write_allowed, current_generation_of
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +64,16 @@ def run_extraction(session: Session, file_id: uuid.UUID, storage: ObjectStorage)
         return {"file_id": str(file_id), "skipped": "not_a_course_file"}
     if obj.status not in RETRYABLE_STATUSES and obj.status != "extracted":
         return {"file_id": str(file_id), "skipped": f"status_{obj.status}"}
+
+    # §2.3 entry guard (extract/embed/backfill): a file under deletion must
+    # not have chunks rebuilt — the extraction result would die with the
+    # closure's chunk delete anyway.
+    try:
+        assert_write_allowed(
+            session, user_id=obj.user_id, scope=DataBarrierScope.SOURCE, target_ids={str(obj.id)}
+        )
+    except WriteBlocked:
+        return {"file_id": str(file_id), "skipped": "deletion_barrier"}
 
     try:
         data = storage.get(obj.storage_key)
@@ -180,8 +192,30 @@ async def embed_pending_chunks(
     if not rows:
         return {"course_name": course_name, "embedded": 0}
 
+    file_ids = {str(chunk.file_id) for chunk, _file in rows}
+    try:
+        assert_write_allowed(
+            session, user_id=user_id, scope=DataBarrierScope.SOURCE, target_ids=file_ids
+        )
+    except WriteBlocked:
+        return {"course_name": course_name, "embedded": 0, "skipped": "deletion_barrier"}
+    entry_generation = current_generation_of(session, user_id)
+
     texts = [chunk.content for chunk, _file in rows]
     result: EmbeddingResult = await provider.embed_texts(texts)
+
+    # §2.3 post-external-call recheck: embeddings computed before a
+    # deletion confirmed are stale and are never written back.
+    try:
+        assert_write_allowed(
+            session,
+            user_id=user_id,
+            scope=DataBarrierScope.SOURCE,
+            target_ids=file_ids,
+            observed_generation=entry_generation,
+        )
+    except WriteBlocked:
+        return {"course_name": course_name, "embedded": 0, "skipped": "deletion_barrier"}
 
     by_id = {chunk.id: chunk for chunk, _file in rows}
     for chunk_id, vector in zip(by_id.keys(), result.vectors, strict=True):

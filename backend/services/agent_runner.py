@@ -39,7 +39,7 @@ from backend.config import get_settings
 from backend.db.base import utcnow
 from backend.models.agent import AgentRun, PendingAction, PendingActionMutation
 from backend.models.chat import ChatMessage
-from backend.models.enums import AuditActor, AuditDecision
+from backend.models.enums import AuditActor, AuditDecision, DataBarrierScope
 from backend.models.plan import Plan
 from backend.schemas.agent import pending_action_read
 from backend.services import agent_tools
@@ -58,6 +58,7 @@ from backend.services.tool_registry import (
     ToolError,
     get_tool,
 )
+from backend.services.write_guards import WriteBlocked, assert_write_allowed, current_generation_of
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -477,6 +478,31 @@ async def _execute_tool(
         return None, "tool_internal_error"
 
 
+def _lifecycle_failure(exc: WriteBlocked) -> dict[str, Any]:
+    """§2.4 terminal failure for a run cut down by a deletion barrier."""
+
+    return {
+        "code": exc.lifecycle_code,
+        "retryable": False,
+        "safe_message": "deleted mid-flight; results not written back",
+    }
+
+
+def _run_barrier_ids(session: Session, run: AgentRun) -> set[str]:
+    """The run's anchor ids in the SOURCE barrier's identity space.
+
+    Chat runs cite their session and triggering message; proactive runs
+    cite nothing id-addressable (only the account barrier covers them)."""
+
+    chat_session_id, user_message = _chat_context(session, run)
+    ids: set[str] = set()
+    if chat_session_id is not None:
+        ids.add(str(chat_session_id))
+    if user_message is not None:
+        ids.add(str(user_message.id))
+    return ids
+
+
 def _settle_run(
     session: Session,
     run: AgentRun,
@@ -558,6 +584,43 @@ async def dispatch_confirmed_action(
         ),
     )
 
+    # §2.4 entry guard: an action whose basis rides deleted content cannot
+    # execute — settle FAILED (non-retryable) with the lifecycle code. The
+    # basis's reference ids are matched in the barrier's own id space; kinds
+    # outside every barrier space simply never match.
+    try:
+        basis_source_ids, basis_memory_ids = _action_barrier_ids(row)
+        assert_write_allowed(
+            session, user_id=row.user_id, scope=DataBarrierScope.SOURCE, target_ids=basis_source_ids
+        )
+        assert_write_allowed(
+            session, user_id=row.user_id, scope=DataBarrierScope.MEMORY, target_ids=basis_memory_ids
+        )
+        action_entry_generation = current_generation_of(session, row.user_id)
+    except WriteBlocked as exc:
+        now = utcnow()
+        row.status = "FAILED"
+        row.finished_at = now
+        row.updated_at = now
+        row.last_error = {
+            "code": exc.lifecycle_code,
+            "message": "source deleted before execution",
+        }
+        record_audit(
+            session,
+            action="pending_action.failed",
+            actor=AuditActor.SYSTEM.value,
+            user_id=row.user_id,
+            resource_type="pending_action",
+            resource_id=str(row.id),
+            details=redact_allowlist(
+                {"tool_name": row.tool_name, "status": row.status, "code": exc.lifecycle_code},
+                _AGENT_AUDIT_ALLOWED,
+            ),
+        )
+        session.commit()
+        return session.get(PendingAction, action_id)
+
     tool = get_tool(row.tool_name)
     failure: dict[str, Any] | None = None
     result: dict[str, Any] | None = None
@@ -617,6 +680,33 @@ async def dispatch_confirmed_action(
 
     now = utcnow()
     if failure is None:
+        # §2.3 post-external-call recheck: if a deletion settled while the
+        # tool ran, its result is stale and is not recorded. §2.4 honesty
+        # rule: an external request that already went out is never claimed
+        # revoked — the failure message says so instead.
+        try:
+            assert_write_allowed(
+                session,
+                user_id=row.user_id,
+                scope=DataBarrierScope.SOURCE,
+                target_ids=basis_source_ids,
+                observed_generation=action_entry_generation,
+            )
+            assert_write_allowed(
+                session,
+                user_id=row.user_id,
+                scope=DataBarrierScope.MEMORY,
+                target_ids=basis_memory_ids,
+                observed_generation=action_entry_generation,
+            )
+        except WriteBlocked as exc:
+            failure = {
+                "code": exc.lifecycle_code,
+                "retryable": False,
+                "safe_message": "deletion settled during execution; result "
+                "not recorded, side effects not claimed revoked",
+            }
+    if failure is None:
         row.status = "SUCCEEDED"
         row.finished_at = now
         row.result = result or {"summary": "Done"}
@@ -650,6 +740,24 @@ async def dispatch_confirmed_action(
 
 
 # ------------------------------------------------------------ the run ------
+
+
+def _action_barrier_ids(action: PendingAction) -> tuple[set[str], set[str]]:
+    """(source-space, memory-space) reference ids of an action's basis."""
+
+    source_ids: set[str] = set()
+    memory_ids: set[str] = set()
+    for ref in (action.basis or {}).get("references") or []:
+        if not isinstance(ref, dict):
+            continue
+        ref_id = ref.get("id")
+        if not isinstance(ref_id, str) or not ref_id:
+            continue
+        if ref.get("kind") == "memory":
+            memory_ids.add(ref_id)
+        else:
+            source_ids.add(ref_id)
+    return source_ids, memory_ids
 
 
 def _chat_context(session: Session, run: AgentRun) -> tuple[uuid.UUID | None, ChatMessage | None]:
@@ -690,6 +798,47 @@ async def execute_run(
     if run is None:
         return None
     assert run is not None  # claim_run already returned for the miss case
+
+    # §2.4 entry guard (A-draft §2.3 dispatch): a run under an ACTIVE
+    # deletion barrier — the owner's account, or a source deletion covering
+    # its chat anchors — settles CANCELLED with the lifecycle code instead
+    # of executing. Not retried: the sweep only re-claims QUEUED rows.
+    try:
+        entry_barrier_ids = _run_barrier_ids(session, run)
+        entry_generation = current_generation_of(session, run.user_id)
+        assert_write_allowed(
+            session,
+            user_id=run.user_id,
+            scope=DataBarrierScope.SOURCE,
+            target_ids=entry_barrier_ids,
+        )
+    except WriteBlocked as exc:
+        _settle_run(session, run, status="CANCELLED", failure=_lifecycle_failure(exc))
+        session.commit()
+        return session.get(AgentRun, run_id)
+
+    run_user_id = run.user_id
+
+    def _cancel_if_blocked_midflight() -> bool:
+        """§2.3 post-external-call recheck: results accepted before a
+        deletion confirmed are stale and never written back — the run
+        settles CANCELLED (§2.4) instead of continuing."""
+
+        try:
+            assert_write_allowed(
+                session,
+                user_id=run_user_id,
+                scope=DataBarrierScope.SOURCE,
+                target_ids=entry_barrier_ids,
+                observed_generation=entry_generation,
+            )
+        except WriteBlocked as exc:
+            settled = session.get(AgentRun, run_id)
+            assert settled is not None
+            _settle_run(session, settled, status="CANCELLED", failure=_lifecycle_failure(exc))
+            session.commit()
+            return True
+        return False
 
     if run.invocation_kind == "proactive_trigger":
         # A3: proactive trigger runs are deterministic by design — they
@@ -831,6 +980,8 @@ async def execute_run(
                 if t is not None
             ]
             turn = await provider.generate_with_tools(assembled.rendered, None, tool_schemas)
+            if _cancel_if_blocked_midflight():
+                return session.get(AgentRun, run_id)
             turns_used = 1
             usage_total["input_tokens"] += turn.usage.get("input_tokens", 0)
             usage_total["output_tokens"] += turn.usage.get("output_tokens", 0)
@@ -979,6 +1130,8 @@ async def execute_run(
                     degrade_code = degrade_code or "tool_round_limit"
                     break
                 turn = await provider.continue_with_tool_results(turn, results)
+                if _cancel_if_blocked_midflight():
+                    return session.get(AgentRun, run_id)
                 turns_used += 1
                 usage_total["input_tokens"] += turn.usage.get("input_tokens", 0)
                 usage_total["output_tokens"] += turn.usage.get("output_tokens", 0)
