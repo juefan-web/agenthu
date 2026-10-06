@@ -1419,3 +1419,18 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   绿；测试独
   delta，生产码零变更，其余六核点 B 全过。待 B delta 复核转
   approve 后协调人合并。
+
+- **P0-4 切片 1 交审（B，2026-10-06，分支 `feature/m5-p0-4-data-client`）**：
+  客户端契约面 + 存储原语，无 UI：/v1/data Zod 镜像 17 schema（恒有可空
+  位 .nullable() 必填；枚举 const 数组内联——drift 解析器不识别 schema
+  引用式枚举，首轮真红抓到）+ fixtures 冻结 + drift 注册 14 项全绿；
+  BackendClient 数据面 8 方法 + pushEventsTracked（X-Data-Generation
+  捕获/回发/409 即时中止清空进兼容窗）；recover 摘要 canonicalJson
+  逐字复现冻结 fixture 双样本；Stronghold 回执分槽（per-owner 快照 +
+  keyring 凭据 + owner 字符双层校验防路径注入，Web 内存 fallback）；
+  无主 Focus 草稿 adopt/discard（Rust+TS 同语义：目标优先、返回实际
+  迁移数）。vitest 220/220、cargo 23/23、tsc 0、ruff 同形双绿、
+  drift --require-zod 无漂移（本机；CI 以推送头实测为准）。切片 2
+  （数据控制页 + 回执最小视图 + 本机清理状态机 + 无主处置 UI）随后。
+  环境注记：worktree node_modules 因 /tmp 工作树复制事故损坏，全清
+  pnpm install 重建；本地新立 .venv 跑 ruff/drift 同形检查。

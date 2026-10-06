@@ -6,45 +6,6 @@
 // Backend-side contract freeze (2026-09-28, integration review): `title` was
 // added to `PlanItemSchema` to match the served `ClientPlanItem` (OpenAPI
 // already had it as required). Developer B must mirror this exact line in
-// `packages/contracts/src/index.ts`; the drift check fails until both copies
-// agree. `next_cursor` is deprecated server-side (D-010) and kept here for
-// response compatibility (D-022).
-//
-// 2026-09-29 (PR #9 review): `TaskSchema.source` added to both copies —
-// backend serves "manual" | "onethu" | ..., optional on the client so older
-// payloads still parse.
-//
-// 2026-10-01 (D-031 §1/§2, M2 phase-0 freeze): three lines staged on the
-// Backend side, mirroring the 2026-09-28 `title` precedent — mirrored in
-// `packages/contracts/src/index.ts` the same day (`feature/contracts-d031-mirror`):
-//   `PlanItemSchema.basis: z.record(z.unknown()).optional()`
-//     (structured per-item explainability; `reason` stays the human string)
-//   `CurrentStateSchema.recent_state: z.record(z.unknown()).optional()`
-//     (D-027 appendix; backend-only field turns contractual)
-//   `PlanSchema.replaces_plan_id: z.string().nullable().optional()` and
-//     `PlanSchema.replan_reason: z.string().nullable().optional()`
-//     (replan-suggestion shape; `.nullable()` is required — the backend
-//     serializes an explicit null on plans without a replacement, which
-//     `.optional()` alone would reject).
-//
-//
-// 2026-10-03 (D-034, M4 B1): the M4 frozen-contract block appended to both
-// copies — DecisionBasis/DecisionReference (incl. chat_message and
-// current_state kinds), PendingActionRead (expires_at required non-null),
-// AgentRunRead with the tool_calls[] mirror (review-point-6 condition),
-// NotificationPreferences (budget_date/last_sent_at server-only), chat
-// session/message shapes, CursorPage factory, and the mutation/send request
-// shapes. Drift-map entries (ZOD_TO_OPENAPI) land with the A1 alignment
-// batch, so the new schemas are intentionally unmapped until then.
-// The desktop client (Developer B) owns this contract. The Backend serves these
-// exact shapes under `/v1` (DECISIONS.md D-009) and the drift check in
-// `backend/scripts/check_contract_drift.py` reads this file so CI can report an
-// OpenAPI/Zod drift even on a branch where `packages/contracts` is not present.
-// When `packages/contracts` *is* present, both copies are checked.
-//
-// Do not edit to make the Backend pass: update it only together with the client
-// contract and record the new source commit above.
-
 import { z } from "zod";
 
 const IsoDateTime = z.string().datetime({ offset: true });
@@ -73,7 +34,6 @@ export const EventBatchRequestSchema = z.object({
   client_cursor: z.string().nullable(),
 });
 
-// Deprecated D-022: echoes the request's client_cursor; client owns sync progress.
 export const EventBatchResponseSchema = z.object({
   accepted_event_ids: z.array(z.string()),
   duplicate_event_ids: z.array(z.string()),
@@ -86,6 +46,9 @@ export const EventBatchResponseSchema = z.object({
   next_cursor: z.string().nullable(),
 });
 
+// Task.source 是任务来源（"manual" | "onethu" | ...）：backend-only addition
+// 为派生任务徽标透出（D-028 后续 / PR #9）。optional 使缺失该字段的旧
+// Backend 载荷仍可解析（undefined，按 manual 对待）。
 export const TaskSchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -103,15 +66,19 @@ export const CurrentStateSchema = z.object({
   context: z.string().nullable(),
   tasks: z.array(TaskSchema),
   available_minutes: z.number().int().nonnegative().nullable(),
+  // D-027 附录 / D-031 §1：backend-only 投影诊断（breakdown 等）转正；
+  // 弱类型不锁内部结构，服务端永不发 null（None 归一为对象）。
   recent_state: z.record(z.unknown()).optional(),
 });
 
 export const PlanItemSchema = z.object({
   task_id: z.string(),
+  title: z.string(),
   start_at: IsoDateTime,
   end_at: IsoDateTime,
-  title: z.string(),
   reason: z.string(),
+  // D-031 §1：结构化依据（「为什么」面板/审计用），形状可演进不锁契约；
+  // reason 保留为人话渲染层。服务端 None 归一为空对象，线上永不见 null。
   basis: z.record(z.unknown()).optional(),
 });
 
@@ -125,6 +92,8 @@ export const PlanSchema = z.object({
   // generate_plan 写入结构化 agent_decision 子键）。与 item basis 同口径：
   // 形状可演进不锁契约，UI 经 BasisPanel 兼容层检出转交共享渲染器。
   basis: z.record(z.unknown()).optional(),
+  // D-031 §2：重排建议形状。普通计划服务端序列化显式 null——必须
+  // .nullable()（optional 只容缺失不容 null，B 评审修订）。
   replaces_plan_id: z.string().nullable().optional(),
   replan_reason: z.string().nullable().optional(),
 });
@@ -208,6 +177,7 @@ export type LoginRequest = z.infer<typeof LoginRequestSchema>;
 export type RegisterRequest = z.infer<typeof RegisterRequestSchema>;
 export type Token = z.infer<typeof TokenSchema>;
 export type User = z.infer<typeof UserSchema>;
+
 // ---------------------------------------------------------------------------
 // M4（D-034 冻结契约）：pending actions / agent runs / chat / 通知偏好。
 // 字段级依据 m4-agent-runtime-audit-contract.md v3 与
@@ -412,8 +382,168 @@ export type AgentRunRead = z.infer<typeof AgentRunReadSchema>;
 export type NotificationPreferences = z.infer<typeof NotificationPreferencesSchema>;
 export type ChatSession = z.infer<typeof ChatSessionSchema>;
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
+export type ChatSearchItem = z.infer<typeof ChatSearchItemSchema>;
 export type CursorPage<T> = { items: T[]; next_cursor: string | null };
 export type PendingActionMutation = z.infer<typeof PendingActionMutationSchema>;
 export type ChatSessionCreate = z.infer<typeof ChatSessionCreateSchema>;
 export type ChatMessageSend = z.infer<typeof ChatMessageSendSchema>;
 export type ChatMessageSendResponse = z.infer<typeof ChatMessageSendResponseSchema>;
+
+// --- M5 /v1/data lifecycle contract (P0-4, D-035 client-side batch) ----------
+// Mirrors the /v1/data OpenAPI components field-for-field. Mirror discipline
+// (B-draft §1, M4 lessons codified): explicit z.object everywhere; the frozen
+// contract's `?` marks mean "key always present, may be null" -> required
+// `.nullable()` keys, never `.optional()` — the server emits these keys with
+// null, and a required mirror is what catches a silently stripped field.
+// `include_files` is the one documented omit-ok request field (default true).
+
+// Enum value arrays are the single source (inlined into the DTOs below —
+// the drift parser reads z.enum literals, not schema references; types are
+// derived from the arrays so values and TS types cannot diverge).
+const DATA_OPERATION_KINDS = ["EXPORT", "DELETION"] as const;
+const DATA_OPERATION_STATUSES = [
+  "QUEUED",
+  "RUNNING",
+  "RETRY_WAIT",
+  "READY",
+  "COMPLETED",
+  "EXPIRED",
+  "FAILED",
+] as const;
+const DATA_OPERATION_PHASES = [
+  "EXPORT_COLLECT",
+  "EXPORT_PACKAGE",
+  "EXPORT_VERIFY",
+  "DELETE_FENCE",
+  "DELETE_RELATIONAL",
+  "DELETE_OBJECTS",
+  "DELETE_VERIFY",
+] as const;
+
+export const AccountTargetSchema = z.object({
+  kind: z.literal("account"),
+});
+export const SourceTargetSchema = z.object({
+  kind: z.literal("source"),
+  source_kind: z.enum(["event", "file", "chat_session", "chat_message"]),
+  ids: z.array(z.string().uuid()).min(1).max(100),
+});
+export const MemoryTargetSchema = z.object({
+  kind: z.literal("memory"),
+  ids: z.array(z.string().uuid()).min(1).max(100),
+  include_history: z.literal(true),
+});
+export type DeleteTarget =
+  | z.infer<typeof AccountTargetSchema>
+  | z.infer<typeof SourceTargetSchema>
+  | z.infer<typeof MemoryTargetSchema>;
+
+export const DeletionConfirmRequestSchema = z.object({
+  preview_id: z.string().uuid(),
+  // Opaque server echo: submitted verbatim, never rendered or recomputed.
+  preview_digest: z.string().length(64),
+  client_request_id: z.string().min(8).max(128),
+  confirmed: z.literal(true),
+});
+export const ExportCreateRequestSchema = z.object({
+  client_request_id: z.string().min(8).max(128),
+  // The only omit-ok field on this face (server default: true).
+  include_files: z.boolean().optional(),
+});
+export const OperationRetryRequestSchema = z.object({
+  // Single field (frozen @A-r2 delta): a 409 version_conflict is the natural
+  // idempotency — same shape as the M4 confirm expected_version pattern.
+  expected_version: z.number().int().min(1),
+});
+export const DeletionRecoverRequestSchema = z.object({
+  client_request_id: z.string().min(8).max(128),
+  request_digest: z.string().length(64),
+});
+
+// Component name DataSafeError = the frozen contract's SafeError DTO
+// (avoids the agent-domain {code,message} component collision).
+export const DataSafeErrorSchema = z.object({
+  code: z.string(),
+  message: z.string(),
+  retryable: z.boolean(),
+});
+export const OperationProgressSchema = z.object({
+  processed: z.number().int().nonnegative(),
+  total: z.number().int().nonnegative().nullable(),
+  outstanding_count: z.number().int().nonnegative(),
+});
+export const DataEffectSchema = z.object({
+  resource_type: z.string(),
+  delete_count: z.number().int().nonnegative(),
+  redact_count: z.number().int().nonnegative(),
+  recompute_count: z.number().int().nonnegative(),
+  retain_count: z.number().int().nonnegative(),
+  reason_code: z.string(),
+});
+export const DataCapabilitiesSchema = z.object({
+  schema_version: z.string(),
+  graph_version: z.string(),
+  export_enabled: z.boolean(),
+  deletion_enabled: z.boolean(),
+  supported_source_kinds: z.array(z.string()),
+  minimum_client_version: z.string(),
+});
+export const DataPreviewOutSchema = z.object({
+  id: z.string().uuid(),
+  // Server-side loose echo of the accepted target dict.
+  target: z.record(z.unknown()),
+  graph_version: z.string(),
+  data_generation: z.number().int(),
+  preview_digest: z.string().length(64),
+  expires_at: IsoDateTime,
+  effects: z.array(DataEffectSchema),
+  limitations: z.array(z.string()),
+});
+export const DataOperationOutSchema = z.object({
+  id: z.string().uuid(),
+  kind: z.enum(DATA_OPERATION_KINDS),
+  target: z.record(z.unknown()).nullable(),
+  status: z.enum(DATA_OPERATION_STATUSES),
+  phase: z.enum(DATA_OPERATION_PHASES).nullable(),
+  version: z.number().int().min(1),
+  data_generation: z.number().int(),
+  created_at: IsoDateTime,
+  updated_at: IsoDateTime,
+  next_retry_at: IsoDateTime.nullable(),
+  expires_at: IsoDateTime.nullable(),
+  progress: OperationProgressSchema,
+  error: DataSafeErrorSchema.nullable(),
+  receipt_id: z.string().uuid().nullable(),
+  // Delivered exactly once on creation/recovery; always null on plain reads.
+  receipt_capability: z.string().nullable(),
+});
+export const DataReceiptOutSchema = z.object({
+  id: z.string().uuid(),
+  operation_id: z.string().uuid(),
+  completed_at: IsoDateTime.nullable(),
+  completion_scope: z.string(),
+  effects: z.array(DataEffectSchema),
+  outstanding_count: z.number().int().nonnegative(),
+  backup_expires_at: IsoDateTime.nullable(),
+  provider_limitations: z.array(z.string()),
+  local_cleanup_required: z.boolean(),
+  audit_receipt_version: z.string(),
+});
+
+export type DataOperationKind = (typeof DATA_OPERATION_KINDS)[number];
+export type DataOperationStatus = (typeof DATA_OPERATION_STATUSES)[number];
+export type DataOperationPhase = (typeof DATA_OPERATION_PHASES)[number];
+export type AccountTarget = z.infer<typeof AccountTargetSchema>;
+export type SourceTarget = z.infer<typeof SourceTargetSchema>;
+export type MemoryTarget = z.infer<typeof MemoryTargetSchema>;
+export type DeletionConfirmRequest = z.infer<typeof DeletionConfirmRequestSchema>;
+export type ExportCreateRequest = z.infer<typeof ExportCreateRequestSchema>;
+export type OperationRetryRequest = z.infer<typeof OperationRetryRequestSchema>;
+export type DeletionRecoverRequest = z.infer<typeof DeletionRecoverRequestSchema>;
+export type DataSafeError = z.infer<typeof DataSafeErrorSchema>;
+export type OperationProgress = z.infer<typeof OperationProgressSchema>;
+export type DataEffect = z.infer<typeof DataEffectSchema>;
+export type DataCapabilities = z.infer<typeof DataCapabilitiesSchema>;
+export type DataPreviewOut = z.infer<typeof DataPreviewOutSchema>;
+export type DataOperationOut = z.infer<typeof DataOperationOutSchema>;
+export type DataReceiptOut = z.infer<typeof DataReceiptOutSchema>;

@@ -62,6 +62,26 @@ ZOD_TO_OPENAPI: dict[str, str] = {
     "ChatSearchItemSchema": "ChatSearchItem",
     "NotificationPreferencesSchema": "NotificationPreferencesRead",
     "ChatMessageSendResponseSchema": "ChatMessageSendResponse",
+    # M5 /v1/data lifecycle contract (D-036 §8, P0-4 client batch).
+    # DataSafeError is the OpenAPI component name for the frozen contract's
+    # SafeError DTO (avoids the agent-domain {code,message} collision).
+    "AccountTargetSchema": "AccountTarget",
+    "SourceTargetSchema": "SourceTarget",
+    "MemoryTargetSchema": "MemoryTarget",
+    "DeletionConfirmRequestSchema": "DeletionConfirmRequest",
+    "ExportCreateRequestSchema": "ExportCreateRequest",
+    "OperationRetryRequestSchema": "OperationRetryRequest",
+    "DeletionRecoverRequestSchema": "DeletionRecoverRequest",
+    # Enum-valued fields are inlined as z.enum literals in the DTOs (the
+    # parser resolves literals, not schema references), so the enum
+    # components are checked as nested fields, not standalone mappings.
+    "DataSafeErrorSchema": "DataSafeError",
+    "OperationProgressSchema": "OperationProgress",
+    "DataEffectSchema": "DataEffect",
+    "DataCapabilitiesSchema": "DataCapabilities",
+    "DataPreviewOutSchema": "DataPreviewOut",
+    "DataOperationOutSchema": "DataOperationOut",
+    "DataReceiptOutSchema": "DataReceiptOut",
 }
 
 # Direction of the contract:
@@ -89,6 +109,22 @@ ZOD_DIRECTION: dict[str, str] = {
     "ChatSearchItemSchema": "response",
     "NotificationPreferencesSchema": "response",
     "ChatMessageSendResponseSchema": "response",
+    # M5 /v1/data: targets + request bodies are client->server; DTOs and the
+    # enum components ride inside responses (kind/status/phase).
+    "AccountTargetSchema": "request",
+    "SourceTargetSchema": "request",
+    "MemoryTargetSchema": "request",
+    "DeletionConfirmRequestSchema": "request",
+    "ExportCreateRequestSchema": "request",
+    "OperationRetryRequestSchema": "request",
+    "DeletionRecoverRequestSchema": "request",
+    "DataSafeErrorSchema": "response",
+    "OperationProgressSchema": "response",
+    "DataEffectSchema": "response",
+    "DataCapabilitiesSchema": "response",
+    "DataPreviewOutSchema": "response",
+    "DataOperationOutSchema": "response",
+    "DataReceiptOutSchema": "response",
 }
 
 _BRACKETS = {"(": ")", "[": "]", "{": "}"}

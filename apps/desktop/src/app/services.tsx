@@ -9,6 +9,8 @@ import type { EventQueue, UnownedQueueApi } from "../sync/queue";
 import { createEventQueue } from "../sync/queue";
 import { deriveOwnerKey } from "../sync/owner";
 import { EventSyncCoordinator } from "../sync/coordinator";
+import { readDataGeneration, writeDataGeneration } from "../sync/generation";
+import { createReceiptStore } from "../backend/receiptStore";
 
 const BUILD_TIME_BACKEND_URL = import.meta.env.VITE_BACKEND_URL?.replace(/\/$/, "") ?? "";
 export const BACKEND_URL_PREFERENCE_KEY = "agenthu.backend-url";
@@ -35,6 +37,7 @@ export interface AppServices {
   queue: EventQueue & UnownedQueueApi;
   focusDraft: FocusDraftStore;
   sync: EventSyncCoordinator | null;
+  receipts: ReturnType<typeof createReceiptStore>;
 }
 
 export function createAppServices(): AppServices {
@@ -54,8 +57,18 @@ export function createAppServices(): AppServices {
     },
   }) : null;
   const backend = backendSession?.client ?? null;
-  const sync = backend ? new EventSyncCoordinator(backend, queue, { resolveOwner }) : null;
-  return { buildTimeBackendUrl: BUILD_TIME_BACKEND_URL, backendUrl, backendSession, backend, queue, focusDraft, sync };
+  // P0-4（D-036 §8-3）：X-Data-Generation 按 owner 持久（localStorage 键
+  // 命名空间）；未登录读 null——兼容窗不自动补值。
+  const generationStorage = typeof localStorage === "undefined" ? null : localStorage;
+  const sync = backend ? new EventSyncCoordinator(backend, queue, {
+    resolveOwner,
+    dataGeneration: {
+      get: () => readDataGeneration(generationStorage, ownerScope.key),
+      set: (value) => writeDataGeneration(generationStorage, ownerScope.key, value),
+    },
+  }) : null;
+  const receipts = createReceiptStore();
+  return { buildTimeBackendUrl: BUILD_TIME_BACKEND_URL, backendUrl, backendSession, backend, queue, focusDraft, sync, receipts };
 }
 
 export const AppServicesContext = createContext<AppServices | null>(null);

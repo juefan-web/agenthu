@@ -1,5 +1,5 @@
 import { type EventEnvelope } from "@agenthu/contracts";
-import { BackendAuthError, BackendClient } from "../backend/client";
+import { BackendAuthError, BackendClient, BackendHttpError } from "../backend/client";
 import type { EventQueue } from "./queue";
 
 export interface SyncResult {
@@ -25,6 +25,20 @@ export interface CoordinatorOptions {
    *  remove/setCursor 会写进新命名空间，必须先停）。不提供 = 旧行为
    *  （单命名空间，测试用）。 */
   resolveOwner?: () => string | null;
+  /** P0-4（D-036 §8-3）：X-Data-Generation 持久面。提供时批推走
+   *  pushEventsTracked——响应捕获 live 代际回写、下批发送；409
+   *  generation_stale 置 null（兼容窗重对齐）并以 GenerationStaleError
+   *  中止本次 flush（重试同一代际无意义，再基后自然续传）。 */
+  dataGeneration?: { get(): number | null; set(value: number | null): void };
+}
+
+/** 远端已执行破坏性确认（删除/导出）导致本地代际过期。事件保留在队列；
+ *  下次 flush 以无头兼容窗重对齐，被抑事件由服务端 rejected 原因出队。 */
+export class GenerationStaleError extends Error {
+  constructor() {
+    super("数据代际已变更（远端有删除/导出确认）；队列保留，稍后自动重对齐");
+    this.name = "GenerationStaleError";
+  }
 }
 
 const DEFAULT_BATCH_SIZE = 500;
@@ -43,6 +57,7 @@ export class EventSyncCoordinator {
   private readonly retryBaseDelayMs: number;
   private readonly healthProbeTimeoutMs: number;
   private readonly resolveOwner?: () => string | null;
+  private readonly dataGeneration?: { get(): number | null; set(value: number | null): void };
 
   constructor(
     private readonly backend: BackendClient,
@@ -54,6 +69,7 @@ export class EventSyncCoordinator {
     this.retryBaseDelayMs = options.retryBaseDelayMs ?? DEFAULT_RETRY_BASE_DELAY_MS;
     this.healthProbeTimeoutMs = options.healthProbeTimeoutMs ?? DEFAULT_HEALTH_PROBE_TIMEOUT_MS;
     this.resolveOwner = options.resolveOwner;
+    this.dataGeneration = options.dataGeneration;
   }
 
   async enqueue(events: EventEnvelope[]): Promise<void> {
@@ -126,6 +142,14 @@ export class EventSyncCoordinator {
     let lastError: unknown;
     for (let attempt = 1; attempt <= this.maxBatchAttempts; attempt += 1) {
       try {
+        if (this.dataGeneration) {
+          const { body, generation } = await this.backend.pushEventsTracked(
+            { events: batch, client_cursor: await this.queue.getCursor() },
+            this.dataGeneration.get(),
+          );
+          if (generation !== null) this.dataGeneration.set(generation);
+          return body;
+        }
         return await this.backend.pushEvents({
           events: batch,
           client_cursor: await this.queue.getCursor(),
@@ -133,6 +157,12 @@ export class EventSyncCoordinator {
       } catch (error) {
         lastError = error;
         if (error instanceof BackendAuthError) throw error;
+        if (error instanceof BackendHttpError && error.code === "generation_stale") {
+          // 代际过期不进重试梯：同代际重发必然再 409。清空进入兼容窗，
+          // 事件保留原 owner 队列，再基后被抑条目由服务端按原因出队。
+          this.dataGeneration?.set(null);
+          throw new GenerationStaleError();
+        }
         if (attempt < this.maxBatchAttempts) {
           // D1 快速失败（惰性探测，快乐路径零开销）：首攻失败先问 /health，
           // 不可达（含探测超时）立即放弃重试梯——断网语义从「重试梯+退避

@@ -380,3 +380,162 @@ export type PendingActionMutation = z.infer<typeof PendingActionMutationSchema>;
 export type ChatSessionCreate = z.infer<typeof ChatSessionCreateSchema>;
 export type ChatMessageSend = z.infer<typeof ChatMessageSendSchema>;
 export type ChatMessageSendResponse = z.infer<typeof ChatMessageSendResponseSchema>;
+
+// --- M5 /v1/data lifecycle contract (P0-4, D-035 client-side batch) ----------
+// Mirrors the /v1/data OpenAPI components field-for-field. Mirror discipline
+// (B-draft §1, M4 lessons codified): explicit z.object everywhere; the frozen
+// contract's `?` marks mean "key always present, may be null" -> required
+// `.nullable()` keys, never `.optional()` — the server emits these keys with
+// null, and a required mirror is what catches a silently stripped field.
+// `include_files` is the one documented omit-ok request field (default true).
+
+// Enum value arrays are the single source (inlined into the DTOs below —
+// the drift parser reads z.enum literals, not schema references; types are
+// derived from the arrays so values and TS types cannot diverge).
+const DATA_OPERATION_KINDS = ["EXPORT", "DELETION"] as const;
+const DATA_OPERATION_STATUSES = [
+  "QUEUED",
+  "RUNNING",
+  "RETRY_WAIT",
+  "READY",
+  "COMPLETED",
+  "EXPIRED",
+  "FAILED",
+] as const;
+const DATA_OPERATION_PHASES = [
+  "EXPORT_COLLECT",
+  "EXPORT_PACKAGE",
+  "EXPORT_VERIFY",
+  "DELETE_FENCE",
+  "DELETE_RELATIONAL",
+  "DELETE_OBJECTS",
+  "DELETE_VERIFY",
+] as const;
+
+export const AccountTargetSchema = z.object({
+  kind: z.literal("account"),
+});
+export const SourceTargetSchema = z.object({
+  kind: z.literal("source"),
+  source_kind: z.enum(["event", "file", "chat_session", "chat_message"]),
+  ids: z.array(z.string().uuid()).min(1).max(100),
+});
+export const MemoryTargetSchema = z.object({
+  kind: z.literal("memory"),
+  ids: z.array(z.string().uuid()).min(1).max(100),
+  include_history: z.literal(true),
+});
+export type DeleteTarget =
+  | z.infer<typeof AccountTargetSchema>
+  | z.infer<typeof SourceTargetSchema>
+  | z.infer<typeof MemoryTargetSchema>;
+
+export const DeletionConfirmRequestSchema = z.object({
+  preview_id: z.string().uuid(),
+  // Opaque server echo: submitted verbatim, never rendered or recomputed.
+  preview_digest: z.string().length(64),
+  client_request_id: z.string().min(8).max(128),
+  confirmed: z.literal(true),
+});
+export const ExportCreateRequestSchema = z.object({
+  client_request_id: z.string().min(8).max(128),
+  // The only omit-ok field on this face (server default: true).
+  include_files: z.boolean().optional(),
+});
+export const OperationRetryRequestSchema = z.object({
+  // Single field (frozen @A-r2 delta): a 409 version_conflict is the natural
+  // idempotency — same shape as the M4 confirm expected_version pattern.
+  expected_version: z.number().int().min(1),
+});
+export const DeletionRecoverRequestSchema = z.object({
+  client_request_id: z.string().min(8).max(128),
+  request_digest: z.string().length(64),
+});
+
+// Component name DataSafeError = the frozen contract's SafeError DTO
+// (avoids the agent-domain {code,message} component collision).
+export const DataSafeErrorSchema = z.object({
+  code: z.string(),
+  message: z.string(),
+  retryable: z.boolean(),
+});
+export const OperationProgressSchema = z.object({
+  processed: z.number().int().nonnegative(),
+  total: z.number().int().nonnegative().nullable(),
+  outstanding_count: z.number().int().nonnegative(),
+});
+export const DataEffectSchema = z.object({
+  resource_type: z.string(),
+  delete_count: z.number().int().nonnegative(),
+  redact_count: z.number().int().nonnegative(),
+  recompute_count: z.number().int().nonnegative(),
+  retain_count: z.number().int().nonnegative(),
+  reason_code: z.string(),
+});
+export const DataCapabilitiesSchema = z.object({
+  schema_version: z.string(),
+  graph_version: z.string(),
+  export_enabled: z.boolean(),
+  deletion_enabled: z.boolean(),
+  supported_source_kinds: z.array(z.string()),
+  minimum_client_version: z.string(),
+});
+export const DataPreviewOutSchema = z.object({
+  id: z.string().uuid(),
+  // Server-side loose echo of the accepted target dict.
+  target: z.record(z.unknown()),
+  graph_version: z.string(),
+  data_generation: z.number().int(),
+  preview_digest: z.string().length(64),
+  expires_at: IsoDateTime,
+  effects: z.array(DataEffectSchema),
+  limitations: z.array(z.string()),
+});
+export const DataOperationOutSchema = z.object({
+  id: z.string().uuid(),
+  kind: z.enum(DATA_OPERATION_KINDS),
+  target: z.record(z.unknown()).nullable(),
+  status: z.enum(DATA_OPERATION_STATUSES),
+  phase: z.enum(DATA_OPERATION_PHASES).nullable(),
+  version: z.number().int().min(1),
+  data_generation: z.number().int(),
+  created_at: IsoDateTime,
+  updated_at: IsoDateTime,
+  next_retry_at: IsoDateTime.nullable(),
+  expires_at: IsoDateTime.nullable(),
+  progress: OperationProgressSchema,
+  error: DataSafeErrorSchema.nullable(),
+  receipt_id: z.string().uuid().nullable(),
+  // Delivered exactly once on creation/recovery; always null on plain reads.
+  receipt_capability: z.string().nullable(),
+});
+export const DataReceiptOutSchema = z.object({
+  id: z.string().uuid(),
+  operation_id: z.string().uuid(),
+  completed_at: IsoDateTime.nullable(),
+  completion_scope: z.string(),
+  effects: z.array(DataEffectSchema),
+  outstanding_count: z.number().int().nonnegative(),
+  backup_expires_at: IsoDateTime.nullable(),
+  provider_limitations: z.array(z.string()),
+  local_cleanup_required: z.boolean(),
+  audit_receipt_version: z.string(),
+});
+
+export type DataOperationKind = (typeof DATA_OPERATION_KINDS)[number];
+export type DataOperationStatus = (typeof DATA_OPERATION_STATUSES)[number];
+export type DataOperationPhase = (typeof DATA_OPERATION_PHASES)[number];
+export type AccountTarget = z.infer<typeof AccountTargetSchema>;
+export type SourceTarget = z.infer<typeof SourceTargetSchema>;
+export type MemoryTarget = z.infer<typeof MemoryTargetSchema>;
+export type DeletionConfirmRequest = z.infer<typeof DeletionConfirmRequestSchema>;
+export type ExportCreateRequest = z.infer<typeof ExportCreateRequestSchema>;
+export type OperationRetryRequest = z.infer<typeof OperationRetryRequestSchema>;
+export type DeletionRecoverRequest = z.infer<typeof DeletionRecoverRequestSchema>;
+export type DataSafeError = z.infer<typeof DataSafeErrorSchema>;
+export type OperationProgress = z.infer<typeof OperationProgressSchema>;
+export type DataEffect = z.infer<typeof DataEffectSchema>;
+export type DataCapabilities = z.infer<typeof DataCapabilitiesSchema>;
+export type DataPreviewOut = z.infer<typeof DataPreviewOutSchema>;
+export type DataOperationOut = z.infer<typeof DataOperationOutSchema>;
+export type DataReceiptOut = z.infer<typeof DataReceiptOutSchema>;

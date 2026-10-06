@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { MemoryReceiptStore } from "../../backend/receiptStore";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
@@ -59,7 +60,7 @@ function renderView() {
   correctMemory.mockReset().mockResolvedValue(fixtures[0]!);
   rejectMemory.mockReset().mockResolvedValue(fixtures[0]!);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const services = { backend: { listMemories, confirmMemory, correctMemory, rejectMemory } as unknown as AppServices["backend"], backendSession: null, queue: {} as never, focusDraft: {} as never, sync: null, backendUrl: "http://backend", buildTimeBackendUrl: "" };
+  const services = { backend: { listMemories, confirmMemory, correctMemory, rejectMemory } as unknown as AppServices["backend"], backendSession: null, queue: {} as never, focusDraft: {} as never, sync: null, receipts: new MemoryReceiptStore(), backendUrl: "http://backend", buildTimeBackendUrl: "" };
   return render(<QueryClientProvider client={queryClient}><AppServicesContext.Provider value={services}><MemoryView /></AppServicesContext.Provider></QueryClientProvider>);
 }
 
@@ -128,7 +129,7 @@ describe("MemoryView（「可修正」验收句的落点）", () => {
   it("空列表给出引导文案", async () => {
     listMemories.mockReset().mockResolvedValue([]);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const services = { backend: { listMemories } as unknown as AppServices["backend"], backendSession: null, queue: {} as never, focusDraft: {} as never, sync: null, backendUrl: "http://backend", buildTimeBackendUrl: "" };
+    const services = { backend: { listMemories } as unknown as AppServices["backend"], backendSession: null, queue: {} as never, focusDraft: {} as never, sync: null, receipts: new MemoryReceiptStore(), backendUrl: "http://backend", buildTimeBackendUrl: "" };
     render(<QueryClientProvider client={queryClient}><AppServicesContext.Provider value={services}><MemoryView /></AppServicesContext.Provider></QueryClientProvider>);
     expect(await screen.findByText(/还没有记忆/)).toBeTruthy();
   });
