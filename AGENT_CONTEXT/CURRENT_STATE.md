@@ -1410,5 +1410,11 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   test_write_guards.py 19 例。验证：442 passed/1 skipped（S3 env）、
   ruff 同形双绿、pyright 0、OpenAPI 70 路径 drift 绿、迁移往返零
   漂移。强携③条全落（upstream_id 纪律入 §1-7、E7-7 seed 记 E7 行、
-  assert_writable 全面接线即本片主体）；切片 3 判断 §5-10..15。待
-  B 互审。
+  assert_writable 全面接线即本片主体）；切片 3 判断 §5-10..15。
+  B 互审 Request Changes 一项（核点 3：抑制先于 dedupe 次序未钉——
+  helper 随机 dedupe_key 致重放永不命中 dedupe 查找）已修：新增
+  次序钉死测试（seed/replay 共享后端计算键 + 屏障前 dedupe 命中
+  实证 + confirm 后 409，变异验证转红复绿），文件 20 例、全量
+  444 passed/0 skipped（S3 env，CI 同形 443/1）、三查绿；测试独
+  delta，生产码零变更，其余六核点 B 全过。待 B delta 复核转
+  approve 后协调人合并。

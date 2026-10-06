@@ -117,7 +117,12 @@ def _me(client, headers) -> uuid.UUID:
     return uuid.UUID(client.get("/v1/auth/me", headers=headers).json()["id"])
 
 
-def _anchor_event_payload(*, upstream_id: str, event_type: str = "study.assignment.created"):
+def _anchor_event_payload(
+    *, upstream_id: str, event_type: str = "study.assignment.created", explicit_dedupe: bool = True
+):
+    # explicit_dedupe=False omits the key so the backend computes it from
+    # (source, upstream_id, semantic_version); used where seed and replay
+    # must share one dedupe key (the ordering pin below).
     return EventCreate(
         type=event_type,
         source="onethu",
@@ -131,7 +136,7 @@ def _anchor_event_payload(*, upstream_id: str, event_type: str = "study.assignme
             "semantic_version": "1",
             "fetched_at": datetime.now(UTC).isoformat(),
         },
-        dedupe_key=f"t:{uuid.uuid4().hex}",
+        dedupe_key=f"t:{uuid.uuid4().hex}" if explicit_dedupe else None,
     )
 
 
@@ -148,9 +153,18 @@ def _anchor_envelope(*, upstream_id: str, client_event_id: str) -> EventEnvelope
     )
 
 
-def _seed_anchor_event(client, headers, *, upstream_id: str, event_type: str | None = None) -> str:
+def _seed_anchor_event(
+    client,
+    headers,
+    *,
+    upstream_id: str,
+    event_type: str | None = None,
+    explicit_dedupe: bool = True,
+) -> str:
     payload = _anchor_event_payload(
-        upstream_id=upstream_id, event_type=event_type or "study.assignment.created"
+        upstream_id=upstream_id,
+        event_type=event_type or "study.assignment.created",
+        explicit_dedupe=explicit_dedupe,
     )
     response = client.post("/v1/events", json=payload.model_dump(mode="json"), headers=headers)
     assert response.status_code == 201, response.text
@@ -227,6 +241,33 @@ class TestSuppressionInterception:
         # A different anchor from the same source is unaffected — the guard
         # is anchor-scoped, not source-string-scoped.
         assert _seed_anchor_event(client, auth_headers, upstream_id="assignment:hw-10")
+
+    def test_suppression_precedes_dedupe_in_barrier_window(self, client, auth_headers):
+        # Ordering pin (review checkpoint 3): seed and replay carry no
+        # explicit dedupe_key, so both share the backend-computed key from
+        # (source, upstream_id, semantic_version). The pre-barrier replay
+        # proves that key hits the dedupe lookup (200 + X-Deduplicated);
+        # after confirm — rows not yet reaped — the identical payload must
+        # 409 instead of silently returning the doomed row.
+        upstream_id = "assignment:hw-d"
+        event_id = _seed_anchor_event(
+            client, auth_headers, upstream_id=upstream_id, explicit_dedupe=False
+        )
+
+        replay = _anchor_event_payload(upstream_id=upstream_id, explicit_dedupe=False)
+        pre_barrier = client.post(
+            "/v1/events", json=replay.model_dump(mode="json"), headers=auth_headers
+        )
+        assert pre_barrier.status_code == 200, pre_barrier.text
+        assert pre_barrier.headers["X-Deduplicated"] == "true"
+        assert pre_barrier.json()["id"] == event_id
+
+        _confirm_source_event(client, auth_headers, event_id, key="suppress-d")
+        post_confirm = client.post(
+            "/v1/events", json=replay.model_dump(mode="json"), headers=auth_headers
+        )
+        assert post_confirm.status_code == 409, post_confirm.text
+        assert post_confirm.json()["error"]["code"] == "source_deleted"
 
     def test_release_after_reauthorization_reopens_the_anchor(
         self, client, auth_headers, db_session

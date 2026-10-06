@@ -395,6 +395,19 @@ details/path/resource_id/ip_address/user_agent，不删行，90d 回执保留）
   confirm 抑制 KeyError（潜伏 bug）、account 清理项测试的孤儿
   Redis 字面量断言、registry 新表登记（inventory 在开发期抓到
   一次——fail-closed 自证第二次）。
+- 评审修订（2026-10-06，B RC 唯一必改项 = 核点 3）：抑制先于
+  dedupe 的次序钉死。原 helper 每次随机 `dedupe_key`，重放载荷永不
+  命中 dedupe 查找——重排 create_event 次序不会红。新增
+  test_suppression_precedes_dedupe_in_barrier_window：seed 与
+  replay 均不带显式 dedupe_key（同 source+provenance → 后端计算键
+  相同），三段式夹住——屏障前同载荷重放先实证 200 +
+  `X-Deduplicated: true` + 同 event id（"计算键必命中"前提在测），
+  confirm 后同载荷断言 409 source_deleted（此时 dedupe 必命中，
+  409 只能来自先行的抑制检查）。变异验证：临时把抑制检查挪到
+  dedupe 之后该测试转红，还原复绿。helper 加 explicit_dedupe 开关
+  （默认 True，既有行为不变）。文件 20 例；全量 444 passed /
+  0 skipped（S3 env——既往 skip 的 S3 项本轮实跑；CI 同形 443/1）；
+  ruff 同形双绿、pyright 0。测试独 delta，生产码零变更。
 
 ## 5 实现期判断（待 B 核）
 
