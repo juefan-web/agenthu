@@ -1415,6 +1415,7 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   helper 随机 dedupe_key 致重放永不命中 dedupe 查找）已修：新增
   次序钉死测试（seed/replay 共享后端计算键 + 屏障前 dedupe 命中
   实证 + confirm 后 409，变异验证转红复绿），文件 20 例、全量
-  444 passed/0 skipped（S3 env，CI 同形 443/1）、三查绿；测试独
+  444 passed/0 skipped（本地与 CI 实测同值；S3 项两侧实跑）、三查
+  绿；测试独
   delta，生产码零变更，其余六核点 B 全过。待 B delta 复核转
   approve 后协调人合并。

@@ -406,7 +406,8 @@ details/path/resource_id/ip_address/user_agent，不删行，90d 回执保留）
   409 只能来自先行的抑制检查）。变异验证：临时把抑制检查挪到
   dedupe 之后该测试转红，还原复绿。helper 加 explicit_dedupe 开关
   （默认 True，既有行为不变）。文件 20 例；全量 444 passed /
-  0 skipped（S3 env——既往 skip 的 S3 项本轮实跑；CI 同形 443/1）；
+  0 skipped——本地与 CI 实测同值（CI 亦设 S3 变量，S3 项两侧实跑；
+  既往记录的 "1 skipped" 为本地未设 S3 的环境项，非 CI 形态）；
   ruff 同形双绿、pyright 0。测试独 delta，生产码零变更。
 
 ## 5 实现期判断（待 B 核）
