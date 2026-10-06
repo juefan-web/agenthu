@@ -32,6 +32,7 @@ from backend.models.audit import AuditLog
 from backend.models.chat import ChatMessage, ChatSession
 from backend.models.consent import ModelContextConsent
 from backend.models.current_state import CurrentState
+from backend.models.data_lifecycle import DataSuppression
 from backend.models.event import Event
 from backend.models.file import FileObject
 from backend.models.focus_session import FocusSession
@@ -43,6 +44,7 @@ from backend.models.permission import PermissionGrant
 from backend.models.plan import Plan, PlanItem
 from backend.models.task import Task, task_events
 from backend.models.user import User
+from backend.services.data_lifecycle import owner_handle_of
 
 TARGET_CLOSURE = "target_closure"
 DERIVED_CLOSURE = "derived_closure"
@@ -55,6 +57,7 @@ REDACT_90D = "redact_not_delete_90d"
 # task_events edge survives with the edge removed.
 ANCHORED_DERIVATION = "anchored_derivation"
 DECORRELATED = "decorrelated"
+ACCOUNT_TERMINATION = "account_termination"
 
 _LIMITATIONS: tuple[str, ...] = (
     "Encrypted DB/object backups roll for at most 30 days; until then deleted "
@@ -133,7 +136,7 @@ def _owned_ids_or_404(
     return tuple(sorted(wanted))
 
 
-def _account_closure(session: Session, user_id: uuid.UUID) -> ClosureResult:
+def _account_closure(session: Session, user_id: uuid.UUID, handle: str) -> ClosureResult:
     impacts: list[FamilyImpact] = []
     versions: list[str] = []
 
@@ -223,6 +226,23 @@ def _account_closure(session: Session, user_id: uuid.UUID) -> ClosureResult:
                 "audit_logs",
                 redact_ids=tuple(str(row[0]) for row in audit_rows),
                 reason_code=REDACT_90D,
+            )
+        )
+
+    # Suppression records end with the account (A-draft §5 retention: a
+    # suppression lives until re-authorization OR account deletion). The
+    # other ledger tables deliberately stay OUT: receipts keep their 90-day
+    # window, and the operation/barrier/cleanup-item rows of this very
+    # deletion must survive their own execution.
+    suppression_rows = _rows(
+        session, select(DataSuppression.id).where(DataSuppression.owner_handle == handle)
+    )
+    if suppression_rows:
+        impacts.append(
+            FamilyImpact(
+                "data_suppressions",
+                delete_ids=tuple(str(row[0]) for row in suppression_rows),
+                reason_code=ACCOUNT_TERMINATION,
             )
         )
 
@@ -503,7 +523,7 @@ def enumerate_closure(session: Session, *, user_id: uuid.UUID, target: dict) -> 
 
     kind = target["kind"]
     if kind == "account":
-        return _account_closure(session, user_id)
+        return _account_closure(session, user_id, handle=owner_handle_of(session, user_id))
     if kind == "source":
         source_kind = target["source_kind"]
         ids = _uuids(target["ids"])

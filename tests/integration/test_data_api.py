@@ -658,7 +658,10 @@ class TestAccountDeletion:
         ).all()
         refs = {(item.action, item.item_ref) for item in items}
         assert (CleanupItemAction.CLEAR_REDIS, "agenthu:trigger:dirty") in refs
-        assert (CleanupItemAction.CLEAR_REDIS, "agenthu:storage:orphans") in refs
+        # Slice 3: the storage-orphans marker set is GONE (durable
+        # storage_orphan_keys ledger); suppression rows die with the account
+        # through the normal relational family, not a Redis literal.
+        assert (CleanupItemAction.CLEAR_REDIS, "agenthu:storage:orphans") not in refs
         # Shared wake-up sets: the item removes THIS owner's member, never
         # the key (other owners live in the same sets).
         for item in items:

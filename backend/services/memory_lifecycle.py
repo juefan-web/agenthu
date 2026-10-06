@@ -27,8 +27,30 @@ from sqlalchemy.orm import Session
 
 from backend.core.errors import ConflictError
 from backend.db.base import utcnow
-from backend.models.enums import MemoryCorrectionStatus
+from backend.models.enums import DataBarrierScope, MemoryCorrectionStatus
 from backend.models.memory import Memory
+from backend.services.write_guards import assert_write_allowed
+
+
+def _guard_memory_write(session: Session, memory: Memory) -> None:
+    """Entry guard for writes that touch an existing memory row.
+
+    A-draft §2.3 with the scoped-ids discipline (B carry ③ on #70): the
+    row's own id rides the MEMORY barrier space; the events it cites ride
+    the SOURCE space, so correcting a memory whose evidence is being
+    deleted fails closed too (the correction would die with the closure).
+    """
+
+    assert_write_allowed(
+        session, user_id=memory.user_id, scope=DataBarrierScope.MEMORY, target_ids={str(memory.id)}
+    )
+    assert_write_allowed(
+        session,
+        user_id=memory.user_id,
+        scope=DataBarrierScope.SOURCE,
+        target_ids={str(value) for value in memory.source_event_ids or []},
+    )
+
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +107,7 @@ def confirm_memory(session: Session, memory: Memory) -> Memory:
     Confirming a REJECTED row is the documented "un-reject" path (§5).
     """
 
+    _guard_memory_write(session, memory)
     _require_live(memory)
     memory.correction_status = MemoryCorrectionStatus.CONFIRMED
     session.flush()
@@ -98,6 +121,7 @@ def reject_memory(session: Session, memory: Memory) -> Memory:
     skip re-deriving the same subject (§5). Idempotent.
     """
 
+    _guard_memory_write(session, memory)
     _require_live(memory)
     memory.correction_status = MemoryCorrectionStatus.REJECTED
     session.flush()
@@ -131,6 +155,7 @@ def correct_memory(
     )
     if locked is None:
         raise ConflictError("Memory is no longer available")
+    _guard_memory_write(session, locked)
     _require_live(locked)
 
     now = utcnow()
@@ -194,6 +219,7 @@ def upsert_keyed_memory(
     )
     now = utcnow()
     if locked is not None:
+        _guard_memory_write(session, locked)
         if locked.correction_status == MemoryCorrectionStatus.REJECTED:
             logger.info(
                 "Keyed memory re-derivation blocked by REJECTED live row",

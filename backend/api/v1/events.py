@@ -4,11 +4,11 @@ import uuid
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Query, Response, status
+from fastapi import APIRouter, Header, Query, Response, status
 from sqlalchemy import select
 
 from backend.api.deps import CurrentUser, DBSession, PaginationDep
-from backend.core.errors import NotFoundError, ValidationError
+from backend.core.errors import ConflictError, NotFoundError, ValidationError
 from backend.models.event import Event
 from backend.schemas.client_contract import (
     EventBatchRejection,
@@ -17,6 +17,7 @@ from backend.schemas.client_contract import (
 )
 from backend.schemas.common import Page, normalize_naive_utc
 from backend.schemas.event import EventCreate, EventRead
+from backend.services.data_operations import current_generation
 from backend.services.events import (
     assignment_payload_rejection,
     create_event,
@@ -84,7 +85,15 @@ def list_all(
 
 @router.post("/batch", response_model=EventBatchResponse)
 def ingest_batch(
-    payload: EventBatchRequest, user: CurrentUser, db: DBSession
+    payload: EventBatchRequest,
+    user: CurrentUser,
+    db: DBSession,
+    response: Response,
+    # Sync-generation metadata (A-draft §7 / D-036 §8-3): independent header,
+    # never trusted identity. Absent = legacy compat window (the write is
+    # still barrier/suppression-checked server-side, but the client's queue
+    # view is not validated and is NEVER auto-filled with the current value).
+    x_data_generation: Annotated[int | None, Header(alias="X-Data-Generation")] = None,
 ) -> EventBatchResponse:
     """Batch ingestion contract used by the desktop client sync coordinator.
 
@@ -92,6 +101,19 @@ def ingest_batch(
     ``client_event_id`` values so the client can clear its pending queue.
     """
 
+    live_generation = current_generation(db, user.id)
+    response.headers["X-Data-Generation"] = str(live_generation)
+    if x_data_generation is not None and x_data_generation != live_generation:
+        # The client's queue view predates a destructive confirm. It must
+        # re-base (refetch state, re-validate the queue against
+        # suppressions) instead of mixing deleted items into new batches —
+        # the live value rides the ERROR headers (the exception response
+        # replaces the route response, so a header set on it is discarded).
+        raise ConflictError(
+            "data generation moved; re-base the sync queue on current state",
+            code="generation_stale",
+            headers={"X-Data-Generation": str(live_generation)},
+        )
     outcome = ingest_event_batch(db, user_id=user.id, envelopes=payload.events)
     return EventBatchResponse(
         accepted_event_ids=outcome.accepted,

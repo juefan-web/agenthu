@@ -7,6 +7,12 @@ debounce (D-031 §2 "约 30s"), and the engine itself is idempotent per
 trigger signature, so a late or repeated drain is harmless. Redis being
 unavailable must never fail ingestion — marking is best-effort and simply
 waits for the next event.
+
+P0-3 slice 3 removed the storage-orphan marker set that used to live here:
+object-delete membership moved to the durable ``storage_orphan_keys``
+ledger (A-draft §2.5 — the destructive SPOP could lose keys on a crash).
+This set survives only because trigger evaluation is idempotent per
+signature; nothing destructive pops from it.
 """
 
 from __future__ import annotations
@@ -51,35 +57,5 @@ def drain_dirty_users(limit: int = 100) -> list[str]:
         popped = _client().spop(DIRTY_USERS_KEY, count=limit) or []
     except Exception:
         logger.warning("Could not drain dirty users for trigger evaluation", exc_info=True)
-        return []
-    return [value.decode() if isinstance(value, bytes) else str(value) for value in popped]
-
-
-STORAGE_ORPHANS_KEY = "agenthu:storage:orphans"
-
-
-def mark_storage_orphan(key: str) -> bool:
-    """Record an object key whose DB row is gone but whose delete failed.
-
-    The deletion order contract (D-033 §5) deletes rows transactionally and
-    treats the object delete as best-effort; this marker is what makes
-    "best-effort" eventually-consistent instead of eventually-forgotten.
-    """
-
-    try:
-        _client().sadd(STORAGE_ORPHANS_KEY, key)
-        return True
-    except Exception:
-        logger.warning("Could not mark storage orphan %r", key, exc_info=True)
-        return False
-
-
-def pop_storage_orphans(limit: int = 100) -> list[str]:
-    """Pop up to ``limit`` object keys pending best-effort deletion."""
-
-    try:
-        popped = _client().spop(STORAGE_ORPHANS_KEY, count=limit) or []
-    except Exception:
-        logger.warning("Could not drain storage orphans", exc_info=True)
         return []
     return [value.decode() if isinstance(value, bytes) else str(value) for value in popped]

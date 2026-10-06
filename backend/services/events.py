@@ -20,6 +20,7 @@ from backend.schemas.event import EventCreate
 from backend.services.current_state import defer_state_recompute, flush_state_recompute
 from backend.services.event_handlers import process_event
 from backend.services.pagination import count_total, decode_cursor, keyset_page
+from backend.services.write_guards import SUPPRESSED_REASON, SuppressedSource, is_suppressed
 from backend.worker.enqueue import mark_user_dirty
 
 _ASSIGNMENT_PREFIX = "study.assignment."
@@ -110,6 +111,15 @@ def create_event(
     Deduplication is enforced by a unique constraint, so concurrent replays are
     safe.
     """
+
+    # Suppression first (A-draft §2.6): a deleted upstream anchor must not
+    # resurrect even under a fresh client_event_id — this check sits before
+    # the dedupe lookup on purpose, so a replay of a since-deleted event is
+    # rejected rather than silently re-imported as "new".
+    if is_suppressed(
+        session, user_id=user_id, source=payload.source, provenance=payload.provenance
+    ):
+        raise SuppressedSource()
 
     dedupe_key = payload.dedupe_key or compute_dedupe_key(payload.source, payload.provenance)
     if dedupe_key:
@@ -282,12 +292,19 @@ def ingest_event_batch(
                 provenance=envelope.provenance.model_dump(mode="json"),
             )
             # Envelope-level validation already ran; create and classify.
-            _event, created = create_event(
-                session,
-                user_id=user_id,
-                payload=payload,
-                client_event_id=envelope.client_event_id,
-            )
+            # A suppressed anchor is a per-envelope rejection, not a batch
+            # failure — the client clears it from its queue like any other
+            # rejected item (nothing was written, so no rollback is needed).
+            try:
+                _event, created = create_event(
+                    session,
+                    user_id=user_id,
+                    payload=payload,
+                    client_event_id=envelope.client_event_id,
+                )
+            except SuppressedSource:
+                outcome.rejected.append((envelope.client_event_id, SUPPRESSED_REASON))
+                continue
             if created:
                 outcome.accepted.append(envelope.client_event_id)
             else:

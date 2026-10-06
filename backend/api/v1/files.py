@@ -18,7 +18,7 @@ from backend.models.material import MaterialChunk
 from backend.schemas.common import Page
 from backend.schemas.file import FileRead, SignedUrl
 from backend.schemas.material import MaterialChunkRead
-from backend.worker.enqueue import mark_storage_orphan
+from backend.services.storage_orphans import register_storage_orphan, release_storage_orphan
 from backend.worker.queue import get_arq_pool
 
 logger = logging.getLogger(__name__)
@@ -197,16 +197,23 @@ async def delete(
 ) -> Response:
     obj = _get_file(db, user.id, file_id)
     key = obj.storage_key
-    # Deletion order (D-033 §5): relational rows first — material_chunks
-    # cascade with the file row — committed before the object delete runs.
-    # The old order (object first, rows maybe-never) could leave chunks
-    # retrievable against a deleted blob. Object deletion stays best-effort:
-    # failures land in the orphan set and the worker cron retries them.
+    # Deletion order (D-033 §5 + A-draft §2.5): relational rows first —
+    # material_chunks cascade with the file row — committed before the
+    # object delete runs. The old order (object first, rows maybe-never)
+    # could leave chunks retrievable against a deleted blob. The object
+    # delete stays best-effort, but its work record now rides the SAME
+    # transaction as the row delete (durable orphan ledger), so a crash
+    # anywhere after the commit leaves a claimable marker instead of a
+    # forgotten blob — the cron retries, Redis holds nothing.
     db.delete(obj)
+    register_storage_orphan(db, key)
     db.commit()
     try:
         await run_in_threadpool(storage.delete, key)
     except Exception:
-        logger.warning("Object delete failed for %r; marked orphan", key, exc_info=True)
-        mark_storage_orphan(key)
+        # The durable marker is already committed; the drain cron retries.
+        logger.warning("Object delete failed for %r; durable marker retained", key, exc_info=True)
+    else:
+        release_storage_orphan(db, key)
+        db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

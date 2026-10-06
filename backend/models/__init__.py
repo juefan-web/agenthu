@@ -15,6 +15,7 @@ from backend.models.data_lifecycle import (
     DataPreview,
     DataReceipt,
     DataSuppression,
+    StorageOrphanKey,
 )
 from backend.models.enums import (
     AuditActor,
@@ -88,6 +89,7 @@ __all__ = [
     "PlanItem",
     "PlanItemStatus",
     "PlanStatus",
+    "StorageOrphanKey",
     "Task",
     "TaskStatus",
     "User",

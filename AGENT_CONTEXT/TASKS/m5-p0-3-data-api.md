@@ -47,6 +47,13 @@ B 对 #70 的 head-bound 互审（approve；携带项三 + should-fix 一 + advi
    CHECK 按名生成，值对齐名不动 DB 任何字节（零迁移）；模块 docstring
    的 JSON 往返稳定契约恢复。已随首提交落（4 个新枚举：Kind/Phase/
    CleanupItemAction/BarrierScope；其余 3 个本已对齐）。
+7. **"connector 事件必须带 upstream_id" 前置纪律**（协调人切片 3
+   强携，源自 #72 互审）：抑制拦截与 E7-7 重采 seed 均锚
+   provenance.upstream_id——无锚事件既不可抑制也不可重采追踪。本片
+   入口不做 422 强制（manual/test 源合法无锚，见 §2B-5/§5-10）；
+   纪律落 P0-6 connector 适配层（入队前断言），真 connector 落地时
+   该断言是硬门。E7-7 重采 seed 用带 upstream_id 事件（#71 账面
+   无需改，E7 行已记）。
 
 ## 2. 切片计划
 
@@ -111,6 +118,46 @@ details/path/resource_id/ip_address/user_agent，不删行，90d 回执保留）
 隐私安全的损失但违背回执保留语义——**单元测试 + 集成测试双钉红**。
 配套：account 闭包的 audit redact_ids 从 `audit:{index}` 占位改为**真实
 行 id**（占位符让 executor 无从定位行；redact 计数语义不变）。
+
+## 2B. 切片 3 范围裁定（2026-10-06，A 开工自裁；冻结文本出处随项标注）
+
+1. **接线面**（A 稿 §2.3 清单逐点）：统一走 `services/write_guards.py`
+   门面（assert_write_allowed / is_suppressed / release_source_suppressions /
+   current_generation_of），业务路径不直接摸 data_lifecycle 原语——
+   WriteBlocked/SuppressedSource 都是 ConflictError 子类带 scope，HTTP
+   409 语义与 worker §2.4 结算码共用一个来源。
+2. **§2.4 终态落点**：run 入口（claim 后）与两次 provider 写回点查
+   屏障 + 代际 → **CANCELLED + failure{account_deleted|source_deleted}**，
+   不写旧结果、不写 assistant 消息；action 入口（§2.4 CONFIRMED/
+   FAILED_RETRYABLE 用 FAILED——CONFIRMED 不伪称过期）与工具执行后
+   同查 → FAILED + last_error.code；已发外部请求不声称撤回（文案保留
+   "side effects not claimed revoked"）。
+3. **投影豁免 source/memory、只跳 account**：flush_state_recompute 对
+   account 屏障 skip（executor fence 拥有闭包后投影，fresh derive 是
+   死行上的白工）；source/memory 不拦——投影非 id 分区，闭包后
+   fence/recompute 周期收敛它。
+4. **scoped 写传 ids 纪律**（B 携带③接线半）：chat=message 的 session id；
+   memory create=引用的 event/evidence ids（SOURCE）+ lifecycle 内
+   memory 行 id（MEMORY）；extraction/embed=file id。屏障 target 身份
+   空间 = DeleteTarget.ids（切片 1 冻结），不发明第二空间。
+5. **抑制锚 = provenance.upstream_id**（与登记同序，回落 event id 仅
+   在登记侧存在——新事件无从知晓已删行 id，故拦截只匹配 upstream_id；
+   无 upstream_id 事件照过，"connector 事件必带 upstream_id" 是
+   connector 侧前置纪律，见 §3，不由入口 422 强制）。
+6. **解除路径无 HTTP 路由**（A 稿 §4 冻结矩阵无此面）：释放走服务层
+   release_source_suppressions（幂等 UPDATE released_at + audit 无内容
+   行），触发面随 P0-6 connector 重授权流；不为它破 §4 冻结。
+7. **孤儿账本**（A 稿 §2.5 / r2 补己见⑤三码位）：新表
+   storage_orphan_keys（owner 无列——key 内嵌 uuid 可经 file_objects
+   解析；state 复用 data_cleanup_state 枚举零新 PG 类型；成功即删行，
+   outbox 式）+ 迁移 c7a3f02d9e51。files DELETE 在行删同事务
+   register（崩溃后必有可领标记）、成功内联 release；drain cron 从
+   DB 领取（FOR UPDATE SKIP LOCKED + 同 5/30/120/300/900 梯 + 5min
+   租约），Redis 完全退出该流；enqueue.py 的 SADD/SPOP 对删除。
+8. **account 闭包补抑制行**：data_suppressions 随账号终结（A 稿 §5
+   保留期表"到重新授权/账号删除"）；receipts/operations/barriers/
+   cleanup-items **不入闭包**（receipt 90d 窗口 + 本操作自身账本必须
+   活过执行）。executor RESOURCE_MODELS 补 data_suppressions。
 
 
 
@@ -272,6 +319,43 @@ details/path/resource_id/ip_address/user_agent，不删行，90d 回执保留）
     export_include_files + data_receipts.delivery_{nonce,ciphertext,
     expires_at}；账本形状不变（owner_handle 值键控无 FK）。
 
+- **切片 3 主体（2026-10-06）**：
+  - **write_guards 门面**：assert_write_allowed（屏障 + 代际复合检查，
+    BarrierConflict/GenerationStale 转译为带 scope 的 WriteBlocked）/
+    is_suppressed（upstream_id HMAC 锚查 data_suppressions，released_at
+    IS NULL）/ release_source_suppressions（幂等释放 + 无内容 audit）/
+    current_generation_of。SuppressedSource 409 code=source_deleted。
+  - **事件入口**：create_event 在 dedupe 查找**之前**查抑制（已删事件
+    重放拒绝而非静默复用）；batch 对 SuppressedSource 逐 envelope 转
+    rejected（队列其余项不受污染）。POST /events/batch 增
+    X-Data-Generation 入口检查（缺头=旧客户端兼容窗照常；带旧值=
+    409 generation_stale，live 值挂错误 headers——route response 头
+    会被异常响应丢弃，判断④第二次实证）；响应恒带 live 值，绝不
+    自动补齐缺头客户端。
+  - **写路径接线**：chat send（session id 入 SOURCE 屏障）、memory
+    create（引用 event ids 入 SOURCE）、memory_lifecycle 四写路径
+    （行 id 入 MEMORY + 引用 event ids 入 SOURCE）、focus create/
+    update（task id，语义=account 屏障覆盖）、agent_runner（run 入口
+    + 两次 provider 写回后复查 → CANCELLED §2.4；action 入口 + 工具
+    后 → FAILED + lifecycle code；basis references 按 kind 入对应
+    屏障空间）、material_ingestion（run_extraction 入口 skip
+    deletion_barrier；embed 写回前复查代际，旧向量不落列）。
+  - **投影**：flush_state_recompute 对 account 屏障 skip（死行上不
+    fresh derive；§2B-3）。
+  - **孤儿账本**：storage_orphan_keys 表（storage_orphans.py 服务）+
+    迁移 c7a3f02d9e51；files.py 行删同事务 register、对象删成功内联
+    release；worker drain_storage_orphans 改 DB 领取（租约 + 退避梯 +
+    FAILED 停车），Redis SADD/SPOP 删除，enqueue.py 该对函数移除；
+    registry 条目改指新表；account 清理项不再有 storage:orphans
+    Redis 字面量。
+  - **account 闭包**：data_suppressions 行随账号终结
+    （reason_code=account_termination）；_account_closure 增 handle
+    参数（owner_handle 查询一次）；executor 家族表补
+    data_suppressions。
+  - **memory confirm 修复**：抑制登记收窄到 source 域（memory 域
+    confirm 曾 KeyError source_kind——潜伏自切片 1，守卫测试首次
+    触达即炸，见 §2B 注记）。
+
 - 切片 2 主体：新增测试 executor 8（四 phase 完成与分区存活/对象失败
   退避 RETRY_WAIT 恢复/verify 403 拒结算且治愈后完成/redact 错路由
   拒执行 + account 脱敏保行/FAILED 停车屏障不释放 + 手动重试同 op
@@ -291,6 +375,26 @@ details/path/resource_id/ip_address/user_agent，不删行，90d 回执保留）
   download/retry/recover/receipts）** + check_contract_drift 绿；
   迁移往返（scratch 库 upgrade→downgrade b52d7e91ac04→upgrade）+
   autogenerate 零漂移探针 0 op，scratch 已删。
+
+- 切片 3 主体：新增 tests/integration/test_write_guards.py **19 例**
+  （抑制四：重采跨 client_event_id 拦截含 batch 逐 envelope rejected /
+  重授权解除后可复用 / 无 upstream_id 照过 / 服务层异常型；代际一：
+  batch 缺头兼容 + 匹配头通过 + 确认后旧头 409 且错误头带 live 值；
+  屏障三：barred session 收消息 409 与无干 session 202 / barred memory
+  correct 409 / 新 memory 引 barred event 409 与无引用 201；§2.4 三：
+  run 入口 CANCELLED+source_deleted 零 provider 调用 / 模型调用中途
+  bump 代际 → CANCELLED 不写结果不写回复 / CONFIRMED action → FAILED
+  + last_error.code；extraction/投影三：barred file 抽取 skip 且零
+  chunk / embed 中途 bump 代际向量不落列 / account 屏障下投影 skip
+  含正向对照；孤儿三：删除失败留 durable 标记且 drain 治愈 /
+  成功路径内联释放零残留 / 幂等登记 + 梯尽 FAILED 停车不可再领；
+  account 闭包二：抑制行终结 + receipt 存活 / 锚定 task 带暂态编辑
+  仍整删（E7-3 钉））。**全量终轮：442 passed / 1 skipped**（S3 环境
+  项；ruff 同形双绿、pyright 0、OpenAPI 70 路径 + drift 绿）。迁移
+  c7a3f02d9e51 往返 + 零漂移探针见终轮记录。修复三处既有面：memory
+  confirm 抑制 KeyError（潜伏 bug）、account 清理项测试的孤儿
+  Redis 字面量断言、registry 新表登记（inventory 在开发期抓到
+  一次——fail-closed 自证第二次）。
 
 ## 5 实现期判断（待 B 核）
 
@@ -325,3 +429,26 @@ details/path/resource_id/ip_address/user_agent，不删行，90d 回执保留）
    对象。
 9. **manifest 不含自身 checksum**：自引用无解；verify 复算 manifest
    所列全部其它成员。README 计入 entries。
+10. **抑制拦截只匹配 upstream_id、不做行 id 回落**：登记侧锚
+    （upstream_id 优先，event id 回落）在删除后对新事件不可达——新
+    envelope 无从知晓已删行的 id，回落在拦截侧是死代码；无
+    upstream_id 事件照过（manual/test 源），connector 强制前置纪律
+    随 P0-6 落（任务书 §3 记档，B 携带①已收）。
+11. **解除路径不做 HTTP 面**：A 稿 §4 冻结矩阵无 release 路由；服务
+    层 release_source_suppressions 幂等可测，触发面等 P0-6 connector
+    重授权流（谁触发"重新授权"是产品面裁定，非本片）。
+12. **投影对 source/memory 豁免**：投影非 id 分区，source 屏障下
+    无干 task 仍应投影；闭包后 fence 的 recompute_ids 收敛它。仅
+    account 屏障 skip（整个 owner 在死，fresh derive 全是死行白工）。
+13. **§2.4 用 CANCELLED（run）/FAILED（action）而非新终态**：两枚举
+    均已有值、CHECK 不动；lifecycle code 放 failure/last_error.code
+    （account_deleted/source_deleted），客户端可从 code 区分而不需
+    新状态机。
+14. **storage_orphan_keys 无 owner 列**：key 内嵌 uuid 可经
+    file_objects 反查（registry owner 描述如此声明）；生命周期操作
+    的对象清理仍走 data_cleanup_items（自带 owner_handle），本表只
+    服务 D-033 旧删除路径——两队列不合并，形状各自最小。
+15. **孤儿 drain 用独立 session 而非 operation 上下文**：drain 与
+    data sweep 同 cron 进程但互不依赖；claim/execute/release 同事务
+    一次提交（storage.delete 成功后 release），崩溃回 PENDING 走
+    退避梯——账本为真、cron 即唤醒（§2.5 同构）。

@@ -42,7 +42,12 @@ from backend.models.audit import AuditLog
 from backend.models.chat import ChatMessage, ChatSession
 from backend.models.consent import ModelContextConsent
 from backend.models.current_state import CurrentState
-from backend.models.data_lifecycle import DataBarrier, DataCleanupItem, DataOperation
+from backend.models.data_lifecycle import (
+    DataBarrier,
+    DataCleanupItem,
+    DataOperation,
+    DataSuppression,
+)
 from backend.models.enums import (
     CleanupItemAction,
     CleanupItemState,
@@ -93,6 +98,10 @@ RESOURCE_MODELS: dict[str, Any] = {
     "pending_actions": PendingAction,
     "pending_action_mutations": PendingActionMutation,
     "current_states": CurrentState,
+    # Ledger family that ends with the account (A-draft §5): suppression
+    # rows are value-keyed with no users FK, so the account closure must
+    # delete them explicitly — receipts/operations/barriers stay out.
+    "data_suppressions": DataSuppression,
 }
 
 # Phase → the cleanup actions that phase owns (the fence owns no items).

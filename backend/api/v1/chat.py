@@ -29,6 +29,7 @@ from backend.core.errors import ConflictError, NotFoundError, ValidationError
 from backend.db.base import utcnow
 from backend.models.agent import AgentRun, PendingAction
 from backend.models.chat import ChatMessage, ChatSession
+from backend.models.enums import DataBarrierScope
 from backend.schemas.agent import DecisionBasis
 from backend.schemas.chat import (
     ChatMessageRead,
@@ -44,6 +45,7 @@ from backend.services.agent_runner import RUNNER_VERSION, TOOL_REGISTRY_VERSION,
 from backend.services.context_assembly import PROMPT_VERSION
 from backend.services.pagination import count_total, decode_cursor, keyset_page
 from backend.services.reference_invalidation import invalidate_chat_message_references
+from backend.services.write_guards import assert_write_allowed
 from backend.worker.queue import get_arq_pool
 
 logger = logging.getLogger(__name__)
@@ -238,6 +240,14 @@ async def send_message(
     """
 
     _session_or_404(session_id, user, db)
+
+    # Entry guard (A-draft §2.3): writing into a session that is itself a
+    # deletion target must fail closed while the barrier is up — the message
+    # would die with the executor's relational delete anyway, and blocking
+    # here keeps the client from queueing into a dying conversation.
+    assert_write_allowed(
+        db, user_id=user.id, scope=DataBarrierScope.SOURCE, target_ids={str(session_id)}
+    )
 
     existing = db.scalar(
         select(ChatMessage).where(

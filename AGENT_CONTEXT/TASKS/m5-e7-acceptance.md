@@ -34,11 +34,11 @@ expected delete/redact/recompute/retain counts及原因；B先核manifest。
 | --- | --- | --- |
 | E7-1 | U完整导出，V尝试列/下载/receipt；并发source删除；包TTL | U manifest计数、checksum/快照与seed一致；无V或凭据；include_files=false有明确遗漏；并发删除使旧包作废；过期/已删签名能力不能读 |
 | E7-2 | 预览变化、过期、重复确认、202丢响应、失败重试 | stale→409，无扩大删除；同ID同operation，不同输入409；durable账本不丢；账号停用后只有窄receipt恢复路径可用，不能借旧JWT业务访问 |
-| E7-3 | 分别删Event、file、Chat message/session | 每种source的图闭包与preview匹配；派生Task/Memory/quotes/标题/摘要/缓存清；独立用户内容按冻结规则保留；失效basis不再有原文。**派生Task=锚定判据**（task.(source,source_upstream_id) 匹配被删 event 锚→整删含 focus_sessions 级联计数；仅 task_events 边关联→去相关存活，边清 task 留）；preview reason_code 区分 anchored_derivation/decorrelated；audit 脱敏按真实行 id 定位（P0-3 切片 2 裁定①②，2026-10-06） |
+| E7-3 | 分别删Event、file、Chat message/session | 每种source的图闭包与preview匹配；派生Task/Memory/quotes/标题/摘要/缓存清；独立用户内容按冻结规则保留；失效basis不再有原文。**派生Task=锚定判据**（task.(source,source_upstream_id) 匹配被删 event 锚→整删含 focus_sessions 级联计数；仅 task_events 边关联→去相关存活，边清 task 留）；preview reason_code 区分 anchored_derivation/decorrelated；audit 脱敏按真实行 id 定位（P0-3 切片 2 裁定①②，2026-10-06）；**同步间隙的暂态投影编辑随整删**——handle_assignment_event 对锚定 task 无条件重写投影字段（title/deadline/extra），投影字段本就不是稳定独立编辑面，判据无失明（切片 3 钉：test_write_guards::test_anchored_task_with_edited_projection_still_whole_deletes） |
 | E7-4 | Memory最新版整链忘记、source导致L2样本不足 | SET NULL不复活旧版；全部live行读者（检索、估时、L1证据血缘、live-key判定）不读valid_to失效行，PATCH不可写valid_to；向量/检索/重算不回写已忘事实；独立用户修正按预期处置 |
 | E7-5 | 账号删除与两个worker在context/dispatch/embed/结果写回各处竞态 | 新业务拒绝，run/action诚实结算；已发外部请求不伪造撤回；无新Task/Memory/回答；一份有效claim，旧结果不落库，V不受影响 |
 | E7-6 | DB已接受后Redis断供、S3超时/403、进程崩溃 | DB清理账本仍有key；状态非COMPLETED，403不当404；恢复继续同operation，最多自动5次，耗尽可核查；对象版本/导出包一起清 |
-| E7-7 | 换账号、离线旧队列、坏备份、Focus草稿、旧客户端/在途闭包 | 无跨账号重传/显示；同上游事件双owner各自保留；换号守卫中止且批N+1不以新token推旧owner队列；无主队列隔离+仅显式adopt/discard；被删来源重采不复活；本机verified需真实清SQLite/WAL、localStorage备份、凭据与临时文件；离线设备标pending（实现基础与逐条预登记见下） |
+| E7-7 | 换账号、离线旧队列、坏备份、Focus草稿、旧客户端/在途闭包 | 无跨账号重传/显示；同上游事件双owner各自保留；换号守卫中止且批N+1不以新token推旧owner队列；无主队列隔离+仅显式adopt/discard；**被删来源重采不复活已实现（P0-3 切片 3）：upstream 锚抑制在 create_event 入口拦截（新 client_event_id 不复活），重授权解除走 release_source_suppressions（P0-6 connector 接触发面）；重采 seed 用带 upstream_id 事件（本行 seed 纪律，#71 账面无需改）**；本机verified需真实清SQLite/WAL、localStorage备份、凭据与临时文件；离线设备标pending（实现基础与逐条预登记见下） |
 | E7-8 | grant管理/窄scope、撤销竞态、模型/资料两类consent | 只有实现目录可授权；错category/channel/window拒绝；到期/撤销阻发；L2不被通知L3绕过；quiet hours/daily budget与grant分别生效 |
 | E7-9 | 2API+2worker共享限流/恢复、trace链、敏感marker扫描 | 限额不翻倍；Redis断供按冻结策略；HTTP/worker/run/外部调用可关联；logs/trace/errors/审计无marker、credential、URL参数/正文 |
 | E7-10 | 从bf02eeb迁移、含删除前数据备份的隔离恢复、配置/key/许可门 | restore先重放抑制再放流量，无已删内容/旧队列复活；RPO/RTO有实测；旧key拒绝/新key可用；许可逐文件有分发结论，未澄清不能发布 |

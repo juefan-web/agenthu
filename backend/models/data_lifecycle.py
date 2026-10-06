@@ -275,3 +275,36 @@ class DataSuppression(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     upstream_hmac: Mapped[str] = mapped_column(String(64), nullable=False)
     raised_generation: Mapped[int] = mapped_column(Integer, nullable=False)
     released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class StorageOrphanKey(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """Durable object-deletion work record (A-draft §2.5; P0-3 slice 3).
+
+    The plain file-delete path (D-033 §5 order) registers the object key in
+    the SAME transaction as the relational delete; the post-commit object
+    delete removes the row on success. Membership therefore never leaves
+    the database — the r1 failure mode (a crash after the destructive Redis
+    SPOP forgetting the object) is structurally gone. State machine reuses
+    the cleanup-item states (PENDING/CLAIMED/DONE/FAILED — the DONE value
+    exists for enum symmetry; success DELETES the row, outbox-style).
+    Lifecycle operations keep their own queue (data_cleanup_items); this
+    table is the same pattern for the non-operation delete path.
+    """
+
+    __tablename__ = "storage_orphan_keys"
+    __table_args__ = (
+        UniqueConstraint("storage_key", name="uq_storage_orphan_keys_key"),
+        Index("ix_storage_orphan_keys_due", "state", "next_retry_at"),
+    )
+
+    storage_key: Mapped[str] = mapped_column(Text, nullable=False)
+    state: Mapped[CleanupItemState] = mapped_column(
+        sa_enum(CleanupItemState, "data_cleanup_state"),
+        nullable=False,
+        default=CleanupItemState.PENDING,
+    )
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Safe summary only; the key itself is the work reference, not content.
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
