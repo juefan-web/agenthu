@@ -1,0 +1,28 @@
+{
+  "algorithm": "sha256(utf8(json.dumps(body, sort_keys=True, separators=(',',':'), ensure_ascii=False)))",
+  "pinned_by": "tests/integration/test_data_recovery.py; the desktop client mirrors this file (D-036 §8-2)",
+  "samples": [
+    {
+      "description": "standard confirm body (UUID strings, boolean true)",
+      "body": {
+        "preview_id": "c47ac1b7-4d5a-4b8e-8f2a-3d1c9e7b5a11",
+        "preview_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "client_request_id": "recover-sample-0001",
+        "confirmed": true
+      },
+      "canonical": "{\"client_request_id\":\"recover-sample-0001\",\"confirmed\":true,\"preview_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"preview_id\":\"c47ac1b7-4d5a-4b8e-8f2a-3d1c9e7b5a11\"}",
+      "sha256": "8a5d8807ce810eb749ca9c9cdd08650a4726440bc2fa373f0380e04e69fd2712"
+    },
+    {
+      "description": "non-ASCII client_request_id stays real UTF-8 (no ascii escaping)",
+      "body": {
+        "preview_id": "0f9e8d7c-6b5a-4c3d-2e1f-0a9b8c7d6e5f",
+        "preview_digest": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "client_request_id": "回执-恢复-样本-0002",
+        "confirmed": true
+      },
+      "canonical": "{\"client_request_id\":\"回执-恢复-样本-0002\",\"confirmed\":true,\"preview_digest\":\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\",\"preview_id\":\"0f9e8d7c-6b5a-4c3d-2e1f-0a9b8c7d6e5f\"}",
+      "sha256": "4c15c6e8dce18fddd4f84397a120b92ca842d536a971e511e71dd12e12f5ec27"
+    }
+  ]
+}

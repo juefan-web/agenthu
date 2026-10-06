@@ -1033,3 +1033,21 @@ UPDATE 回填（gen_random_uuid()::text 去连字符）→ 收 NOT NULL → 命�
 拒绝表达式型 server_default；纯字面量默认（如 data_generation 的
 text("1")，两侧一致）不受影响。往返升降级 + autogenerate 零漂移探针为
 该范式的验收标准（#70 任务书 §3 有双轮探针证据；B 互审已核论证）。
+
+## D-036 实现注记 — P0-3 切片 2 两项开工裁定（2026-10-06，协调人令，任务书 §2A 全文）
+
+1. **多事件派生 task 的部分源删除语义**（B 互审非阻塞注记的正面
+   裁定）：冻结文本 A 稿 §1"源删除区分纯派生与独立用户编辑；派生
+   内容清除，独立内容去相关来源后保留"操作化为**锚定判据**——
+   `task.(source, source_upstream_id)` 匹配被删 event 的
+   `(source, provenance.upstream_id)` 即纯派生（D-028 连续投影，
+   title/deadline/extra 随事件重写，无稳定独立编辑面）→ 整删，focus
+   级联枚举、plan_items SET NULL 存活记 limitations；仅 task_events
+   边关联（用户手工建立）→ 去相关存活，边随事件行 FK CASCADE。修正
+   既有闭包的过删（关联手工任务被整删）与漏删（无边锚定任务存活）
+   双向。preview reason_code 区分 anchored_derivation/decorrelated，
+   E7-3 预期已对齐。
+2. **executor 分派纪律**：DELETE_RELATIONAL 项先读 payload 再分派，
+   `redact: true` 仅 audit 家族合法（错路由即拒执行、测试双钉）；
+   audit redact 以真实行 id 定位（users 行删除 SET NULL 后属主不可
+   寻）；账号清理项统一携带 ids（顺序无关 + audit 寻址一致）。

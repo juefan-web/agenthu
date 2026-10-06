@@ -21,11 +21,15 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 
 from backend.adapters.model_provider import get_model_provider
+from backend.core.errors import StorageError
+from backend.db.base import utcnow
 from backend.db.session import session_scope
 from backend.models.agent import AgentRun
+from backend.models.data_lifecycle import DataOperation
+from backend.models.enums import DataOperationKind, DataOperationStatus
 from backend.models.file import FileObject
 from backend.services.agent_runner import (
     execute_run,
@@ -34,6 +38,8 @@ from backend.services.agent_runner import (
     recover_pending_actions,
     sweep_pending_actions,
 )
+from backend.services.data_executor import run_deletion
+from backend.services.data_exports import expire_ready_exports, run_export
 from backend.services.material_ingestion import (
     consent_enabled,
     embed_pending_chunks,
@@ -273,3 +279,82 @@ async def drain_storage_orphans(ctx: dict[str, Any] | None = None) -> dict[str, 
             # re-marked so a later cron pass retries them.
             mark_storage_orphan(key)
     return {"deleted": deleted}
+
+
+async def run_data_operation(ctx: dict[str, Any] | None, operation_id: str) -> dict[str, Any]:
+    """Drive one accepted data operation as far as it can go right now.
+
+    Deletions resume from the persisted phase checkpoint; a parked
+    RETRY_WAIT operation comes back through the sweep when its earliest
+    backoff gate passes. Redis only wakes work — the durable ledger is the
+    truth (A-draft §2.5), so a lost enqueue costs latency, never an object.
+    """
+
+    storage = get_storage()
+    redis_pool = ctx.get("redis") if ctx is not None else None
+    with session_scope() as session:
+        operation = session.get(DataOperation, uuid.UUID(operation_id))
+        if operation is None:
+            return {"operation_id": operation_id, "skipped": "not_found"}
+        if operation.kind == DataOperationKind.DELETION:
+            run_deletion(session, operation, storage=storage, redis=redis_pool)
+        else:
+            try:
+                run_export(session, operation, storage=storage)
+            except StorageError:
+                # Transient staging failure: park briefly; the sweep retries.
+                operation.status = DataOperationStatus.RETRY_WAIT
+                operation.next_retry_at = utcnow() + timedelta(seconds=30)
+                session.flush()
+        return {"operation_id": operation_id, "status": operation.status.value}
+
+
+# A RUNNING operation whose worker died re-enters the sweep after this grace
+# (mirrors the agent-runtime watchdog; item claims self-heal via the lease).
+_OPERATION_RUN_GRACE = timedelta(seconds=60)
+
+
+async def sweep_data_operations(ctx: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Cron reliability net for the data lifecycle (every 30s).
+
+    Dispatches QUEUED / due-RETRY_WAIT / stale-RUNNING operations and flips
+    READY exports past their 24h staging TTL to EXPIRED, deleting the
+    staged object (A-draft §3).
+    """
+
+    now = datetime.now(UTC)
+    with session_scope() as session:
+        due = list(
+            session.execute(
+                select(DataOperation.id).where(
+                    or_(
+                        DataOperation.status == DataOperationStatus.QUEUED,
+                        and_(
+                            DataOperation.status == DataOperationStatus.RETRY_WAIT,
+                            or_(
+                                DataOperation.next_retry_at.is_(None),
+                                DataOperation.next_retry_at <= now,
+                            ),
+                        ),
+                        and_(
+                            DataOperation.status == DataOperationStatus.RUNNING,
+                            DataOperation.updated_at < now - _OPERATION_RUN_GRACE,
+                        ),
+                    )
+                )
+            ).scalars()
+        )
+        expired = expire_ready_exports(session, storage=get_storage())
+    pool = ctx.get("redis") if ctx is not None else None
+    dispatched = 0
+    if pool is not None:
+        for operation_id in due:
+            try:
+                await pool.enqueue_job("run_data_operation", str(operation_id))
+                dispatched += 1
+            except Exception:  # pragma: no cover - next sweep retries
+                logger.warning(
+                    "Data operation dispatch failed",
+                    extra={"operation_id": str(operation_id)},
+                )
+    return {"due": len(due), "dispatched": dispatched, "expired_exports": expired}

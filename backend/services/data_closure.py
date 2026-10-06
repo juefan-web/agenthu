@@ -23,7 +23,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, or_, select, tuple_
 from sqlalchemy.orm import Session
 
 from backend.core.errors import NotFoundError
@@ -42,12 +42,19 @@ from backend.models.notification import NotificationPreference
 from backend.models.permission import PermissionGrant
 from backend.models.plan import Plan, PlanItem
 from backend.models.task import Task, task_events
+from backend.models.user import User
 
 TARGET_CLOSURE = "target_closure"
 DERIVED_CLOSURE = "derived_closure"
 CHAIN_CLOSURE = "supersedes_chain"
 RECOMPUTE = "projection_recompute"
 REDACT_90D = "redact_not_delete_90d"
+# Slice-2 adjudication ① (task doc §2A): a task whose D-028 anchor
+# (source, source_upstream_id) matches a deleted event is that event's
+# continuous projection and dies whole; a task merely CORRELATED via a
+# task_events edge survives with the edge removed.
+ANCHORED_DERIVATION = "anchored_derivation"
+DECORRELATED = "decorrelated"
 
 _LIMITATIONS: tuple[str, ...] = (
     "Encrypted DB/object backups roll for at most 30 days; until then deleted "
@@ -191,6 +198,14 @@ def _account_closure(session: Session, user_id: uuid.UUID) -> ClosureResult:
     impacts.append(impact)
     versions.extend(stamps)
 
+    # The users row itself is closure content too: "row itself" per the
+    # registry family — deleting it mid-phase is safe because every other
+    # item is id-addressed and CASCADE wipes are order-independent.
+    impacts.append(FamilyImpact("users", delete_ids=(str(user_id),)))
+    user_stamp = session.scalar(select(User.updated_at).where(User.id == user_id))
+    if user_stamp is not None:
+        versions.append(f"users:{user_id}:{user_stamp.isoformat()}")
+
     # Projections rebuild from what remains (nothing, for an account).
     projection = session.scalar(select(CurrentState.id).where(CurrentState.user_id == user_id))
     if projection is not None:
@@ -198,14 +213,15 @@ def _account_closure(session: Session, user_id: uuid.UUID) -> ClosureResult:
             FamilyImpact("current_states", recompute_ids=(str(projection),), reason_code=RECOMPUTE)
         )
 
-    audit_count = session.scalar(
-        select(func.count()).select_from(AuditLog).where(AuditLog.user_id == user_id)
-    )
-    if audit_count:
+    # Real row ids, not placeholders: the slice-2 executor's redact path
+    # locates rows by id (audit user_id SET-NULLs away once the users row
+    # dies, so ids are the only stable anchor; count semantics unchanged).
+    audit_rows = _rows(session, select(AuditLog.id).where(AuditLog.user_id == user_id))
+    if audit_rows:
         impacts.append(
             FamilyImpact(
                 "audit_logs",
-                redact_ids=tuple(f"audit:{index}" for index in range(audit_count)),
+                redact_ids=tuple(str(row[0]) for row in audit_rows),
                 reason_code=REDACT_90D,
             )
         )
@@ -224,6 +240,7 @@ def _account_closure(session: Session, user_id: uuid.UUID) -> ClosureResult:
 def _event_closure(session: Session, user_id: uuid.UUID, ids: list[uuid.UUID]) -> ClosureResult:
     impacts: list[FamilyImpact] = []
     versions: list[str] = []
+    limitations: list[str] = []
 
     event_ids = _owned_ids_or_404(session, Event, user_id, ids, "event")
     impacts.append(FamilyImpact("events", delete_ids=event_ids))
@@ -233,35 +250,74 @@ def _event_closure(session: Session, user_id: uuid.UUID, ids: list[uuid.UUID]) -
         if row[1] is not None
     )
 
-    derived_task_ids = [
-        row[0]
+    # Adjudication ① (§2A): partition affected tasks by D-028 anchor, not by
+    # correlation edges. Anchored tasks are content copies and die whole
+    # (with their focus sessions via FK CASCADE); merely correlated tasks
+    # survive with the edge removed (FK CASCADE on the event side).
+    anchors = [
+        (row[0], row[1]["upstream_id"])
         for row in _rows(
             session,
-            select(Task.id)
-            .join(task_events, task_events.c.task_id == Task.id)
-            .where(task_events.c.event_id.in_(ids))
-            .where(Task.user_id == user_id),
+            select(Event.source, Event.provenance).where(Event.id.in_(ids)),
         )
+        if isinstance(row[1], dict)
+        and isinstance(row[1].get("upstream_id"), str)
+        and row[1]["upstream_id"]
     ]
-    if derived_task_ids:
-        task_rows = _rows(
+    anchored_task_rows: list = []
+    if anchors:
+        anchored_task_rows = _rows(
             session,
-            select(Task.id, Task.updated_at).where(Task.id.in_(derived_task_ids)),
+            select(Task.id, Task.updated_at)
+            .where(Task.user_id == user_id)
+            .where(tuple_(Task.source, Task.source_upstream_id).in_(anchors)),
         )
-        impact, stamps = _impact_with_versions("tasks", task_rows, reason_code=DERIVED_CLOSURE)
+    if anchored_task_rows:
+        impact, stamps = _impact_with_versions(
+            "tasks", anchored_task_rows, reason_code=ANCHORED_DERIVATION
+        )
         impacts.append(impact)
         versions.extend(stamps)
-        edge_rows = _rows(
+        anchored_ids = [
+            uuid.UUID(row[0]) if isinstance(row[0], str) else row[0] for row in anchored_task_rows
+        ]
+        focus_rows = _rows(
             session,
-            select(task_events.c.task_id, task_events.c.event_id).where(
-                task_events.c.event_id.in_(ids)
+            select(FocusSession.id, FocusSession.updated_at).where(
+                FocusSession.task_id.in_(anchored_ids)
             ),
         )
+        impact, stamps = _impact_with_versions(
+            "focus_sessions", focus_rows, reason_code=DERIVED_CLOSURE
+        )
+        impacts.append(impact)
+        versions.extend(stamps)
+        limitations.append(
+            "Plan items referencing deleted tasks survive with their task link "
+            "nulled (plan history is user work); titles copied from the deleted "
+            "source may persist there until the plan is recomputed."
+        )
+
+    # Correlation records that die: edges to the deleted events (user-made
+    # correlations; the surviving tasks keep their content) plus every edge
+    # of an anchored task (dies with the task).
+    edge_rows = _rows(
+        session,
+        select(task_events.c.task_id, task_events.c.event_id).where(
+            or_(
+                task_events.c.event_id.in_(ids),
+                task_events.c.task_id.in_(
+                    [row[0] for row in anchored_task_rows] if anchored_task_rows else []
+                ),
+            )
+        ),
+    )
+    if edge_rows:
         impacts.append(
             FamilyImpact(
                 "task_events",
                 delete_ids=tuple(f"{row[0]}:{row[1]}" for row in edge_rows),
-                reason_code=DERIVED_CLOSURE,
+                reason_code=DECORRELATED,
             )
         )
 
@@ -289,12 +345,16 @@ def _event_closure(session: Session, user_id: uuid.UUID, ids: list[uuid.UUID]) -
         )
 
     projection = session.scalar(select(CurrentState.id).where(CurrentState.user_id == user_id))
-    if projection is not None and (derived_task_ids or citing):
+    if projection is not None and (anchored_task_rows or citing):
         impacts.append(
             FamilyImpact("current_states", recompute_ids=(str(projection),), reason_code=RECOMPUTE)
         )
 
-    return ClosureResult(impacts=tuple(impacts), content_versions=tuple(versions))
+    return ClosureResult(
+        impacts=tuple(impacts),
+        content_versions=tuple(versions),
+        limitations=tuple(_LIMITATIONS + tuple(limitations)),
+    )
 
 
 def _file_closure(session: Session, user_id: uuid.UUID, ids: list[uuid.UUID]) -> ClosureResult:

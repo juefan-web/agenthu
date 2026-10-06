@@ -78,6 +78,13 @@ class DataOperation(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     # [...], "recompute_ids": [...]}} plus "object_keys". The slice-2 executor
     # deletes by these ids, so previews never need to be recomputed later.
     impact: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    # SHA-256 of the canonical confirm request body (D-036 §8-2): the recover
+    # path's high-entropy second factor, transitively content-binding because
+    # the body carries preview_digest. Null for exports.
+    request_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # The only export input beyond the idempotency key; replay comparison
+    # covers it (same key + different include_files is an idempotency 409).
+    export_include_files: Mapped[bool | None] = mapped_column(nullable=True)
     status: Mapped[DataOperationStatus] = mapped_column(
         sa_enum(DataOperationStatus, "data_operation_status"),
         nullable=False,
@@ -235,6 +242,15 @@ class DataReceipt(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     capability_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # Short-lived re-delivery cache for a lost first 202 (A-draft §4): the
+    # capability encrypted under a per-receipt nonce with an HMAC-SHA256
+    # keystream derived from the server secret; one use, 10 minutes, then
+    # it can never be re-delivered (recover outside the window is a 404).
+    delivery_nonce: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    delivery_ciphertext: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    delivery_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class DataSuppression(Base, UUIDPrimaryKeyMixin, TimestampMixin):

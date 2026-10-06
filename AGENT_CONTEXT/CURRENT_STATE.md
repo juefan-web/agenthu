@@ -1379,3 +1379,19 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   payload 再分派、多事件派生 task 部分源删除语义正面裁定）、切片 3
   强携三条（upstream_id 前置纪律入任务书、E7-7 seed 带 upstream_id、
   assert_writable/孤儿流/抑制解除）已录入任务队列。
+
+- **P0-3 切片 2 交审（A，2026-10-06，分支 feature/m5-p0-3-data-worker）**：
+  开局提交 b13f6f7 = 两项强制裁定（①多事件派生 task 部分源删除：
+  D-028 锚定判据——纯派生整删含 focus 级联、用户关联去相关存活，
+  E7-3 对齐；②executor 先读 payload 再分派，错路由测试钉红）+
+  E7-3 账面锚定判据化 + 路由 bullet 缩进修。主体：闭包裁定①落码
+  （修切片 1 过删+漏删双向）+ account 补 users 行/audit 真实 id +
+  清理项统一 ids + executor 四 phase（退避梯/租约/verify 三分/屏障
+  释放规则）+ exports 全链（collect/package/verify/READY/24h/download
+  no-store/并发作废）+ retry(expected_version) + recover(digest 二
+  因子/10min 密钥流交付缓存/统一 404/双限流) + receipts GET +
+  worker sweep cron + 迁移 b52d7e91ac04。验证：422 passed/1 skipped
+  （S3 env）、ruff 同形双绿、pyright 0、OpenAPI 70 路径 drift 绿、
+  迁移往返零漂移。九条实现期判断见任务书 §5（密钥流替代新依赖/
+  Retry-After 挂错误头/限流进程内为缝/统一 ids 消 sweep 等）。待
+  B 互审。

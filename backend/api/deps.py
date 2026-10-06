@@ -56,6 +56,39 @@ def get_current_user(
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
+def get_current_identity(
+    request: Request,
+    token: TokenHeader,
+    db: DBSession,
+) -> User:
+    """Identity WITHOUT the active-account gate.
+
+    The deletion-recover path (A-draft §4) is the one place a deactivated
+    account may still authenticate: it re-delivers a lost capability within
+    its 10-minute window and never re-opens business access. Everything
+    else keeps using get_current_user.
+    """
+
+    if not token:
+        raise AuthenticationError("Authentication required")
+    payload = decode_access_token(token)
+    subject = payload.get("sub")
+    try:
+        user_id = uuid.UUID(str(subject))
+    except (ValueError, TypeError) as exc:
+        raise AuthenticationError("Invalid token subject") from exc
+
+    user = db.get(User, user_id)
+    if user is None:
+        raise AuthenticationError("User not found")
+    request.state.user_id = user.id
+    request.state.actor = "user"
+    return user
+
+
+CurrentIdentity = Annotated[User, Depends(get_current_identity)]
+
+
 @dataclass
 class Pagination:
     limit: int
