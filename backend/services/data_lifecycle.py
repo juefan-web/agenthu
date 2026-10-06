@@ -235,38 +235,49 @@ def enqueue_cleanup_items(
 
 
 def claim_cleanup_items(
-    session: Session, *, limit: int = 100, now: datetime | None = None
+    session: Session,
+    *,
+    limit: int = 100,
+    now: datetime | None = None,
+    operation_id: uuid.UUID | None = None,
+    actions: tuple[str, ...] | set[str] | None = None,
 ) -> list[DataCleanupItem]:
     """Claim due items FOR UPDATE SKIP LOCKED (M4 lease pattern).
 
     Due = PENDING past its backoff gate, or CLAIMED whose lease lapsed (a
     crashed executor self-heals on a later pass). Two executors never hold
     the same item; claiming increments ``attempts`` so a crashed attempt
-    still counts against the frozen ladder.
+    still counts against the frozen ladder. ``operation_id`` / ``actions``
+    scope the claim to one operation's current phase (slice-2 executor).
     """
 
     if now is None:
         now = utcnow()
     lease_deadline = now - CLEANUP_CLAIM_LEASE
+    conditions = [
+        or_(
+            and_(
+                DataCleanupItem.state == CleanupItemState.PENDING,
+                or_(
+                    DataCleanupItem.next_retry_at.is_(None),
+                    DataCleanupItem.next_retry_at <= now,
+                ),
+            ),
+            and_(
+                DataCleanupItem.state == CleanupItemState.CLAIMED,
+                DataCleanupItem.claimed_at.is_not(None),
+                DataCleanupItem.claimed_at <= lease_deadline,
+            ),
+        )
+    ]
+    if operation_id is not None:
+        conditions.append(DataCleanupItem.operation_id == operation_id)
+    if actions is not None:
+        conditions.append(DataCleanupItem.action.in_(tuple(actions)))
     rows = (
         session.execute(
             select(DataCleanupItem)
-            .where(
-                or_(
-                    and_(
-                        DataCleanupItem.state == CleanupItemState.PENDING,
-                        or_(
-                            DataCleanupItem.next_retry_at.is_(None),
-                            DataCleanupItem.next_retry_at <= now,
-                        ),
-                    ),
-                    and_(
-                        DataCleanupItem.state == CleanupItemState.CLAIMED,
-                        DataCleanupItem.claimed_at.is_not(None),
-                        DataCleanupItem.claimed_at <= lease_deadline,
-                    ),
-                )
-            )
+            .where(and_(*conditions))
             .order_by(DataCleanupItem.created_at)
             .limit(limit)
             .with_for_update(skip_locked=True)
@@ -332,6 +343,29 @@ def fail_cleanup_item(
         item.next_retry_at = now + timedelta(
             seconds=CLEANUP_BACKOFF_LADDER_S[min(item.attempts - 1, CLEANUP_MAX_ATTEMPTS - 1)]
         )
+    session.flush()
+    return item
+
+
+def park_cleanup_item(
+    session: Session,
+    item_id: uuid.UUID,
+    *,
+    error_summary: str,
+) -> DataCleanupItem:
+    """Park a claimed item as FAILED without walking the ladder.
+
+    For failures where a retry can never help (unknown family, wrong-route
+    redact payload, malformed ids): retrying would burn the ladder for
+    nothing, so the item parks immediately and the operation settles FAILED.
+    """
+
+    item = session.get(DataCleanupItem, item_id)
+    if item is None:
+        raise LifecycleError(f"cleanup item {item_id} not found")
+    item.state = CleanupItemState.FAILED
+    item.last_error = error_summary
+    item.next_retry_at = None
     session.flush()
     return item
 

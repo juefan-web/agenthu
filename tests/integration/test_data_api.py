@@ -20,6 +20,7 @@ from sqlalchemy import insert, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from backend.models.audit import AuditLog
 from backend.models.chat import ChatMessage, ChatSession
 from backend.models.consent import ModelContextConsent
 from backend.models.data_lifecycle import (
@@ -37,6 +38,7 @@ from backend.models.enums import (
     DataOperationStatus,
 )
 from backend.models.file import FileObject
+from backend.models.focus_session import FocusSession
 from backend.models.material import MaterialAnswer, MaterialChunk
 from backend.models.memory import Memory
 from backend.models.permission import PermissionGrant
@@ -113,8 +115,9 @@ class TestCapabilities:
         assert body["deletion_enabled"] is True
         assert body["supported_source_kinds"] == ["event", "file", "chat_session", "chat_message"]
         assert body["graph_version"] == graph_version()
-        # The export pipeline is slice 2; capabilities must not advertise it.
-        assert body["export_enabled"] is False
+        # The export pipeline landed with slice 2; the flag now tells the
+        # truth in both directions.
+        assert body["export_enabled"] is True
 
 
 class TestPreviews:
@@ -146,26 +149,72 @@ class TestPreviews:
         assert preview["expires_at"] > datetime.now(UTC).isoformat()
         assert preview["limitations"], "backup/provider/local limits must be listed"
 
-    def test_source_event_preview_walks_derivation_edges(self, client, auth_headers, db_session):
+    def test_source_event_preview_partitions_tasks_by_anchor(
+        self, client, auth_headers, db_session
+    ):
+        """Adjudication ① (task doc §2A): anchored derivations die whole,
+        user-correlated tasks survive with the edge removed, and the
+        preview's reason codes keep the two apart."""
+
         me = _me(client, auth_headers)
         user_id = uuid.UUID(me["id"])
-        event_id = _seed_event(client, auth_headers)
-        _seed_task_with_edge(db_session, user_id, uuid.UUID(event_id))
-        _seed_citing_memory(db_session, user_id, event_id)
+
+        # An anchored event (provenance.upstream_id) with its D-028 derived
+        # task — deliberately WITHOUT any task_events edge: the anchor, not
+        # the correlation, is what pulls the task into the closure.
+        anchored_event = dict(assignment_event())
+        anchored_event["provenance"] = {
+            "connector": "test",
+            "upstream_id": "course-work/assignment-77",
+        }
+        response = client.post("/v1/events", json=anchored_event, headers=auth_headers)
+        assert response.status_code == 201, response.text
+        anchored_event_id = response.json()["id"]
+        derived_task = Task(
+            user_id=user_id,
+            title="derived: Linear Algebra HW2",
+            source=anchored_event["source"],
+            source_upstream_id="course-work/assignment-77",
+        )
+        db_session.add(derived_task)
+        db_session.flush()
+        db_session.add(
+            FocusSession(user_id=user_id, task_id=derived_task.id, started_at=datetime.now(UTC))
+        )
+
+        # A manual task the user CORRELATED to the same event: keeps its
+        # content, loses the edge (decorrelated).
+        manual_task = Task(user_id=user_id, title="my own prep", source="manual")
+        db_session.add(manual_task)
+        db_session.flush()
+        db_session.execute(
+            insert(task_events).values(task_id=manual_task.id, event_id=anchored_event_id)
+        )
+        _seed_citing_memory(db_session, user_id, anchored_event_id)
         # An unrelated second event stays out of the closure.
         _seed_event(client, auth_headers)
+        db_session.flush()
 
         preview = _preview(
             client,
             auth_headers,
-            {"kind": "source", "source_kind": "event", "ids": [event_id]},
+            {"kind": "source", "source_kind": "event", "ids": [anchored_event_id]},
         )
         effects = _effects(preview)
         assert effects["events"]["delete_count"] == 1
+        # Only the ANCHORED task dies; the manual task never appears.
         assert effects["tasks"]["delete_count"] == 1
+        assert effects["tasks"]["reason_code"] == "anchored_derivation"
+        # Its focus sessions cascade with it (enumerated, not silent).
+        assert effects["focus_sessions"]["delete_count"] == 1
+        # The correlation edge dies — reason decorrelated, task survives.
         assert effects["task_events"]["delete_count"] == 1
+        assert effects["task_events"]["reason_code"] == "decorrelated"
         assert effects["memories"]["delete_count"] == 1
         assert effects["memories"]["reason_code"] == "derived_closure"
+        assert any("Plan items" in limitation for limitation in preview["limitations"]), (
+            "plan-item SET NULL consequence must be disclosed"
+        )
 
     def test_source_event_preview_isolates_owners(self, client, auth_factory, db_session):
         alice = auth_factory()
@@ -594,6 +643,12 @@ class TestAccountDeletion:
         assert client.get("/v1/auth/me", headers=auth_headers).status_code == 401
 
     def test_account_cleanup_items_cover_redis_and_audit(self, client, auth_headers, db_session):
+        me = _me(client, auth_headers)
+        user_id = uuid.UUID(me["id"])
+        # The audit middleware may not have written rows for this user in
+        # the test app; pin at least one so the redact spec is guaranteed.
+        db_session.add(AuditLog(user_id=user_id, actor="user", action="test.action"))
+        db_session.flush()
         preview = _preview(client, auth_headers, {"kind": "account"})
         operation = _confirm(client, auth_headers, preview, key="account-items-1")
         items = db_session.scalars(
@@ -604,3 +659,29 @@ class TestAccountDeletion:
         refs = {(item.action, item.item_ref) for item in items}
         assert (CleanupItemAction.CLEAR_REDIS, "agenthu:trigger:dirty") in refs
         assert (CleanupItemAction.CLEAR_REDIS, "agenthu:storage:orphans") in refs
+        # Shared wake-up sets: the item removes THIS owner's member, never
+        # the key (other owners live in the same sets).
+        for item in items:
+            if item.action == CleanupItemAction.CLEAR_REDIS:
+                assert item.payload == {"member": me["id"]}
+        # Audit redact carries REAL row ids (adjudication ②): the executor
+        # must be able to locate rows after the users row SET-NULLs them.
+        redact = next(
+            (
+                item
+                for item in items
+                if item.action == CleanupItemAction.DELETE_RELATIONAL
+                and (item.payload or {}).get("redact") is True
+            ),
+            None,
+        )
+        assert redact is not None
+        assert redact.item_ref == "audit_logs:redact"
+        assert redact.payload and redact.payload["ids"], "real audit ids required"
+        # Order-insensitive: unordered SELECTs must not decide this test.
+        assert sorted(redact.payload["ids"]) == sorted(
+            str(row_id)
+            for (row_id,) in db_session.execute(
+                select(AuditLog.id).where(AuditLog.user_id == user_id)
+            ).all()
+        )

@@ -99,6 +99,49 @@ class DeletionConfirmRequest(BaseModel):
     confirmed: Literal[True]
 
 
+class ExportCreateRequest(BaseModel):
+    """Portable-copy request (A-draft §3/§4); include_files defaults true."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    client_request_id: str = Field(min_length=8, max_length=128)
+    include_files: bool = True
+
+
+class OperationRetryRequest(BaseModel):
+    """Manual retry (A-draft §2/§4): expected_version IS the idempotency —
+    a 409 version_conflict on mismatch, no second key."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
+
+
+class DeletionRecoverRequest(BaseModel):
+    """Lost-202 recovery (A-draft §4): original identity (JWT, deactivated
+    accounts included), original client_request_id, same request digest."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    client_request_id: str = Field(min_length=8, max_length=128)
+    request_digest: str = Field(min_length=64, max_length=64)
+
+
+class DataReceiptOut(BaseModel):
+    """The content-free 90-day receipt a capability may read (A-draft §4)."""
+
+    id: uuid.UUID
+    operation_id: uuid.UUID
+    completed_at: datetime | None = None
+    completion_scope: Literal["controlled_live"]
+    effects: list[DataEffect]
+    outstanding_count: int = Field(ge=0)
+    backup_expires_at: datetime | None = None
+    provider_limitations: list[str]
+    local_cleanup_required: bool
+    audit_receipt_version: str
+
+
 class OperationProgress(BaseModel):
     processed: int = Field(ge=0)
     total: int | None = None

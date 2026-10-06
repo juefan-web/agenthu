@@ -213,3 +213,115 @@ details/path/resource_id/ip_address/user_agent，不删行，90d 回执保留）
    digest 的内容版本语义对该族退化为"创建即版本"，对本片删除闭包
    等价（消息不可变，闭包成员变化即 digest 变化）。
 
+
+- **切片 2 主体（2026-10-06）**：
+  - **闭包（裁定①落码）**：event 闭包按 D-028 锚（task.(source,
+    source_upstream_id) ∈ 被删事件 (source, provenance.upstream_id)）整删
+    派生 task（无边也入闭包——修切片 1 漏删），锚定 task 的
+    focus_sessions 显式枚举（FK CASCADE）；仅 task_events 边关联的
+    task 去相关存活（边随事件行 CASCADE 消失——修切片 1 过删）；
+    tasks=anchored_derivation / task_events=decorrelated 分列
+    reason_code，plan_items SET NULL 后果记 limitations。account 闭包
+    补 users 行本体；audit redact_ids 从占位符改真实行 id。
+  - **清理项**：DELETE_RELATIONAL 统一携带 {"ids"}（account 亦然——
+    id 寻址在 FK 图下与顺序无关，audit 行在 users 行 SET NULL 后仍可
+    定位）；redact 项 payload {"redact": true, "ids"}；redis 项携带
+    {"member": user_id}（SREM 成员，绝不 DEL 共享键）；对象键新增
+    storage_objects VERIFY 项（三分）；account 额外登记 owner 全部
+    导出包 DELETE_OBJECT 项。
+  - **executor**（data_executor.py）：四 phase 检查点持久化；
+    fence 清 memory embedding + recompute 行；逐项执行先读 payload
+    再分派（redact 判别 + 非 audit redact 拒执行）；退避梯/租约复用
+    P0-1 基座（claim 扩 operation/action 过滤 + park_cleanup_item
+    立即停车）；RETRY_WAIT 含 next_retry_at；FAILED 结算列剩余项且
+    屏障不动；COMPLETED 释放 source/memory 屏障（account 永不自动
+    释放）+ 作废 owner 导出 op；行 verify=计数、对象 verify=stat
+    三分（仅确证 404 为擦除证据）、audit verify=行在且已脱敏（反向
+    断言，列取回 Python 侧判空）。
+  - **storage.stat**：exists() 语义保持（既有调用方），新增 stat()
+    四值三分（exists/absent/forbidden/unavailable；ClientError code
+    404/403/网络分类）。
+  - **exports**（data_exports.py）：collect 一事务全族快照（21 直属
+    + plan_items/mutations/task_events join + audit 无内容回执视图）；
+    ZIP=分族 JSONL+manifest+README（archive-relative）；manifest 含
+    schema/graph/snapshot/generation/family_counts/entries(sha256+
+    size)/排除类目/include_files/omitted_files；**manifest 不含自身
+    checksum（自引用）**；embeddings/credentials/账本/投影排除；
+    package→staging（exports/{owner}/{op}.zip）；verify 重读重算
+    全部 entries 才 READY（+24h expires_at）；download=owner auth +
+    no-store + 仅 READY（EXPIRED=410）；并发删除（generation/屏障/
+    用户行三查）在任何 phase 与 download 作废（FAILED
+    invalidated_by_deletion）；cron expire READY→EXPIRED+删对象；
+    capabilities.export_enabled 翻 true。
+  - **recover/receipts/retry**：confirm 记 request_digest（canonical
+    JSON SHA-256，双端 fixture 钉住）；receipt 增 10min 加密交付缓存
+    （HMAC-SHA256 密钥流：secret 派生 + owner/op/nonce 绑定，计数器
+    扩展；单次使用；窗口外清除并统一 404）；POST /deletions/recover
+    =原 JWT 身份（停用可走，get_current_identity 不查 is_active）+
+    双限流（身份 3/10min + IP 10/10min，429 带 Retry-After——挂错误
+    headers 而非 response，防异常响应丢弃）；GET /receipts/{id}=
+    Authorization 头能力（不进 URL）+ 统一 404；POST /operations/
+    {id}/retry=expected_version 单字段（409 version_conflict 天然幂等），
+    仅 source/memory、FAILED/RETRY_WAIT 可重试，重置梯、同 op、
+    屏障不动。
+  - **worker**：run_data_operation（按 kind 分派；StorageError→
+    RETRY_WAIT+30s）；sweep_data_operations cron 30s（QUEUED/到期
+    RETRY_WAIT/超时 RUNNING 重派 + 导出过期）——API 侧无 Redis 客户端，
+    cron 即唤醒，DB 账本为真（契约 §2.5）。
+  - **迁移 b52d7e91ac04**：data_operations.request_digest/
+    export_include_files + data_receipts.delivery_{nonce,ciphertext,
+    expires_at}；账本形状不变（owner_handle 值键控无 FK）。
+
+- 切片 2 主体：新增测试 executor 8（四 phase 完成与分区存活/对象失败
+  退避 RETRY_WAIT 恢复/verify 403 拒结算且治愈后完成/redact 错路由
+  拒执行 + account 脱敏保行/FAILED 停车屏障不释放 + 手动重试同 op
+  恢复/version 冲突 409/account 结算含导出作废与 redis 成员移除）+
+  exports 8（READY+download no-store+manifest checksum 全复算/
+  include_files=false 明确遗漏/幂等含 include_files 409/仅 READY/
+  owner 隔离/并发删除作废/24h 过期 410+对象删/audit 无内容视图）+
+  recovery 8（fixture 双样本钉 digest/密封往返含绑定失败/停用身份
+  一次性恢复/窗口外统一 404/错摘要+未知键+source 域不可区分 404/
+  429 Retry-After/能力读回执/无效-缺失-过期能力统一 404）+ API 适配
+  （capabilities export_enabled=true、裁定①分区 preview、audit
+  redact 真实 id 顺序无关断言、redis member 断言）。**全量终轮：
+  423 passed / 1 skipped**（S3_ENDPOINT_URL 环境项，CI 设该变量；中间
+  轮曾 1 failed=audit id 无序 SELECT 顺序漂移的测试自身缺陷，改顺序
+  无关断言后复跑全绿——非产品面回归，如实记档）；ruff 同形双绿；
+  pyright 0；OpenAPI **70 路径（+5：exports/
+  download/retry/recover/receipts）** + check_contract_drift 绿；
+  迁移往返（scratch 库 upgrade→downgrade b52d7e91ac04→upgrade）+
+  autogenerate 零漂移探针 0 op，scratch 已删。
+
+## 5 实现期判断（待 B 核）
+
+1. **并发败者多耗代际**（切片 1 判断①延续）：无变化，B 已签认。
+2. **抑制上游锚**：无变化（upstream_id 优先），切片 3 携带
+   "connector 事件必带 upstream_id"前置纪律。
+3. **交付缓存加密选 HMAC 密钥流而非新依赖**：cryptography/
+   itsdangerous 不在依赖面；构造=HMAC-SHA256(secret, 域分隔 ||
+   receipt_owner || op_id || nonce || counter) 计数器扩展 XOR，
+   43 字节 token 单块、nonce 一次性、绑定 receipt 属主与操作；
+   等价于 HKDF-expand 式单用流。备选是新增 cryptography 依赖走
+   Fernet——为一个 10min 单次缓存引入新依赖不值。B 若判应换标准
+   库件，属机械替换。
+4. **Retry-After 挂在错误 headers 上**：异常路径会丢弃写入路由
+   response 对象的头，AppError.headers 是既有通道（WWW-Authenticate
+   同款）——429 响应才可靠携带。
+5. **recover 限流用进程内 RateLimiter**：契约 §4 要求双限流（身份+
+   IP），§6 的 Redis 共享限流是 2API+2worker（E7-9）门；现部署单
+   uvicorn worker（rate_limit.py docstring 自认），hit/retry_after
+   即替换缝。E7-9 前不提前实施。
+6. **account 清理项统一带 ids 而非 owner sweep**：id 寻址在 FK 图
+   下与执行顺序无关（users 行 CASCADE 何时发生不影响其余项），
+   audit redact 本就必须 id 寻址（user_id SET NULL 后无法按属主
+   定位）——统一形状消掉 sweep 分支。
+7. **行 verify 用计数、audit verify 用列取回 Python 判空**：同栈
+   上 count()+OR(列 IS NOT NULL) 与同事务列读曾给出矛盾结果
+   （开发期实证一次），列取回形态经对码验证读的是 UPDATE 后真相；
+   语义等价、形状保守。
+8. **exports 不升代际不设屏障**：导出不删除不改事实层；并发删除
+   以 generation 快照 + ACTIVE 屏障 + 用户行三重检查作废（任何
+   phase 与 download 时点），READY 后过期由 cron 翻 EXPIRED 并删
+   对象。
+9. **manifest 不含自身 checksum**：自引用无解；verify 复算 manifest
+   所列全部其它成员。README 计入 entries。

@@ -25,6 +25,11 @@ logger = logging.getLogger(__name__)
 class ObjectStorage(ABC):
     backend_name: str = "abstract"
 
+    STAT_EXISTS = "exists"
+    STAT_ABSENT = "absent"
+    STAT_FORBIDDEN = "forbidden"
+    STAT_UNAVAILABLE = "unavailable"
+
     @abstractmethod
     def put(self, key: str, data: bytes, content_type: str) -> None: ...
 
@@ -39,6 +44,16 @@ class ObjectStorage(ABC):
 
     @abstractmethod
     def signed_url(self, key: str, expires_in: int | None = None) -> str: ...
+
+    def stat(self, key: str) -> str:
+        """Erasure-evidence trichotomy (A-draft §2.5), unlike ``exists``.
+
+        Returns one of STAT_EXISTS / STAT_ABSENT / STAT_FORBIDDEN /
+        STAT_UNAVAILABLE. Only STAT_ABSENT is erasure evidence: a 403 or a
+        network failure must never be read as "the object is gone".
+        """
+
+        return self.STAT_EXISTS if self.exists(key) else self.STAT_ABSENT
 
     def ensure_ready(self) -> None:
         """Best-effort readiness check. Default no-op."""
@@ -137,6 +152,21 @@ class S3Storage(ObjectStorage):
             return True
         except (ClientError, BotoCoreError):
             return False
+
+    def stat(self, key: str) -> str:
+        try:
+            self._client.head_object(Bucket=self._bucket, Key=key)
+            return self.STAT_EXISTS
+        except ClientError as exc:
+            code = str(exc.response.get("Error", {}).get("Code", ""))
+            status = str(exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode", ""))
+            if code in ("404", "NoSuchKey", "NotFound") or status == "404":
+                return self.STAT_ABSENT
+            if code in ("403", "AccessDenied", "Forbidden") or status == "403":
+                return self.STAT_FORBIDDEN
+            return self.STAT_UNAVAILABLE
+        except BotoCoreError:
+            return self.STAT_UNAVAILABLE
 
     def delete(self, key: str) -> None:
         try:

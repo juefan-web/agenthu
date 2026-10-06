@@ -52,10 +52,16 @@ from backend.schemas.data import (
 )
 from backend.services import data_lifecycle as dl
 from backend.services.data_closure import ClosureResult, enumerate_closure
+from backend.services.data_recovery import (
+    deletion_request_digest,
+    seal_capability,
+)
 from backend.services.data_registry import REGISTRY, Store, graph_version
 
 PREVIEW_TTL = timedelta(minutes=10)
 RECEIPT_TTL = timedelta(days=90)
+# Re-delivery window for a lost first 202 (A-draft §4 proposal: 10 min).
+RECEIPT_DELIVERY_TTL = timedelta(minutes=10)
 
 SCHEMA_VERSION = "1.0"
 MINIMUM_CLIENT_VERSION = "0.0.0"
@@ -179,7 +185,8 @@ def _impact_payload(closure: ClosureResult) -> dict:
                 "resource_type": impact.resource_type,
                 "delete_ids": list(impact.delete_ids),
                 "recompute_ids": list(impact.recompute_ids),
-                "redact_ids": len(impact.redact_ids),
+                "redact_ids": list(impact.redact_ids),
+                "reason_code": impact.reason_code,
             }
             for impact in closure.impacts
         ],
@@ -187,48 +194,92 @@ def _impact_payload(closure: ClosureResult) -> dict:
     }
 
 
-def _cleanup_specs(target: dict, closure: ClosureResult) -> list[dl.CleanupItemSpec]:
-    """Registry-driven durable work for the slice-2 executor."""
+def _cleanup_specs(
+    session: Session, user_id: uuid.UUID, target: dict, closure: ClosureResult
+) -> list[dl.CleanupItemSpec]:
+    """Registry-driven durable work for the slice-2 executor.
+
+    Every relational item carries the exact closure ids — the account scope
+    included: id-addressed deletes are order-independent under the FK graph
+    (the users-row CASCADE wipes dependent rows either way, and audit redact
+    must be id-addressed because audit user_id SET-NULLs away)."""
 
     specs: list[dl.CleanupItemSpec] = []
     account = target["kind"] == "account"
     for impact in closure.impacts:
-        if impact.delete_ids or impact.redact_ids:
-            if impact.redact_ids and not impact.delete_ids:
-                # Audit family: redact in place, never delete rows (90d TTL).
-                specs.append(
-                    dl.CleanupItemSpec(
-                        impact.resource_type,
-                        f"{impact.resource_type}:redact",
-                        CleanupItemAction.DELETE_RELATIONAL.value,
-                        {"redact": True},
-                    )
+        if impact.redact_ids and not impact.delete_ids:
+            # Audit family: redact in place, never delete rows (90d TTL);
+            # real row ids so the executor can locate rows after the users
+            # row is gone (adjudication ②).
+            specs.append(
+                dl.CleanupItemSpec(
+                    impact.resource_type,
+                    f"{impact.resource_type}:redact",
+                    CleanupItemAction.DELETE_RELATIONAL.value,
+                    {"redact": True, "ids": list(impact.redact_ids)},
                 )
-            else:
-                specs.append(
-                    dl.CleanupItemSpec(
-                        impact.resource_type,
-                        impact.resource_type,
-                        CleanupItemAction.DELETE_RELATIONAL.value,
-                        None if account else {"ids": list(impact.delete_ids)},
-                    )
-                )
+            )
+        elif impact.delete_ids:
             specs.append(
                 dl.CleanupItemSpec(
                     impact.resource_type,
                     impact.resource_type,
-                    CleanupItemAction.VERIFY_ABSENT.value,
-                    None if account else {"ids": list(impact.delete_ids)},
+                    CleanupItemAction.DELETE_RELATIONAL.value,
+                    {"ids": list(impact.delete_ids)},
                 )
             )
+        else:
+            continue
+        specs.append(
+            dl.CleanupItemSpec(
+                impact.resource_type,
+                impact.resource_type,
+                CleanupItemAction.VERIFY_ABSENT.value,
+                {"ids": list(impact.delete_ids or impact.redact_ids)},
+            )
+        )
     for key in closure.object_keys:
         specs.append(
             dl.CleanupItemSpec("file_objects", key, CleanupItemAction.DELETE_OBJECT.value, None)
         )
+        # Object erasure needs its OWN verification: only a confirmed 404
+        # counts (A-draft §2.5), which row-family VERIFY cannot express.
+        specs.append(
+            dl.CleanupItemSpec("storage_objects", key, CleanupItemAction.VERIFY_ABSENT.value, None)
+        )
     if account:
+        # The owner's export staging packages are void with the account
+        # (A-draft §3): their objects die with this operation's cleanup.
+        from backend.services.data_exports import staging_key
+
+        handle = dl.owner_handle_of(session, user_id)
+        export_ops = (
+            session.execute(
+                select(DataOperation.id).where(
+                    DataOperation.owner_handle == handle,
+                    DataOperation.kind == DataOperationKind.EXPORT,
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for export_id in export_ops:
+            specs.append(
+                dl.CleanupItemSpec(
+                    "storage_objects",
+                    staging_key(handle, export_id),
+                    CleanupItemAction.DELETE_OBJECT.value,
+                    None,
+                )
+            )
         for literal in _ACCOUNT_REDIS_LITERALS:
             specs.append(
-                dl.CleanupItemSpec("redis", literal, CleanupItemAction.CLEAR_REDIS.value, None)
+                dl.CleanupItemSpec(
+                    "redis",
+                    literal,
+                    CleanupItemAction.CLEAR_REDIS.value,
+                    {"member": str(user_id)},
+                )
             )
     return specs
 
@@ -293,12 +344,16 @@ def _issue_receipt(session: Session, *, operation: DataOperation, handle: str) -
 
     token = secrets.token_urlsafe(32)
     now = utcnow()
+    nonce, ciphertext = seal_capability(token, receipt_owner=handle, operation_id=operation.id)
     receipt = DataReceipt(
         operation_id=operation.id,
         owner_handle=handle,
         capability_digest=hashlib.sha256(token.encode("utf-8")).hexdigest(),
         issued_at=now,
         expires_at=now + RECEIPT_TTL,
+        delivery_nonce=nonce,
+        delivery_ciphertext=ciphertext,
+        delivery_expires_at=now + RECEIPT_DELIVERY_TTL,
     )
     session.add(receipt)
     session.flush()
@@ -313,12 +368,15 @@ def confirm_deletion(
     preview_id: uuid.UUID,
     preview_digest_value: str,
     client_request_id: str,
+    request_body: dict | None = None,
 ) -> tuple[DataOperation, str | None]:
     """The Level 2 accept transaction; returns (operation, capability?).
 
     The capability is non-null exactly once — when THIS call creates an
     account-deletion operation. Replays return the operation with no
     capability (lost tokens go through the recover path, slice 2).
+    ``request_body`` is the confirm request as received (for the recover
+    digest, D-036 §8-2); the route always passes it.
     """
 
     handle = dl.owner_handle_of(session, user.id)
@@ -404,6 +462,11 @@ def confirm_deletion(
             code="idempotency_conflict",
         ) from error
 
+    # Recover second factor (D-036 §8-2): digest of the canonical request
+    # body; stored on create only — replays keep the accepted digest.
+    if request_body is not None:
+        operation.request_digest = deletion_request_digest(request_body)
+
     dl.raise_barrier(
         session,
         owner_handle=handle,
@@ -439,7 +502,7 @@ def confirm_deletion(
             session, handle=handle, target=preview.target, closure=closure, generation=generation
         )
 
-    specs = _cleanup_specs(preview.target, closure)
+    specs = _cleanup_specs(session, user.id, preview.target, closure)
     dl.enqueue_cleanup_items(session, operation, specs)
     operation.progress_total = len(specs)
     operation.outstanding_count = len(specs)
