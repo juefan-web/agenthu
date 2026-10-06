@@ -2,7 +2,10 @@
 
 Status: **r1 方案，2026-10-05；未执行。双草已冻结（D-036），
 E7-7已按P0-2切片1（main `d7d8717`）实现基础预登记，其余用例
-随对应切片落地时同步对齐**。
+随对应切片落地时同步对齐。准备期工件已落（2026-10-06，
+harness+seed fixtures+verify pack+全量预登记 manifest，任务书
+[m5-e7-fixtures](m5-e7-fixtures.md)；参考驱动 E7-1/E7-3 冒烟绿；
+双轮执行等 P0-5/P0-6）**。
 依据D-030 M5出口；[总指导](m5-planning-guidance.md)、
 [A稿](m5-data-lifecycle-ops-contract.md)、[B稿](m5-data-controls-grants-client-contract.md)。
 目标是证明系统能长期尊重用户控制权，删除后不再“记住并行动”。

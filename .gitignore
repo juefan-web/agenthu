@@ -57,3 +57,6 @@ Thumbs.db
 # Playwright run artifacts（构建包冒烟）
 apps/desktop/test-results/
 apps/desktop/playwright-report/
+
+# E7 acceptance raw evidence (local, controlled retention; sanitized summaries go to AGENT_CONTEXT)
+output/e7/
