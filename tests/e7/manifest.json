@@ -269,7 +269,7 @@
         "U export include_files=true → COMPLETED + download",
         "U export include_files=false → 包内明确无文件对象",
         "V 以自身凭据列/下载 U 包 → 404/403",
-        "导出期间并发 source 删除 → 旧包作废（generation 409 语义）"
+        "导出期间并发 source 删除 → 旧包作废（generation 409 语义）——执行轮补驱动"
       ],
       "count_deltas": {
         "U": {
@@ -551,7 +551,15 @@
           "events": -1
         }
       },
-      "count_minimums": {},
+      "count_minimums": {
+        "U": {
+          "data_operations": 1,
+          "data_previews": 1,
+          "data_barriers": 1,
+          "data_suppressions": 1,
+          "data_cleanup_items": 1
+        }
+      },
       "marker_absence": [
         "e5.note"
       ],
@@ -604,10 +612,19 @@
           "permission_grants": -1,
           "grounding_consents": -1,
           "model_context_consents": -1,
-          "notification_preferences": -1
+          "notification_preferences": -1,
+          "audit_logs": -3
         }
       },
-      "count_minimums": {},
+      "count_minimums": {
+        "U": {
+          "data_operations": 1,
+          "data_previews": 1,
+          "data_barriers": 1,
+          "data_cleanup_items": 1,
+          "data_receipts": 1
+        }
+      },
       "marker_absence": [],
       "all_markers_absent_for": [
         "U"
@@ -629,8 +646,9 @@
         "U:dirty"
       ],
       "retained": [
-        "audit_logs U 行数不变但 IP/UA/path/JSON 脱敏（§5）",
-        "data_operations/cleanup/barriers/suppressions/receipts/orphan 账本按 owner_handle 存活",
+        "audit_logs 行全局存活但 IP/UA/path/JSON 脱敏、user_id SET-NULL（§5；owner 口径归零）",
+        "data_operations/previews/barriers/cleanup/receipts 账本存活（owner_handle/user 键保留原值）",
+        "data_suppressions 随账号终删（data_closure ACCOUNT_TERMINATION）",
         "V 全部不变"
       ],
       "invariants": [
@@ -652,11 +670,17 @@
       "count_deltas": {
         "U": {
           "file_objects": -1,
-          "material_chunks": -2,
-          "data_operations": 1
+          "material_chunks": -2
         }
       },
-      "count_minimums": {},
+      "count_minimums": {
+        "U": {
+          "data_operations": 1,
+          "data_previews": 1,
+          "data_barriers": 1,
+          "data_cleanup_items": 1
+        }
+      },
       "marker_absence": [
         "f2.blob",
         "c3.content",
@@ -692,16 +716,23 @@
       "title": "被删来源重采不复活；解除后重授权可复用（server 面）",
       "operations": [
         "删除 e1 → 同 upstream 重采（新 client_event_id）→ 409 source_deleted",
-        "release_source_suppressions → 同 upstream 重采 → 201 新行",
+        "release_source_suppressions → 同 upstream 重采 → 201 新行（无 HTTP 路由——P0-6 触发面或进程内调用）",
         "换账号守卫/离线队列/Stronghold 等客户端面按 E7-7 预登记注记执行"
       ],
       "count_deltas": {
         "U": {
-          "events": 0,
-          "data_suppressions": 0
+          "events": 0
         }
       },
-      "count_minimums": {},
+      "count_minimums": {
+        "U": {
+          "data_operations": 1,
+          "data_previews": 1,
+          "data_barriers": 1,
+          "data_suppressions": 1,
+          "data_cleanup_items": 1
+        }
+      },
       "marker_absence": [],
       "all_markers_absent_for": [],
       "vector_absence": [],
@@ -709,7 +740,7 @@
       "object_expectations": [],
       "redis_absence": [],
       "retained": [
-        "data_suppressions 先 +1 后 released_at 置位（行数不变）",
+        "suppression 行 +1 后 release 为 UPDATE 置 released_at（行持久存活，durable 账本终态 ≥1）",
         "客户端面证据按 m5-e7-acceptance §2 E7-7 注记①-⑤"
       ],
       "invariants": [

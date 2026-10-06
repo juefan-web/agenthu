@@ -69,7 +69,12 @@ export AGENTHU_E7_STACK=1 AGENTHU_E7_BACKEND_URL=http://127.0.0.1:8011
 - **冒烟不需要模型调用**：seed 直插 AgentRun/PendingAction 行；
   provider 假件仅在执行期 E7-5 竞态场景接入。
 
-## 5. 冒烟栈的拆除
+## 5. 冒烟栈的拆除与 B 侧核账
 
 冒烟结束保留 `agenthu_e7` 库与 bucket 供 B 核账（E6 先例：证据库保留）；
 确认收口后再拆。勿动 `agenthu` 主库与 E6 证据库。
+
+B 侧库面抽查（修复轮起）：容器 `agenthu-db-1`/`agenthu-s3mock-1` 保持
+运行，`docker exec agenthu-db-1 psql -U agenthu -d agenthu_e7` 直连在档；
+API/worker 按 §2 环境块两条命令即起（A 会话进程存活期间
+`http://127.0.0.1:8011` 可直连）。

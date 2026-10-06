@@ -222,3 +222,46 @@ family 真相源 = `backend/services/data_registry.py`；栈模式沿 E6 先例
 6. **Redis DB15 冒烟口径的边界**：arq 在 DB15 写队列/结果键（库托管
    键族）；执行轮独立容器（README §1）后该口径作废，验收记录必须
    用独立容器的 REDIS_URL。
+
+## 8. B 互审修复轮（2026-10-06 下午，RC @`44b3a11` → 修复头）
+
+阻塞簇 = 四案注册计数与 P0-3 产品语义可证矛盾（B 抓的正是预登记机制
+的目标：执行轮前抓期望值错误，避免跑后改预期凑绿）。修复 = 只动
+EXPECTATIONS/manifest/文档，harness 零变更：
+
+- **E7-4b**：补五族 minimums（E7-3a 同形先例，e5 事件锚含
+  suppressions）。
+- **E7-5**：`audit_logs: -3` 显式 delta（redact 路径 user_id SET-NULL，
+  行全局存活但 owner 谓词归零）+ operations/previews/barriers/cleanup/
+  receipts 五族 minimums（"must survive their own execution"；**previews
+  存活是 B 清单外的同簇补齐**——closure 不触碰该族且 owner 键 user_id
+  保留原值）+ retained 更正（suppressions 随账号终删
+  ACCOUNT_TERMINATION，不在存活清单）。
+- **E7-6**：previews/barriers/cleanup minimums + `data_operations` 从
+  deltas **移入** minimums——minimums 非空时 verify 精确扫掠豁免全部
+  生命周期族，deltas 键成死键（B 给的"保留精确 1"选项在不动 harness
+  前提下机制不可达，落 ≥1，"不产生第二 operation"由
+  retry_ladder_bounded + 驱动断言承担）；文件锚删除无 suppressions
+  （同 E7-3b 形）。
+- **E7-7**：删 `data_suppressions: 0`（release 是 UPDATE 置
+  released_at，durable 账本不删行，终态 ≥1）+ 五族 minimums（删除流
+  与 E7-4b 同形）+ release 无 HTTP 路由注记（write_guards §4 有意
+  不设，P0-6 触发面或进程内调服务随驱动定——B 非阻塞 N3 落注册）。
+- **E7-1 op-4**：选执行轮补驱动面标注（blocked 风格），计数影响届时
+  随驱动注册，`data_operations: 2` 不预留。
+- **seed.py docstring**：Redis 纪律反写句修正（"membership is seeded"
+  → 不碰 + 理由）；README §3 交叉引用随之指向正确文本。
+- **栈态**：修复轮冒烟后容器保持运行、库/bucket 在档，B 侧库面抽查
+  一条命令入 README §5。
+
+修复轮冒烟（2026-10-06T14:5xZ）：seed 90 行 → baseline 全绿 → 门控
+`4 passed + 2 skipped` 形态不变 → 全量本机 **439 passed + 7 skipped**
+（7 个全为 conftest 当日剩余时间窗跳过——本地已 23 点+，与改动无关；
+CI 数字以推送头 Actions 日志实测为准，不预推）→ ruff check/format
+双绿 → pyright 0 → OpenAPI drift 绿 70 路径零变更 → manifest 重生 +
+`--check` 绿 + 单测钉 2 passed。
+
+B 非阻塞注记在档不处理（harness 不动）：N1 verify case() raw.pop
+session dict 原地变更（未来双核驱动改 raw.get）；N2 marker token 经
+build_world 解析而非 manifest marker_inventory（unit 钉保证相等）；
+N3 已落 E7-7 注册注记。

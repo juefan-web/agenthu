@@ -3,8 +3,10 @@
 Direct insertion (task doc ruling ⑨): deterministic and free of derivation
 side effects, with rows matching the production schema and constraints.
 Users are inserted with the production ``hash_password`` so case drivers
-can log in over HTTP. Object blobs go straight to the E7 bucket; the Redis
-dirty-set membership is seeded for the wake-up path.
+can log in over HTTP. Object blobs go straight to the E7 bucket. Redis is
+deliberately left untouched (see apply_world): seeding dirty-set members
+would wake the trigger-evaluation cron and create rows non-deterministically
+— the baseline asserts the dirty set is empty instead.
 
 Usage (envs documented in tests/e7/README.md)::
 

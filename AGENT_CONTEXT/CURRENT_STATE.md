@@ -1453,3 +1453,16 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   blocked-skip、全量 446 passed/0 skipped（+2 manifest 单测）、
   ruff 双绿、pyright 0、OpenAPI 70 路径零变更 drift 绿。六事实/
   六判断见任务书 §6/§7 待 B 核。执行门槛不变：双轮等 P0-5/P0-6。
+
+- **#76 B 互审修复轮（A，2026-10-06 下午）**：RC @`44b3a11`（14:23Z）
+  唯一阻塞簇 = 四案预登记计数与 P0-3 产品语义矛盾——harness 零变更，
+  只动 EXPECTATIONS/manifest/文档：E7-4b 五族 minimums；E7-5
+  audit_logs -3（SET-NULL owner 口径）+ 五族 minimums（含 B 清单外的
+  previews 存活）+ retained 更正（suppressions 随账号终删）；E7-6 三族
+  minimums + operations 移入 minimums（deltas 死键机制）；E7-7 删
+  suppressions:0 + 五族 minimums + release 无路由注记（N3）；E7-1
+  op-4 执行轮补驱动标注；seed.py docstring Redis 反写句修正。修复轮
+  冒烟：seed/baseline 绿、门控 4+2 形态不变、全量本机 439+7（当日
+  时间窗跳过，非改动相关；CI 取日志实测）、三查绿、manifest 重生 +
+  钉子 2 passed。栈保持可连（容器运行 + README §5 一条命令）供 B
+  库面抽查。N1/N2 在档不处理。待 B 核 delta 转 approve。

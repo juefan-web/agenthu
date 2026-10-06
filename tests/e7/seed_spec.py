@@ -860,7 +860,10 @@ EXPECTATIONS: dict[str, CaseExpectation] = {
             "U export include_files=true → COMPLETED + download",
             "U export include_files=false → 包内明确无文件对象",
             "V 以自身凭据列/下载 U 包 → 404/403",
-            "导出期间并发 source 删除 → 旧包作废（generation 409 语义）",
+            # op-4 是执行轮补驱动面（同 E7-9/10 的 blocked 标注风格）：
+            # 参考驱动只跑 op1-3；本条的 +1 operation 与连带账本行届时随
+            # 驱动注册，现在 data_operations=2 不为它预留。
+            "导出期间并发 source 删除 → 旧包作废（generation 409 语义）——执行轮补驱动",
         ),
         count_deltas={"U": {"data_operations": 2}},
         object_expectations=(ObjectExpectation(user="U", exports_exact=2),),
@@ -969,6 +972,17 @@ EXPECTATIONS: dict[str, CaseExpectation] = {
         title="删除 L2 源事件 e5：样本不足失效而非删除，向量零召回",
         operations=("U preview+confirm source event e5",),
         count_deltas={"U": {"events": -1}},
+        # e5 是事件锚删除，与 E7-3a 同形流：五族账本按同形先例注册下限
+        # （events 有锚 → suppressions +1）。
+        count_minimums={
+            "U": {
+                "data_operations": 1,
+                "data_previews": 1,
+                "data_barriers": 1,
+                "data_suppressions": 1,
+                "data_cleanup_items": 1,
+            }
+        },
         marker_absence=("e5.note",),
         vector_absence=("U:m2b",),
         live_key_absence=("U:E7-U-l2-key",),
@@ -1009,17 +1023,31 @@ EXPECTATIONS: dict[str, CaseExpectation] = {
                 "grounding_consents": -1,
                 "model_context_consents": -1,
                 "notification_preferences": -1,
-                # audit rows survive scrubbed (SET NULL + §5); lifecycle
-                # ledger families survive by owner_handle design.
+                # owner 可见口径：data_closure 的 redact 路径把 user_id
+                # SET-NULL（行全局存活，owner 谓词 user_id=:uid 计数归零）。
+                "audit_logs": -3,
+            }
+        },
+        # 账本存活族（data_closure：本删除自身的行 "must survive their own
+        # execution"；receipts 走 90 天窗）。previews 同样存活——closure
+        # 不触碰该族，且其 owner 键是 user_id（行保留原值可数）。
+        count_minimums={
+            "U": {
+                "data_operations": 1,
+                "data_previews": 1,
+                "data_barriers": 1,
+                "data_cleanup_items": 1,
+                "data_receipts": 1,
             }
         },
         all_markers_absent_for=("U",),
         object_expectations=(ObjectExpectation(user="U", absent_seeded=("U:f1", "U:f2")),),
         redis_absence=("U:dirty",),
         retained=(
-            "audit_logs U 行数不变但 IP/UA/path/JSON 脱敏（§5）",
-            "data_operations/cleanup/barriers/suppressions/receipts/orphan "
-            "账本按 owner_handle 存活",
+            "audit_logs 行全局存活但 IP/UA/path/JSON 脱敏、user_id SET-NULL（§5；owner 口径归零）",
+            "data_operations/previews/barriers/cleanup/receipts 账本存活"
+            "（owner_handle/user 键保留原值）",
+            "data_suppressions 随账号终删（data_closure ACCOUNT_TERMINATION）",
             "V 全部不变",
         ),
         invariants=(
@@ -1036,7 +1064,20 @@ EXPECTATIONS: dict[str, CaseExpectation] = {
             "注入 S3 403 → 操作非 COMPLETED、403 不当 404",
             "恢复后继续同 operation，自动重试 ≤5，耗尽可核查",
         ),
-        count_deltas={"U": {"file_objects": -1, "material_chunks": -2, "data_operations": 1}},
+        count_deltas={"U": {"file_objects": -1, "material_chunks": -2}},
+        # data_operations 不留在 deltas：minimums 非空时 verify 的精确扫掠
+        # 豁免全部生命周期族（harness 不动），deltas 键会成死键。单
+        # operation 混沌幂等收敛以 ≥1 下限注册；"不产生第二 operation"
+        # 由 retry_ladder_bounded 不变量与驱动断言承担。文件锚删除无
+        # suppressions（同 E7-3b 形）。
+        count_minimums={
+            "U": {
+                "data_operations": 1,
+                "data_previews": 1,
+                "data_barriers": 1,
+                "data_cleanup_items": 1,
+            }
+        },
         marker_absence=("f2.blob", "c3.content", "c4.content"),
         vector_absence=("U:c3", "U:c4"),
         object_expectations=(ObjectExpectation(user="U", absent_seeded=("U:f2",)),),
@@ -1047,16 +1088,33 @@ EXPECTATIONS: dict[str, CaseExpectation] = {
         title="被删来源重采不复活；解除后重授权可复用（server 面）",
         operations=(
             "删除 e1 → 同 upstream 重采（新 client_event_id）→ 409 source_deleted",
-            "release_source_suppressions → 同 upstream 重采 → 201 新行",
+            # release 今无 HTTP 路由（write_guards §4 路由矩阵有意不设，
+            # acceptance 文档已锚 P0-6 触发面）：执行轮驱动等 P0-6 路由
+            # 或进程内调服务，二选一随驱动定并在此注记更新。
+            "release_source_suppressions → 同 upstream 重采 → 201 新行"
+            "（无 HTTP 路由——P0-6 触发面或进程内调用）",
             "换账号守卫/离线队列/Stronghold 等客户端面按 E7-7 预登记注记执行",
         ),
-        count_deltas={"U": {"events": 0, "data_suppressions": 0}},
         # Net zero: -1 delete then +1 re-import after release. The new row
         # is a NEW event id with fresh content markers, so no U marker may
         # be asserted absent at the end state; the intermediate rejection
         # is a driver-level hard assert.
+        count_deltas={"U": {"events": 0}},
+        # 删除流与 E7-4b 同形（五族账本）；suppressions 的 release 是
+        # UPDATE 置 released_at（durable 账本不删行，write_guards），终态
+        # ≥1 而非 0——删除 e1 的 +1 不会被 release 抵消。
+        count_minimums={
+            "U": {
+                "data_operations": 1,
+                "data_previews": 1,
+                "data_barriers": 1,
+                "data_suppressions": 1,
+                "data_cleanup_items": 1,
+            }
+        },
         retained=(
-            "data_suppressions 先 +1 后 released_at 置位（行数不变）",
+            "suppression 行 +1 后 release 为 UPDATE 置 released_at"
+            "（行持久存活，durable 账本终态 ≥1）",
             "客户端面证据按 m5-e7-acceptance §2 E7-7 注记①-⑤",
         ),
         invariants=("suppressed_reimport_rejected", "release_reopens_anchor"),
