@@ -1,0 +1,807 @@
+{
+  "manifest_version": 1,
+  "generated_from": "tests/e7/seed_spec.py + backend/services/data_registry.py",
+  "registry_graph_version": "501be7ce9f4c0707",
+  "seed_anchor_utc": "2026-10-01T00:00:00+00:00",
+  "marker_prefixes": {
+    "U": "E7MARK-U-",
+    "V": "E7MARK-V-"
+  },
+  "marker_inventory": {
+    "U": {
+      "a1.answer": "E7MARK-U-034",
+      "a1.question": "E7MARK-U-033",
+      "a1.quote": "E7MARK-U-035",
+      "al1.details": "E7MARK-U-050",
+      "al1.ua": "E7MARK-U-051",
+      "al2.details": "E7MARK-U-052",
+      "al2.ua": "E7MARK-U-053",
+      "al3.details": "E7MARK-U-054",
+      "al3.ua": "E7MARK-U-055",
+      "c1.content": "E7MARK-U-029",
+      "c2.content": "E7MARK-U-030",
+      "c3.content": "E7MARK-U-031",
+      "c4.content": "E7MARK-U-032",
+      "cm1.content": "E7MARK-U-038",
+      "cm2.content": "E7MARK-U-039",
+      "cm3.content": "E7MARK-U-040",
+      "cm4.content.softdeleted": "E7MARK-U-041",
+      "cs1.context": "E7MARK-U-025",
+      "cs1.recent": "E7MARK-U-026",
+      "e1.title": "E7MARK-U-002",
+      "e2.title": "E7MARK-U-003",
+      "e3.title": "E7MARK-U-004",
+      "e4.deviation": "E7MARK-U-007",
+      "e4.task_title": "E7MARK-U-006",
+      "e5.note": "E7MARK-U-008",
+      "e6.note": "E7MARK-U-009",
+      "f1.blob": "E7MARK-U-027",
+      "f2.blob": "E7MARK-U-028",
+      "fs1.deviation": "E7MARK-U-012",
+      "g1.desc": "E7MARK-U-014",
+      "g1.title": "E7MARK-U-013",
+      "m1.content": "E7MARK-U-015",
+      "m2a.content": "E7MARK-U-017",
+      "m2b.content": "E7MARK-U-016",
+      "m3.content": "E7MARK-U-018",
+      "m4.content": "E7MARK-U-019",
+      "name": "E7MARK-U-001",
+      "p1.basis": "E7MARK-U-021",
+      "p1.title": "E7MARK-U-020",
+      "pa1.args": "E7MARK-U-045",
+      "pa1.display": "E7MARK-U-046",
+      "pam1.response": "E7MARK-U-047",
+      "pg1.note": "E7MARK-U-049",
+      "pg1.scope": "E7MARK-U-048",
+      "pi1.title": "E7MARK-U-022",
+      "pi2.result": "E7MARK-U-024",
+      "pi2.title": "E7MARK-U-023",
+      "r1.result": "E7MARK-U-043",
+      "r1.snapshot": "E7MARK-U-042",
+      "r2.snapshot": "E7MARK-U-044",
+      "s1.title": "E7MARK-U-036",
+      "s2.title": "E7MARK-U-037",
+      "t1.title": "E7MARK-U-005",
+      "t2.title": "E7MARK-U-010",
+      "t3.title": "E7MARK-U-011"
+    },
+    "V": {
+      "a1.answer": "E7MARK-V-034",
+      "a1.question": "E7MARK-V-033",
+      "a1.quote": "E7MARK-V-035",
+      "al1.details": "E7MARK-V-050",
+      "al1.ua": "E7MARK-V-051",
+      "al2.details": "E7MARK-V-052",
+      "al2.ua": "E7MARK-V-053",
+      "al3.details": "E7MARK-V-054",
+      "al3.ua": "E7MARK-V-055",
+      "c1.content": "E7MARK-V-029",
+      "c2.content": "E7MARK-V-030",
+      "c3.content": "E7MARK-V-031",
+      "c4.content": "E7MARK-V-032",
+      "cm1.content": "E7MARK-V-038",
+      "cm2.content": "E7MARK-V-039",
+      "cm3.content": "E7MARK-V-040",
+      "cm4.content.softdeleted": "E7MARK-V-041",
+      "cs1.context": "E7MARK-V-025",
+      "cs1.recent": "E7MARK-V-026",
+      "e1.title": "E7MARK-V-002",
+      "e2.title": "E7MARK-V-003",
+      "e3.title": "E7MARK-V-004",
+      "e4.deviation": "E7MARK-V-007",
+      "e4.task_title": "E7MARK-V-006",
+      "e5.note": "E7MARK-V-008",
+      "e6.note": "E7MARK-V-009",
+      "f1.blob": "E7MARK-V-027",
+      "f2.blob": "E7MARK-V-028",
+      "fs1.deviation": "E7MARK-V-012",
+      "g1.desc": "E7MARK-V-014",
+      "g1.title": "E7MARK-V-013",
+      "m1.content": "E7MARK-V-015",
+      "m2a.content": "E7MARK-V-017",
+      "m2b.content": "E7MARK-V-016",
+      "m3.content": "E7MARK-V-018",
+      "m4.content": "E7MARK-V-019",
+      "name": "E7MARK-V-001",
+      "p1.basis": "E7MARK-V-021",
+      "p1.title": "E7MARK-V-020",
+      "pa1.args": "E7MARK-V-045",
+      "pa1.display": "E7MARK-V-046",
+      "pam1.response": "E7MARK-V-047",
+      "pg1.note": "E7MARK-V-049",
+      "pg1.scope": "E7MARK-V-048",
+      "pi1.title": "E7MARK-V-022",
+      "pi2.result": "E7MARK-V-024",
+      "pi2.title": "E7MARK-V-023",
+      "r1.result": "E7MARK-V-043",
+      "r1.snapshot": "E7MARK-V-042",
+      "r2.snapshot": "E7MARK-V-044",
+      "s1.title": "E7MARK-V-036",
+      "s2.title": "E7MARK-V-037",
+      "t1.title": "E7MARK-V-005",
+      "t2.title": "E7MARK-V-010",
+      "t3.title": "E7MARK-V-011"
+    }
+  },
+  "users": {
+    "U": {
+      "user_id": "e910d317-48ab-517f-a322-baa195a3b74a",
+      "email": "e7-u@test.invalid",
+      "owner_handle": "c45e224a96d7532cb295b02dca26dc2c"
+    },
+    "V": {
+      "user_id": "139d4e71-fe5b-554e-89c5-50560a8ab3af",
+      "email": "e7-v@test.invalid",
+      "owner_handle": "de0390bf9fc552db939afb83d29bf404"
+    }
+  },
+  "vector_probe_names": [
+    "U:c1",
+    "U:c2",
+    "U:c3",
+    "U:c4",
+    "U:m2b",
+    "U:m3",
+    "U:m4",
+    "V:c1",
+    "V:c2",
+    "V:c3",
+    "V:c4",
+    "V:m2b",
+    "V:m3",
+    "V:m4"
+  ],
+  "seeded_blob_keys": [
+    "e7/u/f1/4aca5e2e-2c18-53ea-b0a6-cf4dd2ec419b",
+    "e7/u/f2/9f3fc97d-f6ed-5d79-8570-0e1335018aae",
+    "e7/v/f1/58ddfb0e-3f58-57c7-a67d-6395af30b2b3",
+    "e7/v/f2/227de2e2-7330-59b8-b156-8aed66616c74"
+  ],
+  "before_counts": {
+    "U": {
+      "agent_runs": 2,
+      "audit_logs": 3,
+      "chat_messages": 4,
+      "chat_sessions": 2,
+      "current_states": 1,
+      "data_barriers": 0,
+      "data_cleanup_items": 0,
+      "data_operations": 0,
+      "data_previews": 0,
+      "data_receipts": 0,
+      "data_suppressions": 0,
+      "events": 6,
+      "file_objects": 2,
+      "focus_sessions": 1,
+      "goals": 1,
+      "grounding_consents": 1,
+      "material_answers": 1,
+      "material_chunks": 4,
+      "memories": 5,
+      "model_context_consents": 1,
+      "notification_preferences": 1,
+      "pending_action_mutations": 1,
+      "pending_actions": 1,
+      "permission_grants": 1,
+      "plan_items": 2,
+      "plans": 1,
+      "storage_orphan_keys": 0,
+      "task_events": 1,
+      "tasks": 3,
+      "users": 1
+    },
+    "V": {
+      "agent_runs": 2,
+      "audit_logs": 3,
+      "chat_messages": 4,
+      "chat_sessions": 2,
+      "current_states": 1,
+      "data_barriers": 0,
+      "data_cleanup_items": 0,
+      "data_operations": 0,
+      "data_previews": 0,
+      "data_receipts": 0,
+      "data_suppressions": 0,
+      "events": 6,
+      "file_objects": 2,
+      "focus_sessions": 1,
+      "goals": 1,
+      "grounding_consents": 1,
+      "material_answers": 1,
+      "material_chunks": 4,
+      "memories": 5,
+      "model_context_consents": 1,
+      "notification_preferences": 1,
+      "pending_action_mutations": 1,
+      "pending_actions": 1,
+      "permission_grants": 1,
+      "plan_items": 2,
+      "plans": 1,
+      "storage_orphan_keys": 0,
+      "task_events": 1,
+      "tasks": 3,
+      "users": 1
+    }
+  },
+  "dependency_chains": [
+    {
+      "family": "tasks",
+      "chain": "e1 --(source, source_upstream_id=E7-*-asg-1)--> t1 (anchored derivation; transient projection edits die with the whole delete — E7-3)",
+      "same_for": [
+        "e2->t2"
+      ]
+    },
+    {
+      "family": "task_events",
+      "chain": "t3 --edge--> e3 (edge-only association: task survives decorrelated, edge clears — E7-3)"
+    },
+    {
+      "family": "focus_sessions",
+      "chain": "t1 <--task_id-- fs1 (cascade count with anchored whole delete); result event e4 is independent user content"
+    },
+    {
+      "family": "memories",
+      "chain": "m2a --supersedes_id--> m2b (correction history; only m2b live for the subject key); m2b source_event_ids=[e5,e6] (L2 samples; deleting one invalidates, not deletes — E7-4b)",
+      "also": "m1 source_event_ids=[e3]; m3/m4 user-authored"
+    },
+    {
+      "family": "plans/plan_items",
+      "chain": "p1.basis refs t1+e1; pi1.basis refs t1+e1; pi2.result refs t2+e2 (失效 basis 不再有原文)"
+    },
+    {
+      "family": "material",
+      "chain": "f1->c1,c2; f2->c3,c4 (embeddings); a1.chunk_ids=[c1,c2], memory_ids=[m2b] (citing answers clear whole)"
+    },
+    {
+      "family": "agent/pending",
+      "chain": "cm2.agent_run_id=r1; r1.basis refs e1+t1; pa1.basis refs e1; pam1 caches pa1 settlement"
+    },
+    {
+      "family": "objects",
+      "chain": "f1/f2 blobs under e7/<tag>/<name>/<file_id>; export staging under exports/<owner_handle>/"
+    }
+  ],
+  "case_expectations": {
+    "E7-1": {
+      "case_id": "E7-1",
+      "title": "U 完整导出；V 无凭据边界；并发删除作废旧包；签名能力过期不可读",
+      "operations": [
+        "U export include_files=true → COMPLETED + download",
+        "U export include_files=false → 包内明确无文件对象",
+        "V 以自身凭据列/下载 U 包 → 404/403",
+        "导出期间并发 source 删除 → 旧包作废（generation 409 语义）——执行轮补驱动"
+      ],
+      "count_deltas": {
+        "U": {
+          "data_operations": 2
+        }
+      },
+      "count_minimums": {},
+      "marker_absence": [],
+      "all_markers_absent_for": [],
+      "vector_absence": [],
+      "live_key_absence": [],
+      "object_expectations": [
+        {
+          "user": "U",
+          "absent_seeded": [],
+          "exports_min": 0,
+          "exports_exact": 2
+        }
+      ],
+      "redis_absence": [],
+      "retained": [
+        "V 全部内容与计数不变（对照）"
+      ],
+      "invariants": [
+        "export_manifest_counts_match_seed"
+      ],
+      "package_scan": "U-only",
+      "blocked_by": null
+    },
+    "E7-10": {
+      "case_id": "E7-10",
+      "title": "迁移恢复/隔离备份恢复/配置与 key/许可门",
+      "operations": [
+        "待 P0-6 恢复/发布门就绪后执行"
+      ],
+      "count_deltas": {},
+      "count_minimums": {},
+      "marker_absence": [],
+      "all_markers_absent_for": [],
+      "vector_absence": [],
+      "live_key_absence": [],
+      "object_expectations": [],
+      "redis_absence": [],
+      "retained": [],
+      "invariants": [
+        "restore_replays_suppression",
+        "rpo_rto_measured",
+        "old_key_rejected_new_key_works",
+        "license_cleared"
+      ],
+      "package_scan": null,
+      "blocked_by": "P0-6"
+    },
+    "E7-2": {
+      "case_id": "E7-2",
+      "title": "预览变化/过期/重复确认/202 丢响应/失败重试",
+      "operations": [
+        "同 target 二次 preview → 内容变化 → digest 409",
+        "preview 过期后 confirm → 409 preview_expired",
+        "同 client_request_id 重放 → 同 operation（幂等）",
+        "202 丢失后重发同 key → 收敛同 op，不产生第二删除",
+        "注入失败后 retry → 同 operation 继续"
+      ],
+      "count_deltas": {
+        "U": {
+          "chat_sessions": -1,
+          "chat_messages": -2
+        }
+      },
+      "count_minimums": {
+        "U": {
+          "data_operations": 1,
+          "data_previews": 1,
+          "data_barriers": 1,
+          "data_cleanup_items": 1
+        }
+      },
+      "marker_absence": [
+        "s2.title",
+        "cm3.content",
+        "cm4.content.softdeleted"
+      ],
+      "all_markers_absent_for": [],
+      "vector_absence": [],
+      "live_key_absence": [],
+      "object_expectations": [],
+      "redis_absence": [],
+      "retained": [
+        "audit/receipt/ledger 家族按冻结规则保留"
+      ],
+      "invariants": [
+        "cleanup_ledger_drained"
+      ],
+      "package_scan": null,
+      "blocked_by": null
+    },
+    "E7-3a": {
+      "case_id": "E7-3a",
+      "title": "删除锚定源事件 e1：派生 task 整删含 focus 级联",
+      "operations": [
+        "U preview+confirm source event e1"
+      ],
+      "count_deltas": {
+        "U": {
+          "events": -1,
+          "tasks": -1,
+          "focus_sessions": -1,
+          "current_states": -1
+        }
+      },
+      "count_minimums": {
+        "U": {
+          "data_operations": 1,
+          "data_previews": 1,
+          "data_barriers": 1,
+          "data_suppressions": 1,
+          "data_cleanup_items": 1
+        }
+      },
+      "marker_absence": [
+        "e1.title",
+        "t1.title",
+        "fs1.deviation"
+      ],
+      "all_markers_absent_for": [],
+      "vector_absence": [],
+      "live_key_absence": [],
+      "object_expectations": [],
+      "redis_absence": [],
+      "retained": [
+        "e4（focus 结果事件，manual 无锚）存活——e4.task_title 为独立 marker",
+        "t3（manual 无锚）存活，t3↔e3 边存活",
+        "plan/agent_run 中对 e1/t1 的引用失效标注，行数不变",
+        "V 全部不变"
+      ],
+      "invariants": [
+        "cleanup_ledger_drained",
+        "invalid_basis_no_original_text"
+      ],
+      "package_scan": null,
+      "blocked_by": null
+    },
+    "E7-3b": {
+      "case_id": "E7-3b",
+      "title": "删除文件源 f1：chunk/embedding/引用回答整清",
+      "operations": [
+        "U preview+confirm source file f1"
+      ],
+      "count_deltas": {
+        "U": {
+          "file_objects": -1,
+          "material_chunks": -2,
+          "material_answers": -1
+        }
+      },
+      "count_minimums": {
+        "U": {
+          "data_operations": 1,
+          "data_previews": 1,
+          "data_barriers": 1,
+          "data_cleanup_items": 1
+        }
+      },
+      "marker_absence": [
+        "f1.blob",
+        "c1.content",
+        "c2.content",
+        "a1.question",
+        "a1.answer"
+      ],
+      "all_markers_absent_for": [],
+      "vector_absence": [
+        "U:c1",
+        "U:c2"
+      ],
+      "live_key_absence": [],
+      "object_expectations": [
+        {
+          "user": "U",
+          "absent_seeded": [
+            "U:f1"
+          ],
+          "exports_min": 0,
+          "exports_exact": null
+        }
+      ],
+      "redis_absence": [],
+      "retained": [
+        "f2 及其 chunk/向量存活",
+        "V 全部不变"
+      ],
+      "invariants": [
+        "cleanup_ledger_drained"
+      ],
+      "package_scan": null,
+      "blocked_by": null
+    },
+    "E7-3c": {
+      "case_id": "E7-3c",
+      "title": "删除 Chat 会话 s2：含软删消息内容硬清",
+      "operations": [
+        "U preview+confirm source chat_session s2"
+      ],
+      "count_deltas": {
+        "U": {
+          "chat_sessions": -1,
+          "chat_messages": -2
+        }
+      },
+      "count_minimums": {
+        "U": {
+          "data_operations": 1,
+          "data_previews": 1,
+          "data_barriers": 1,
+          "data_cleanup_items": 1
+        }
+      },
+      "marker_absence": [
+        "s2.title",
+        "cm3.content",
+        "cm4.content.softdeleted"
+      ],
+      "all_markers_absent_for": [],
+      "vector_absence": [],
+      "live_key_absence": [],
+      "object_expectations": [],
+      "redis_absence": [],
+      "retained": [
+        "s1 及其消息存活",
+        "V 全部不变"
+      ],
+      "invariants": [
+        "cleanup_ledger_drained"
+      ],
+      "package_scan": null,
+      "blocked_by": null
+    },
+    "E7-4a": {
+      "case_id": "E7-4a",
+      "title": "忘记 L2 最新版 m2b：superseded 旧版不复活",
+      "operations": [
+        "U 对 m2b 执行整链忘记（lifecycle）"
+      ],
+      "count_deltas": {
+        "U": {
+          "memories": -2
+        }
+      },
+      "count_minimums": {},
+      "marker_absence": [
+        "m2b.content",
+        "m2a.content"
+      ],
+      "all_markers_absent_for": [],
+      "vector_absence": [
+        "U:m2b"
+      ],
+      "live_key_absence": [
+        "U:E7-U-l2-key"
+      ],
+      "object_expectations": [],
+      "redis_absence": [],
+      "retained": [
+        "m1/m3/m4 存活",
+        "检索/估时/live-key 判定不读失效行"
+      ],
+      "invariants": [],
+      "package_scan": null,
+      "blocked_by": null
+    },
+    "E7-4b": {
+      "case_id": "E7-4b",
+      "title": "删除 L2 源事件 e5：样本不足失效而非删除，向量零召回",
+      "operations": [
+        "U preview+confirm source event e5"
+      ],
+      "count_deltas": {
+        "U": {
+          "events": -1
+        }
+      },
+      "count_minimums": {
+        "U": {
+          "data_operations": 1,
+          "data_previews": 1,
+          "data_barriers": 1,
+          "data_suppressions": 1,
+          "data_cleanup_items": 1
+        }
+      },
+      "marker_absence": [
+        "e5.note"
+      ],
+      "all_markers_absent_for": [],
+      "vector_absence": [
+        "U:m2b"
+      ],
+      "live_key_absence": [
+        "U:E7-U-l2-key"
+      ],
+      "object_expectations": [],
+      "redis_absence": [],
+      "retained": [
+        "memories 行数不变（失效保留），m2a 历史版本不复活",
+        "e6 仍在 m2b source_event_ids 中（id 引用非原文）"
+      ],
+      "invariants": [
+        "invalid_basis_no_original_text"
+      ],
+      "package_scan": null,
+      "blocked_by": null
+    },
+    "E7-5": {
+      "case_id": "E7-5",
+      "title": "U 账号删除（含与 worker 竞态）：全域归零、账本存活、V 不受影响",
+      "operations": [
+        "U 请求账号删除（Level 2 确认）",
+        "与 worker 在 context/dispatch/embed/写回各注入竞态"
+      ],
+      "count_deltas": {
+        "U": {
+          "users": -1,
+          "events": -6,
+          "tasks": -3,
+          "task_events": -1,
+          "focus_sessions": -1,
+          "goals": -1,
+          "memories": -5,
+          "plans": -1,
+          "plan_items": -2,
+          "current_states": -1,
+          "file_objects": -2,
+          "material_chunks": -4,
+          "material_answers": -1,
+          "chat_sessions": -2,
+          "chat_messages": -4,
+          "agent_runs": -2,
+          "pending_actions": -1,
+          "pending_action_mutations": -1,
+          "permission_grants": -1,
+          "grounding_consents": -1,
+          "model_context_consents": -1,
+          "notification_preferences": -1,
+          "audit_logs": -3
+        }
+      },
+      "count_minimums": {
+        "U": {
+          "data_operations": 1,
+          "data_barriers": 1,
+          "data_cleanup_items": 1,
+          "data_receipts": 1
+        }
+      },
+      "marker_absence": [],
+      "all_markers_absent_for": [
+        "U"
+      ],
+      "vector_absence": [],
+      "live_key_absence": [],
+      "object_expectations": [
+        {
+          "user": "U",
+          "absent_seeded": [
+            "U:f1",
+            "U:f2"
+          ],
+          "exports_min": 0,
+          "exports_exact": null
+        }
+      ],
+      "redis_absence": [
+        "U:dirty"
+      ],
+      "retained": [
+        "audit_logs 行全局存活但 IP/UA/path/JSON 脱敏、user_id SET-NULL（§5；owner 口径归零）",
+        "data_operations/barriers/cleanup/receipts 账本存活（owner_handle 键保留原值）；previews 随账号级联清空（FK CASCADE，瞬态非账本）",
+        "data_suppressions 随账号终删（data_closure ACCOUNT_TERMINATION）",
+        "V 全部不变"
+      ],
+      "invariants": [
+        "account_audit_scrubbed",
+        "receipt_issued_once",
+        "single_effective_worker_claim"
+      ],
+      "package_scan": null,
+      "blocked_by": null
+    },
+    "E7-6": {
+      "case_id": "E7-6",
+      "title": "Redis 断供/S3 403/进程崩溃：账本不丢、恢复同 operation",
+      "operations": [
+        "删除 f2 期间注入 Redis 断供 → 账本仍有 key",
+        "注入 S3 403 → 操作非 COMPLETED、403 不当 404",
+        "恢复后继续同 operation，自动重试 ≤5，耗尽可核查"
+      ],
+      "count_deltas": {
+        "U": {
+          "file_objects": -1,
+          "material_chunks": -2
+        }
+      },
+      "count_minimums": {
+        "U": {
+          "data_operations": 1,
+          "data_previews": 1,
+          "data_barriers": 1,
+          "data_cleanup_items": 1
+        }
+      },
+      "marker_absence": [
+        "f2.blob",
+        "c3.content",
+        "c4.content"
+      ],
+      "all_markers_absent_for": [],
+      "vector_absence": [
+        "U:c3",
+        "U:c4"
+      ],
+      "live_key_absence": [],
+      "object_expectations": [
+        {
+          "user": "U",
+          "absent_seeded": [
+            "U:f2"
+          ],
+          "exports_min": 0,
+          "exports_exact": null
+        }
+      ],
+      "redis_absence": [],
+      "retained": [],
+      "invariants": [
+        "cleanup_ledger_drained",
+        "retry_ladder_bounded"
+      ],
+      "package_scan": null,
+      "blocked_by": null
+    },
+    "E7-7": {
+      "case_id": "E7-7",
+      "title": "被删来源重采不复活；解除后重授权可复用（server 面）",
+      "operations": [
+        "删除 e1 → 同 upstream 重采（新 client_event_id）→ 409 source_deleted",
+        "release_source_suppressions → 同 upstream 重采 → 201 新行（无 HTTP 路由——P0-6 触发面或进程内调用）",
+        "换账号守卫/离线队列/Stronghold 等客户端面按 E7-7 预登记注记执行"
+      ],
+      "count_deltas": {
+        "U": {
+          "events": 0
+        }
+      },
+      "count_minimums": {
+        "U": {
+          "data_operations": 1,
+          "data_previews": 1,
+          "data_barriers": 1,
+          "data_suppressions": 1,
+          "data_cleanup_items": 1
+        }
+      },
+      "marker_absence": [],
+      "all_markers_absent_for": [],
+      "vector_absence": [],
+      "live_key_absence": [],
+      "object_expectations": [],
+      "redis_absence": [],
+      "retained": [
+        "suppression 行 +1 后 release 为 UPDATE 置 released_at（行持久存活，durable 账本终态 ≥1）",
+        "客户端面证据按 m5-e7-acceptance §2 E7-7 注记①-⑤"
+      ],
+      "invariants": [
+        "suppressed_reimport_rejected",
+        "release_reopens_anchor"
+      ],
+      "package_scan": null,
+      "blocked_by": null
+    },
+    "E7-8": {
+      "case_id": "E7-8",
+      "title": "grant 窄 scope/撤销竞态/两类 consent；实际渠道生效",
+      "operations": [
+        "创建窄 scope grant → 撤销 → 到期/撤销阻发",
+        "错 category/channel/window 拒绝",
+        "L2 不被通知 L3 绕过；quiet hours/daily budget 独立生效",
+        "notification.delivered 仅预算结算，不当远程已读"
+      ],
+      "count_deltas": {
+        "U": {
+          "permission_grants": 0
+        }
+      },
+      "count_minimums": {},
+      "marker_absence": [],
+      "all_markers_absent_for": [],
+      "vector_absence": [],
+      "live_key_absence": [],
+      "object_expectations": [],
+      "redis_absence": [],
+      "retained": [
+        "既有 pg1 保留；新 grant 走 API 创建后撤销（净 0）",
+        "consent 行数不变（状态翻转）"
+      ],
+      "invariants": [
+        "grant_revocation_blocks_send"
+      ],
+      "package_scan": null,
+      "blocked_by": null
+    },
+    "E7-9": {
+      "case_id": "E7-9",
+      "title": "2API+2worker 共享限流/恢复、trace 链、敏感 marker 扫描",
+      "operations": [
+        "待 P0-5 观测面落地后执行"
+      ],
+      "count_deltas": {},
+      "count_minimums": {},
+      "marker_absence": [],
+      "all_markers_absent_for": [],
+      "vector_absence": [],
+      "live_key_absence": [],
+      "object_expectations": [],
+      "redis_absence": [],
+      "retained": [],
+      "invariants": [
+        "shared_rate_limit_not_doubled",
+        "trace_linkage",
+        "no_markers_in_telemetry"
+      ],
+      "package_scan": null,
+      "blocked_by": "P0-5"
+    }
+  }
+}

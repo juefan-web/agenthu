@@ -1417,8 +1417,8 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   实证 + confirm 后 409，变异验证转红复绿），文件 20 例、全量
   444 passed/0 skipped（本地与 CI 实测同值；S3 项两侧实跑）、三查
   绿；测试独
-  delta，生产码零变更，其余六核点 B 全过。待 B delta 复核转
-  approve 后协调人合并。
+  delta，生产码零变更，其余六核点 B 全过。#74 已合并（B approve
+  @83b965d，main `31e4743`，M5 实施链七连绿）——P0-3 全链完成。
 
 - **P0-4 切片 1 交审（B，2026-10-06，分支 `feature/m5-p0-4-data-client`）**：
   客户端契约面 + 存储原语，无 UI：/v1/data Zod 镜像 17 schema（恒有可空
@@ -1434,3 +1434,38 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   （数据控制页 + 回执最小视图 + 本机清理状态机 + 无主处置 UI）随后。
   环境注记：worktree node_modules 因 /tmp 工作树复制事故损坏，全清
   pnpm install 重建；本地新立 .venv 跑 ruff/drift 同形检查。
+
+- **E7 准备期工件（A，2026-10-06，分支 feature/m5-e7-fixtures 基线
+  31e4743）**：`tests/e7/` 门控套件（AGENTHU_E7_STACK=1 未开时
+  collect_ignore 整目录，普通 CI 形态零变化）——确定性 seed_spec
+  （uuid5 稳定 id + 固定 UTC 锚 2026-10-01 + 逐位独立 marker
+  E7MARK-*/NNN + keystream 伪随机 1536 维向量；U/V 镜像世界 90 行 +
+  2 用户 + 2 blobs，生命周期族零 seed 走真实 API）+ 提交在库 manifest
+  （before counts/依赖链/E7-1..10 全量预登记 expected；普通 CI 单测钉
+  漂移；count_minimums 语义=内容族精确、生命周期族下限在场）+
+  registry 驱动 verify pack（30 族 owner 限定计数/全域 marker 扫描/
+  pgvector 探针/对象 head-list/Redis 面/清理账本不变量）+ 参考驱动
+  E7-1（导出全链：解压后包扫描 U 全场 V 零泄漏、include_files=false
+  省略、所有权 404/403）与 E7-3a/b/c（锚定事件整删含投影行/文件源
+  citations[].file_id 闭包/chat 软删硬清）+ E7-9/10 blocked-stub 显式
+  skip + README runbook（独立库 agenthu_e7/bucket agenthu-e7/Redis
+  DB15 冒烟口径）。冒烟：seed→baseline 全绿、门控 4 passed+2
+  blocked-skip、全量 446 passed/0 skipped（+2 manifest 单测）、
+  ruff 双绿、pyright 0、OpenAPI 70 路径零变更 drift 绿。六事实/
+  六判断见任务书 §6/§7 待 B 核。执行门槛不变：双轮等 P0-5/P0-6。
+
+- **#76 B 互审修复轮（A，2026-10-06 下午）**：RC @`44b3a11`（14:23Z）
+  唯一阻塞簇 = 四案预登记计数与 P0-3 产品语义矛盾——harness 零变更，
+  只动 EXPECTATIONS/manifest/文档：E7-4b 五族 minimums；E7-5
+  audit_logs -3（SET-NULL owner 口径）+ operations/barriers/cleanup/
+  receipts 四族 minimums + retained 更正（suppressions 随账号终删；
+  修复轮曾多补的 previews 存活被 B 的 FK 证据推翻——
+  DataPreview.user_id ondelete=CASCADE 随账号级联清空、瞬态非账本，
+  E7-5 唯一 users:-1 案必假红，已删注册并同步任务书 §8）；E7-6 三族
+  minimums + operations 移入 minimums（deltas 死键机制）；E7-7 删
+  suppressions:0 + 五族 minimums + release 无路由注记（N3）；E7-1
+  op-4 执行轮补驱动标注；seed.py docstring Redis 反写句修正。修复轮
+  冒烟：seed/baseline 绿、门控 4+2 形态不变、全量本机 439+7（当日
+  时间窗跳过，非改动相关；CI 取日志实测）、三查绿、manifest 重生 +
+  钉子 2 passed。栈保持可连（容器运行 + README §5 一条命令）供 B
+  库面抽查。N1/N2 在档不处理。待 B 核 delta 转 approve。
