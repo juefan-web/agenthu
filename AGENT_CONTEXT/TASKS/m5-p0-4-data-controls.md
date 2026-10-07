@@ -196,7 +196,9 @@ Status: 开工 2026-10-06；基线 main `31e4743`（#74 合并头，P0-3 全链�
   现状数，skip 归因非本片面）；Compose/Docker/audit 双跑全绿。
 - 活雷①补落（本机）：cargo **28/28**（+1：data-generation 响应侧
   透传；forward 测试扩断言）；backend_proxy/vault clippy 零告警
-  （material_transfer 存量 3 条非本片）。CI 新头数字跑后回填。
+  （material_transfer 存量 3 条非本片）。
+- 活雷①补落 CI 实测回填（头 b97e972，双跑全绿 12/12）：tauri-rust
+  cargo **28/28** 双跑一致（pull_request 5.02s / push 5.04s）。
 
 ## 5. 实现期判断（待 A 核）
 
