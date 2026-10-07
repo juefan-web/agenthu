@@ -16,11 +16,20 @@ Status: 开工 2026-10-06；基线 main `31e4743`（#74 合并头，P0-3 全链�
   B 稿 §5 为待裁增量——端点冻结后另行切片）、E7 执行、许可盘点主体
   （P0-6 可提前启动，独立交付）、服务端语义。
 - **切片**：
-  - **切片 1（本 PR）**：契约镜像 + drift 注册 + client 数据 API +
+  - **切片 1（已合并 #75）**：契约镜像 + drift 注册 + client 数据 API +
     Stronghold 回执分槽 + 无主草稿处置原语 + X-Data-Generation 接线。
     无 UI。
-  - **切片 2**：数据控制页 + 回执最小视图 + 本机清理状态机 + 无主
-    处置 UI。
+  - **切片 2（本 PR，基线 main `8efd84b`）**：数据控制页
+    （capabilities 卡 + 导出全流 + 删除全流含账号两步确认 + 状态文案表
+    + poll 5s→30s/30min/visibilitychange）+ 回执独立最小视图（登录屏
+    入口，receipt_list 槽位枚举去 capability，不经业务会话/RQ）+ 本机
+    清理状态机（not_started→cleaning→verified/failed，verified = 可复
+    跑检查输出：键存在性/SQLite 行数/token 槽清空；账号路径 VACUUM，
+    回执槽不动）+ 无主处置 UI（队列计数 + 草稿在场，adopt 需在席会话
+    ——#69 advisory #4 live-session ownerKey 守卫；discard 恒可用）。
+    Rust 增量：queue_clear_owner/queue_count_owner/receipt_list 三命令。
+    **红线**：额度不自算（P0-5 裁定④——本片无额度面）；venue 不接入
+    （P0-6 红线）；旧删除入口语义不动。
 
 ## 1. 冻结形状对照（B 稿 §1/§3/§4）
 
@@ -98,6 +107,33 @@ Status: 开工 2026-10-06；基线 main `31e4743`（#74 合并头，P0-3 全链�
   - **completion_scope 收紧** z.string() → const 数组枚举；**存量镜像
     缺口 7 处修复**（§5-7）+ UI 两处可空守卫；fixtures 头部恢复角色与
     禁手编纪律注记（CI 唯一契约源）。
+- 切片 2（2026-10-07，基线 main `8efd84b`）：
+  - **Rust**：queue_clear_owner（行级清除 + WAL checkpoint + 账号路径
+    VACUUM）/ queue_count_owner / receipt_list（目录扫描槽位，构造性
+    剥离 capability，损坏槽跳过）；测试 +2（owner 范围隔离 / capability
+    不出列表）。
+  - **队列/存储面**：OwnerCleanupApi（clearOwnerData/countOwnerData，
+    owner 显式入参——清理运行在登出后）；Local 实现含损坏隔离备份键
+    清除；ReceiptStore.list()（槽位枚举非敏感元数据）。
+  - **数据控制页**（features/data-controls/）：statusCopy（B 稿 §2 冻结
+    文案表逐条落地：preview 行/QUEUED-RUNNING/RETRY_WAIT/FAILED/
+    COMPLETED/READY/EXPIRED/未知状态停危险操作/409 与已知码）；导出
+    面板（include_files 默认勾选、client_request_id 稳定幂等、READY 才
+    下载、"不含未同步草稿"明示）；删除全流（source/memory 单确认、
+    account 两步 + checkbox「我理解此操作不可恢复」+ 可读身份 +
+    不自动代导出）；poll 钩子（5s→30s 梯、30min 上限、visibilitychange
+    暂停/回前台新鲜拉取、手动刷新只 GET）；无主处置卡（adopt 需在席
+    会话——live ownerKey 守卫，discard 恒可用）；本机清理卡（状态机
+    展示 + 可复跑检查清单 + failed 重试/verified 重新核账）。
+  - **回执独立最小视图**（ReceiptViewer）：登录屏入口（未登录/401 态
+    可见）、不经业务会话/RQ、capability 仅内存中转（槽位→直连请求）、
+    无效能力统一「回执不可用」、手动刷新。
+  - **本机清理状态机**（cleanup.ts）：not_started→cleaning→verified/
+    failed；顺序 = logout（业务 token 槽，回执槽不动）→ 队列清除 →
+    草稿清除 → 代际清除 → 检查（键存在性/行数/代际/token 面，回执槽
+    为恒 ok 信息行）；verified = 全部检查通过。
+  - **AppServices** 增 resolveOwner；App 增「数据与隐私」视图与登录屏
+    回执入口。
 
 ## 4. 验证证据（随切片填）
 
@@ -163,3 +199,22 @@ Status: 开工 2026-10-06；基线 main `31e4743`（#74 合并头，P0-3 全链�
 9. **TS unowned adopt 静默返 0 vs Rust 报错**（注记③处置）：可接受
    不对称——Stronghold 命令层对 unowned 目标显式报错，Web fallback
    （无命令层）返 0 无副作用；单一显式防线在命令层。
+10. **回执视图手动刷新**（切片 2）：B 稿只冻结了 operation poll 参数
+    （5s→30s/30min/前后台），回执视图的轮询节奏未冻结——本片只做
+    手动刷新（GET），不擅自定参；账号删除后的状态面 = 回执视图 +
+    本机清理卡（owner 401，不 poll，B 稿 §2 收紧原文）。
+11. **token 单槽非 owner 维度**：backend_token_* 是单槽（无 owner
+    列），清理检查的 tokenPresent 探针按环境注入（Tauri =
+    backend_token_get；Web = null）；null 时检查行如实标注「当前环境
+    无持久凭据面，未检查」，不伪 verified。
+12. **损坏隔离备份随 owner 清除**：queueCorruptKey 保留原 payload
+    （用户内容面），clearOwnerData 一并移除；SQLite 面的行级清除在
+    Rust 命令内（无隔离表）。
+13. **被删来源的本地待同步事件不预清**：服务端抑制 + rejected 出队
+    （切片 1 coordinator 机制）自然处理；「客户端不是权限判定者」
+    （B 稿 §4）——COMPLETED 文案明示该行为。
+14. **campus 会话不动**：独立于 Backend 账号；B 稿「共用会话先隔离或
+    停自动复用」是后续边界，本片以说明文案 + 顶栏退出按钮承接。
+15. **测试形态**：fake timers 下单发 advanceTimersByTimeAsync(全量)
+    不驱动 .then 链里排程的定时器——cap 用例改 30s 步进推进（≤70 步
+    必跨 30 分钟）；waitFor 在假钟下会饿死，改 advance(0) 微任务冲刷。

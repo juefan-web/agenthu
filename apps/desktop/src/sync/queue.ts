@@ -20,6 +20,14 @@ export interface UnownedQueueApi {
   discardUnowned(): Promise<number>;
 }
 
+/** P0-4 本机清理面（B 稿 §4）：owner 显式入参——清理运行在登出后，
+ *  不能依赖会话现解的 owner。返回值是清除/现存的事件行数，与键存在性
+ *  一起构成可复跑清理检查的判据。vacuum 仅账号删除路径置 true。 */
+export interface OwnerCleanupApi {
+  clearOwnerData(ownerKey: string, vacuum: boolean): Promise<number>;
+  countOwnerData(ownerKey: string): Promise<number>;
+}
+
 export type OwnerResolver = () => string | null;
 
 interface QueueState {
@@ -44,7 +52,7 @@ export interface LocalQueueOptions {
   resolveOwner?: OwnerResolver;
 }
 
-export class LocalEventQueue implements EventQueue, UnownedQueueApi {
+export class LocalEventQueue implements EventQueue, UnownedQueueApi, OwnerCleanupApi {
   private readonly storage: Storage | null;
   private readonly resolveOwner: OwnerResolver;
   private readonly states = new Map<string, QueueState>();
@@ -134,6 +142,19 @@ export class LocalEventQueue implements EventQueue, UnownedQueueApi {
     return unowned.events.length;
   }
 
+  async clearOwnerData(ownerKey: string, _vacuum: boolean): Promise<number> {
+    const count = this.read(ownerKey).events.length;
+    this.states.delete(ownerKey);
+    this.storage?.removeItem(queueKey(ownerKey));
+    // 损坏隔离备份保留的是原 payload（用户内容面），随本 owner 一并清除
+    this.storage?.removeItem(queueCorruptKey(ownerKey));
+    return count;
+  }
+
+  async countOwnerData(ownerKey: string): Promise<number> {
+    return this.read(ownerKey).events.length;
+  }
+
   private read(owner: string): QueueState {
     const raw = this.storage?.getItem(queueKey(owner));
     if (!raw) return { events: [], cursor: null };
@@ -201,7 +222,7 @@ export interface SqliteQueueOptions {
   resolveOwner?: OwnerResolver;
 }
 
-export class SqliteEventQueue implements EventQueue, UnownedQueueApi {
+export class SqliteEventQueue implements EventQueue, UnownedQueueApi, OwnerCleanupApi {
   private readonly resolveOwner: OwnerResolver;
 
   constructor(options: SqliteQueueOptions = {}) {
@@ -236,12 +257,18 @@ export class SqliteEventQueue implements EventQueue, UnownedQueueApi {
   async discardUnowned(): Promise<number> {
     return await invoke("queue_unowned_discard");
   }
+  async clearOwnerData(ownerKey: string, vacuum: boolean): Promise<number> {
+    return await invoke("queue_clear_owner", { owner: ownerKey, vacuum });
+  }
+  async countOwnerData(ownerKey: string): Promise<number> {
+    return await invoke("queue_count_owner", { owner: ownerKey });
+  }
 }
 
 /** 敏感字段防线在队列边界无条件执行（B-3.2）：未配置 Backend 的直接入队路径
  *  与同步协调器共享同一条检查，不存在绕过 assertSafeEvent 的入口。 */
-class SafeEventQueue implements EventQueue, UnownedQueueApi {
-  constructor(private readonly inner: EventQueue & Partial<UnownedQueueApi>) {}
+class SafeEventQueue implements EventQueue, UnownedQueueApi, OwnerCleanupApi {
+  constructor(private readonly inner: EventQueue & Partial<UnownedQueueApi> & Partial<OwnerCleanupApi>) {}
 
   async add(events: EventEnvelope[]): Promise<void> {
     events.forEach(assertSafeEvent);
@@ -254,14 +281,21 @@ class SafeEventQueue implements EventQueue, UnownedQueueApi {
   countUnowned(): Promise<number> { return this.unowned().countUnowned(); }
   adoptUnowned(targetOwnerKey: string): Promise<number> { return this.unowned().adoptUnowned(targetOwnerKey); }
   discardUnowned(): Promise<number> { return this.unowned().discardUnowned(); }
+  clearOwnerData(ownerKey: string, vacuum: boolean): Promise<number> { return this.cleanup().clearOwnerData(ownerKey, vacuum); }
+  countOwnerData(ownerKey: string): Promise<number> { return this.cleanup().countOwnerData(ownerKey); }
 
   private unowned(): UnownedQueueApi {
     if (!this.inner.countUnowned) throw new Error("当前队列实现不支持无主数据处置");
     return this.inner as UnownedQueueApi;
   }
+
+  private cleanup(): OwnerCleanupApi {
+    if (!this.inner.clearOwnerData) throw new Error("当前队列实现不支持本机清理");
+    return this.inner as OwnerCleanupApi;
+  }
 }
 
-export function createEventQueue(options: { resolveOwner?: OwnerResolver } = {}): EventQueue & UnownedQueueApi {
+export function createEventQueue(options: { resolveOwner?: OwnerResolver } = {}): EventQueue & UnownedQueueApi & OwnerCleanupApi {
   const inner = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window
     ? new SqliteEventQueue(options)
     : new LocalEventQueue(options);

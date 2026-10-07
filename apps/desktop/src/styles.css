@@ -186,3 +186,23 @@ textarea { resize: vertical; }
 .chat-search-results ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .chat-search-hit { all: unset; cursor: pointer; color: #2f6b3c; font-size: 13px; font-weight: 600; }
 .chat-search-content { margin: 0; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; color: #42504f; }
+
+/* 数据与隐私（P0-4 切片 2） */
+.danger-button { border: 1px solid #a23b3b; background: #a23b3b; color: white; border-radius: 4px; padding: 9px 13px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.danger-button:hover:not(:disabled) { background: #862f2f; }
+.danger-button:disabled, .primary-button:disabled, .ghost-button:disabled { opacity: 0.45; cursor: not-allowed; }
+.data-controls-card { border: 1px solid #d8e2e0; border-radius: 6px; padding: 14px 16px; margin-bottom: 14px; background: white; }
+.data-controls-card h3 { margin: 0 0 10px; font-size: 14px; color: #22423f; }
+.data-check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #4a3418; margin: 8px 0; }
+.data-preview { border-top: 1px dashed #c7d4d2; margin-top: 10px; padding-top: 10px; }
+.data-effect-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin: 8px 0; }
+.data-effect-table caption { caption-side: top; text-align: left; color: #6b7f7d; font-size: 12px; padding-bottom: 4px; }
+.data-effect-table th, .data-effect-table td { border: 1px solid #d8e2e0; padding: 4px 8px; text-align: left; }
+.data-effect-list { list-style: none; margin: 8px 0; padding: 0; }
+.data-effect-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid #edf2f1; font-size: 13px; }
+.data-limitations { margin: 8px 0; padding-left: 18px; font-size: 12.5px; color: #614a2c; }
+.data-operation { border-top: 1px dashed #c7d4d2; margin-top: 10px; padding-top: 10px; }
+.data-checks { list-style: none; margin: 8px 0; padding: 0; font-size: 12.5px; }
+.data-checks li { padding: 3px 0; border-bottom: 1px solid #edf2f1; }
+.check-ok { color: #1d5d56; }
+.check-fail { color: #a23b3b; }

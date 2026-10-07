@@ -3,9 +3,9 @@ import { isTauriRuntime } from "../adapters/campus/tauriTransport";
 import { type BackendSession, createBackendSession } from "../backend/session";
 import type { BackendClient } from "../backend/client";
 import { backendFetch } from "../backend/transport";
-import type { FocusDraftStore } from "../focus/draft";
+import type { FocusDraftStore, UnownedDraftStore } from "../focus/draft";
 import { createFocusDraftStore } from "../focus/draft";
-import type { EventQueue, UnownedQueueApi } from "../sync/queue";
+import type { EventQueue, OwnerCleanupApi, UnownedQueueApi } from "../sync/queue";
 import { createEventQueue } from "../sync/queue";
 import { deriveOwnerKey } from "../sync/owner";
 import { EventSyncCoordinator } from "../sync/coordinator";
@@ -34,10 +34,13 @@ export interface AppServices {
   backendUrl: string;
   backendSession: BackendSession | null;
   backend: BackendClient | null;
-  queue: EventQueue & UnownedQueueApi;
-  focusDraft: FocusDraftStore;
+  queue: EventQueue & UnownedQueueApi & OwnerCleanupApi;
+  focusDraft: FocusDraftStore & UnownedDraftStore;
   sync: EventSyncCoordinator | null;
   receipts: ReturnType<typeof createReceiptStore>;
+  /** 当前 live owner（登录 → owner key；登出/未登录 → null）。数据控制页
+   *  的无主归户与账号删除本机清理以此守卫（#69 advisory #4）。 */
+  resolveOwner: () => string | null;
 }
 
 export function createAppServices(): AppServices {
@@ -68,7 +71,7 @@ export function createAppServices(): AppServices {
     },
   }) : null;
   const receipts = createReceiptStore();
-  return { buildTimeBackendUrl: BUILD_TIME_BACKEND_URL, backendUrl, backendSession, backend, queue, focusDraft, sync, receipts };
+  return { buildTimeBackendUrl: BUILD_TIME_BACKEND_URL, backendUrl, backendSession, backend, queue, focusDraft, sync, receipts, resolveOwner };
 }
 
 export const AppServicesContext = createContext<AppServices | null>(null);
