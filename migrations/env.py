@@ -18,7 +18,11 @@ from backend.db.base import Base
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # disable_existing_loggers=False: fileConfig's default (True) disables
+    # every logger not listed in alembic.ini — when migrations run in-process
+    # (tests, tooling) that silently kills the application's loggers for the
+    # rest of the process lifetime.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 config.set_main_option("sqlalchemy.url", get_settings().database_url)
 

@@ -104,6 +104,19 @@ class Settings(BaseSettings):
 
     # --- Observability -----------------------------------------------------
     audit_enabled: bool = True
+    # P0-5 slice 1 (frozen ruling 1): standard OTel SDK + official
+    # instrumentation, OTLP/HTTP the only wire format. Disabled by default —
+    # dev/test/CI emit nothing until the alpha stack opts in; when enabled,
+    # the span-attribute allowlist in core/telemetry.py is the only channel.
+    otel_enabled: bool = False
+    otel_exporter_otlp_endpoint: str = "http://127.0.0.1:4318/v1/traces"
+    otel_sample_ratio: float = Field(default=1.0, ge=0.0, le=1.0)
+    otel_export_timeout_seconds: float = 2.0
+    # P0-5 slice 1 (frozen ruling 2): zero-trust proxy boundary — the socket
+    # peer is the client source; X-Forwarded-For is honoured only when the
+    # peer is explicitly listed here (rightmost entry). Empty (default)
+    # ignores the header everywhere: fail closed against spoofed sources.
+    trusted_proxies: list[str] = Field(default_factory=list)
 
     # --- Agent runtime (D-034 §5.1/§6 defaults; review point 8) -----------
     # Pending-action TTL: 24h, tools may shorten but never below the floor.

@@ -20,6 +20,7 @@ from fastapi.responses import Response as PlainResponse
 
 from backend.api.deps import CurrentIdentity, CurrentUser, DBSession
 from backend.core.errors import NotFoundError, RateLimitError
+from backend.core.proxy import client_ip
 from backend.core.rate_limit import RateLimiter
 from backend.models.data_lifecycle import DataOperation
 from backend.models.enums import DataOperationStatus
@@ -164,10 +165,10 @@ def recover_deletion(
     identity: CurrentIdentity,
     db: DBSession,
 ) -> DataOperationOut:
-    client_ip = http_request.client.host if http_request.client else "unknown"
+    source_ip = client_ip(http_request)
     for limiter, key in (
         (_RECOVER_LIMITS[0], f"recover:id:{identity.id}"),
-        (_RECOVER_LIMITS[1], f"recover:ip:{client_ip}"),
+        (_RECOVER_LIMITS[1], f"recover:ip:{source_ip}"),
     ):
         if not limiter.hit(key):
             raise RateLimitError(

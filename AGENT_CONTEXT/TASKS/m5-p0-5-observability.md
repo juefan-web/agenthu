@@ -1,10 +1,11 @@
 # M5 P0-5：可观测与多进程（A）
 
-Status: 准备期任务书（2026-10-06 落，开工待 #75/#76 合并后协调人令）。
-基线 main `31e4743`。依据：ops 契约 `m5-data-lifecycle-ops-contract.md`
-§6（冻结）；规划 `m5-planning-guidance.md` §3 切片表（前置 = P0-1 trace
-字段冻结，已随 phase-0 契约闭合）；协调人 P0-5 GO 派工（2026-10-06，
-与 E7 fixtures 并行自排；E7 双轮执行以 P0-5/P0-6 齐为门）。
+Status: 切片 1 实施中（2026-10-07 协调人放行令开工；四裁定已冻结入
+§5）。基线 main `8efd84b`（#76 合并后）。依据：ops 契约
+`m5-data-lifecycle-ops-contract.md` §6（冻结）；规划
+`m5-planning-guidance.md` §3 切片表（前置 = P0-1 trace 字段冻结，已随
+phase-0 契约闭合）；协调人 P0-5 GO 派工（2026-10-06）+ 2026-10-07
+放行（B 转 P0-4 切片 2 / P0-6，A 开本片）。
 
 ## 0. 边界
 
@@ -76,14 +77,78 @@ Status: 准备期任务书（2026-10-06 落，开工待 #75/#76 合并后协调�
    dev/test/alpha 缺省与脱敏默认（默认不采正文）。
 7. B 侧接入缝（campus 遥测）以接口文档形式留出，不实现。
 
-## 5. 待裁定（开工前请协调人冻结）
+## 5. 裁定（协调人 2026-10-06 冻结，切片 1 起生效）
 
-1. **OTel SDK/导出器选型**：`opentelemetry-sdk` + 手动插桩 vs
-   auto-instrumentation 全家桶（依赖面与"自动采集关闭项"多少的
-   权衡）；Alpha 导出器形态（无 collector 时 console/none 与采样率）。
-2. **受信代理信任配置**：默认值（dev 直连 0 信任）与 alpha 的
-   代理清单承载方式（env/config），影响登录限流键的取值链。
-3. **多进程验证的承载**：compose override（`--scale` 或显式双服务）
-   还是 CI 单机多进程脚本；影响 CI 时长与 E7-9 复用。
-4. **限流键与 owner 分桶的精确口径**：哪些端点进 owner 分桶
-   （模型/导出/并发任务），与 P0-4 切片 2 UI 的额度展示是否同源。
+原"待裁定"四项已全部冻结；实现面逐条对号：
+
+1. **OTel 选型**：`opentelemetry-sdk` + 官方 instrumentation 库
+   （fastapi/httpx/botocore 三件，显式 `instrument(tracer_provider=...)`，
+   不用 auto-instrumentation 全家桶/sitecustomize）；**OTLP/HTTP 唯一
+   线上格式**（`opentelemetry-exporter-otlp-proto-http`，无 gRPC/console
+   导出器）；**alpha compose 加 Collector 容器**
+   （`docker-compose.alpha.yml` + `docker/otel-collector/config.yaml`，
+   debug exporter 骨架，api/worker 不 depend_on 它——断供不阻塞是设计
+   属性不是部署巧合）；**SDK 自动捕获关死**：span events 一律剥除
+   （自动异常采集）、status description 一律置空（异常消息可含用户
+   内容）、不设 metrics pipeline（meter 面为 no-op，原始 UUID 不做
+   label 的禁令在 metrics 落地前天然满足）。**allowlist 唯一通道**在
+   exporter 边界机械强制（`AllowlistSpanExporter`：非白名单属性键、
+   events、status description 剥除后才序列化）——插桩库内部记什么
+   都出不去。默认 `OTEL_ENABLED=false`：dev/test/CI 零发射，未配置
+   即无遥测（fail-closed）。
+2. **受信代理零信任默认 fail-closed**：`core/proxy.py client_ip()` 是
+   登录/恢复限流键与 audit IP 面的唯一取值缝；socket peer 为缺省，
+   X-Forwarded-For 仅当 peer 在 `TRUSTED_PROXIES` 显式清单内才被读、
+   且只取最右条目（代理实际所见，客户端可控的最左条目与深链构造性
+   忽略）；清单为空（默认）时处处忽略该头。auth/data/audit 三处调用
+   点已收口。
+3. **多进程验证承载**：compose override = E7-9 正式承载（2 API +
+   2 worker + 真实 Redis），**CI 保持单进程**（ci-smoke override 不动、
+   不合并 alpha 文件）。属切片 3，本片只落 Collector 容器。
+4. **限流账单一事实源**：Redis 限流桶账单是唯一事实源，P0-4 切片 2
+   UI 额度只从后端 API 读、客户端不自算第二计数。属切片 2（B 的 UI
+   与 A 的 limiter 以此对齐）；本片不动 `core/rate_limit.py` 的
+   `hit`/`retry_after` 缝。
+
+## 6. 切片 1 实施记录（2026-10-07，随本 PR 落）
+
+**做了什么**：OTel 骨架 + 脱敏加固，五行 span 链就位——
+HTTP server（官方 fastapi 插桩，request_hook 播 correlation.id，
+scope-header 预置与 RequestContextMiddleware 共享同一 request id）→
+operation（`data_executor.run_deletion`/`data_exports.run_export` 包装，
+correlation.id=operation 随机 UUID）→ run（`agent_runner.execute_run`）→
+worker attempt（`traced_job` 装饰 worker/settings.py 十个任务函数，
+functools.wraps 保 arq cron unique 键）→ provider/storage client（官方
+httpx/botocore 插桩）。worker 经 arq `on_startup` 配置管线
+（service.name=agenthu-worker）。propagator 仅 tracecontext（无
+baggage——入站 baggage 无法把字段走私进遥测上下文，fail-closed）。
+
+**脱敏面**：span 属性 allowlist（`SPAN_ATTRIBUTE_ALLOWLIST`，exporter
+边界强制）+ logging extras allowlist（`LOG_FIELD_ALLOWLIST`，白名单外
+extras 丢弃）同族对齐 ops 契约 §6：路由模板（非实例化 path）、有界
+标签/枚举、retry/timeout/duration/usage 计数、随机关联 ID（request/
+job/run/operation/file/item/event id——按事件铸造的 uuid4，非 user_id
+这类稳定身份 UUID，后者与 course_name、audit action 串一起被有意
+移出日志面）。关联 ID 界线注释钉在两处 allowlist 顶部。
+
+**新增配置**：`OTEL_ENABLED`（默认 false）、
+`OTEL_EXPORTER_OTLP_ENDPOINT`（默认 http://127.0.0.1:4318/v1/traces）、
+`OTEL_SAMPLE_RATIO`、`OTEL_EXPORT_TIMEOUT_SECONDS`、`TRUSTED_PROXIES`
+（默认空 = 全零信任）。dev/test/alpha 缺省全脱敏默认。
+
+**测试**（`tests/unit/test_telemetry.py` + `test_proxy_and_logging.py`）：
+查询串/头值/非白名单属性不出现在导出面；同请求 server→operation→
+provider 三层同 trace 父子关联；`stage_span` 非白名单字段丢弃+告警、
+异常记有界 error.code 且消息/事件/status description 不外泄；
+exporter 持续抛错 3 请求照常 200；默认禁用=no-op tracer；XFF 五态
+（无信任/受信 peer 最右/非受信 peer/畸形/无 client）；extras 白名单
+保留关联字段、丢弃身份与内容字段。
+
+**不做**（本片边界）：Redis 共享限流与断供 503 分面（切片 2）、
+多进程 compose 栈与唯一 claim 验证（切片 3）、campus/native 遥测
+（B，接入缝未动——contract 已冻结字段族即缝）、metrics 面全部。
+
+**验收对照 §4**：#1 部分达成（进程内五层链关联断言已钉；跨进程
+traceparent 贯通随切片 3 多进程栈验证）；#2 全量达成；#3 达成；
+#4/#5 属切片 2/3；#6 随本 PR 全量跑（测试/ruff/pyright/OpenAPI）；
+#7 未动（campus 缝无变化）。

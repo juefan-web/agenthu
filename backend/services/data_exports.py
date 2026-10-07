@@ -32,6 +32,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.core.errors import ConflictError
+from backend.core.telemetry import stage_span
 from backend.db.base import utcnow
 from backend.models.agent import AgentRun, PendingAction, PendingActionMutation
 from backend.models.audit import AuditLog
@@ -508,8 +509,18 @@ def create_export(
 
 def run_export(session: Session, operation: DataOperation, *, storage: ObjectStorage) -> None:
     """Drive collect → package → verify → READY, resuming from the phase
-    checkpoint. Any inconsistency voids the export instead of READY."""
+    checkpoint. Any inconsistency voids the export instead of READY. Wrapped
+    in the "operation" stage of the OTel chain (P0-5 slice 1)."""
 
+    with stage_span(
+        "operation",
+        f"data.operation.{operation.kind.value}",
+        **{"correlation.id": str(operation.id)},
+    ):
+        _run_export(session, operation, storage=storage)
+
+
+def _run_export(session: Session, operation: DataOperation, *, storage: ObjectStorage) -> None:
     if operation.kind != DataOperationKind.EXPORT:
         return
     if operation.status not in (

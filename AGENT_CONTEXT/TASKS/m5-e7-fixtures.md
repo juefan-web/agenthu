@@ -270,3 +270,21 @@ B 非阻塞注记在档不处理（harness 不动）：N1 verify case() raw.pop
 session dict 原地变更（未来双核驱动改 raw.get）；N2 marker token 经
 build_world 解析而非 manifest marker_inventory（unit 钉保证相等）；
 N3 已落 E7-7 注册注记。
+
+## 9. 执行轮前置项（2026-10-07 协调人裁定挂入）
+
+**B 侧审计通道必须先定义、后执行**（沿 E6 先例）——执行轮任务书
+起草时的第一动作，两种形态由协调人裁定其一，未定义不得开跑：
+
+1. **A 产证据包 + 查询输出**：A 在执行轮产出结构化证据包（verify
+   全量输出、逐案 psql 计数查询与结果、对象 head-list、Redis 面探
+   针），连同所执行的 SQL/脚本清单一并交 B；B 审包 + 对照仓库内
+   harness 代码核查询口径（现场复核而非盲信）。
+2. **B 侧获得可跑环境**：B 机器具备 docker + E7 栈（独立库
+   agenthu_e7 / bucket agenthu-e7），按 README §1-§3 自建基线自跑
+   verify；A 只交 seed/verify 代码与 runbook，证据各自独立产生。
+
+执行轮任务书需含：所选通道、通道不满足时的升级路径（回协调人重
+裁，不自行降级为"无 B 核账"）、以及本前置项与双轮协议（E7-10 红门
+→ 全案绿门）的衔接顺序。op-4 驱动面的计数注册仍随驱动落，不跑后
+改预期（常设纪律，与通道裁定无关）。
