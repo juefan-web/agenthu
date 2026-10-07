@@ -134,6 +134,13 @@ Status: 开工 2026-10-06；基线 main `31e4743`（#74 合并头，P0-3 全链�
     为恒 ok 信息行）；verified = 全部检查通过。
   - **AppServices** 增 resolveOwner；App 增「数据与隐私」视图与登录屏
     回执入口。
+  - **CI flake 修复**（切片 2 首推后追加）：vault `key()` 对 Windows
+    Credential Manager 的读写无重试、错误被 `|_| VAULT_ERROR` 泛化吞掉
+    （CI 红时无从定位底层原因）。修复 = 有界重试（3 次/150ms 间隔，
+    仅瞬时类 NoStorageAccess/PlatformFailure；NoEntry 等确定性结果
+    直通）+ 底层错误保留进消息（至多携带凭据 target 名，与本地回执
+    文件名同敏感级，不含密钥本体）+ 密钥只生成一次（重试写同一密钥）
+    + 重试机制单测两例（耗尽/直通/恢复）。
 
 ## 4. 验证证据（随切片填）
 
@@ -158,6 +165,21 @@ Status: 开工 2026-10-06；基线 main `31e4743`（#74 合并头，P0-3 全链�
   conftest.py:65——CI 时点北京 22:5x 撞 <130/65 分钟窗，非本片测试；
   算术：437 存量 + 7 新增 = 444）；drift 步双跑 "No contract drift
   detected"；frontend/tauri-rust/Compose/Docker/audit 12/12 全绿。
+- 切片 2（本机 @504e823；CI 数字以推送头实测日志为准，跑后回填）：
+  desktop vitest **244/244**（+24 新例：statusCopy 7 / poll 3 / cleanup
+  6 / DataControlsView 5 / ReceiptViewer 3；另 4 个存量视图测试文件补
+  resolveOwner 注入）；desktop + contracts tsc 零错；cargo test
+  **25/25**（+2：owner 范围隔离清除 / receipt_list 剥离 capability 与
+  损坏槽跳过）；clippy 无新告警（material_transfer 两处存量告警非
+  本片，CI 不门控）。
+- 切片 2 首推 CI 红 + flake 修复（本机，修复头见 git log）：首推
+  504e823 双跑中 push 事件跑（run 37629858921）tauri-rust FAILED——
+  `vault::tests::receipt_slots_isolate_owners_and_reject_bad_keys`
+  panicked vault.rs:159:53 `Secure session storage is unavailable`
+  （24 passed/1 failed）；同 SHA pull_request 跑（37629870462）全绿；
+  两跑同镜像 windows-2025-vs2026。定位：失败点 = 写成功后紧接的读
+  →CredRead 瞬时故障（keyring get_secret），且泛化错误吞掉底层原因。
+  修复后本机 cargo **27/27**（+2 重试机制单测）；CI 回填待新头双跑。
 
 ## 5. 实现期判断（待 A 核）
 
@@ -218,3 +240,15 @@ Status: 开工 2026-10-06；基线 main `31e4743`（#74 合并头，P0-3 全链�
 15. **测试形态**：fake timers 下单发 advanceTimersByTimeAsync(全量)
     不驱动 .then 链里排程的定时器——cap 用例改 30s 步进推进（≤70 步
     必跨 30 分钟）；waitFor 在假钟下会饿死，改 advance(0) 微任务冲刷。
+16. **keyring flake 修在根因而非重跑**（切片 2 首推 CI 红处置）：
+    同 SHA 双跑一绿一红 + 失败点在「写成功后紧接的读」= CredRead
+    瞬时故障，坐实环境抖动而非代码回归。选择有界重试 + 错误保留
+    （AGENTS.md §7-2 外部调用重试上限 + 可观测），而非 `gh run rerun`
+    碰运气——每次推送双跑两票，重跑不改中奖率。NoEntry 直通不重试
+    （确定性结果重试会把「确实没有」拖成延迟失败）；错误长度（≠32B）
+    同为确定性损坏态，不重试。密钥生成一次、重试写同一密钥——避免
+    半写状态。附带发现（不本片处置）：main 上 material_transfer.rs
+    存在 fmt 漂移与两条 clippy 告警（unused import/TRANSFER_TIMEOUT
+    dead code/useless format），CI client.yml 不跑 fmt/clippy 故不
+    门控；`cargo fmt` 全 crate 会重排 5 个无关文件，本片手工回退保持
+    diff 仅 vault.rs。
