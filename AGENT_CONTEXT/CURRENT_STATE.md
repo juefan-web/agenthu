@@ -1457,8 +1457,11 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
 - **#76 B 互审修复轮（A，2026-10-06 下午）**：RC @`44b3a11`（14:23Z）
   唯一阻塞簇 = 四案预登记计数与 P0-3 产品语义矛盾——harness 零变更，
   只动 EXPECTATIONS/manifest/文档：E7-4b 五族 minimums；E7-5
-  audit_logs -3（SET-NULL owner 口径）+ 五族 minimums（含 B 清单外的
-  previews 存活）+ retained 更正（suppressions 随账号终删）；E7-6 三族
+  audit_logs -3（SET-NULL owner 口径）+ operations/barriers/cleanup/
+  receipts 四族 minimums + retained 更正（suppressions 随账号终删；
+  修复轮曾多补的 previews 存活被 B 的 FK 证据推翻——
+  DataPreview.user_id ondelete=CASCADE 随账号级联清空、瞬态非账本，
+  E7-5 唯一 users:-1 案必假红，已删注册并同步任务书 §8）；E7-6 三族
   minimums + operations 移入 minimums（deltas 死键机制）；E7-7 删
   suppressions:0 + 五族 minimums + release 无路由注记（N3）；E7-1
   op-4 执行轮补驱动标注；seed.py docstring Redis 反写句修正。修复轮

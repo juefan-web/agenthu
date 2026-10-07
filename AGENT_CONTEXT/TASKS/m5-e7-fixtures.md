@@ -232,11 +232,16 @@ EXPECTATIONS/manifest/文档，harness 零变更：
 - **E7-4b**：补五族 minimums（E7-3a 同形先例，e5 事件锚含
   suppressions）。
 - **E7-5**：`audit_logs: -3` 显式 delta（redact 路径 user_id SET-NULL，
-  行全局存活但 owner 谓词归零）+ operations/previews/barriers/cleanup/
-  receipts 五族 minimums（"must survive their own execution"；**previews
-  存活是 B 清单外的同簇补齐**——closure 不触碰该族且 owner 键 user_id
-  保留原值）+ retained 更正（suppressions 随账号终删
-  ACCOUNT_TERMINATION，不在存活清单）。
+  行全局存活但 owner 谓词归零）+ operations/barriers/cleanup/receipts
+  四族 minimums（"must survive their own execution"）+ retained 更正
+  （suppressions 随账号终删 ACCOUNT_TERMINATION，不在存活清单）。
+  修复轮曾把 previews 一并注册存活（据"closure 不触碰该族"），B 互审
+  FK 证据推翻：`DataPreview.user_id` 是 FK("users.id", ondelete=
+  CASCADE)（docstring "transient, 10-minute TTL, cascade with the
+  account"），E7-5 是全部 13 案中唯一 users:-1 案，previews 随账号
+  级联清空——瞬态用户数据非 durable 账本（对照 receipts owner_handle
+  VALUE、无 users FK），注册存活必假红，已删；其余 previews_min=1
+  的七案用户均存活、无级联，注册不受影响。"多补不如补对"。
 - **E7-6**：previews/barriers/cleanup minimums + `data_operations` 从
   deltas **移入** minimums——minimums 非空时 verify 精确扫掠豁免全部
   生命周期族，deltas 键成死键（B 给的"保留精确 1"选项在不动 harness

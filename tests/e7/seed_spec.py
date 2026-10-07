@@ -1029,12 +1029,16 @@ EXPECTATIONS: dict[str, CaseExpectation] = {
             }
         },
         # 账本存活族（data_closure：本删除自身的行 "must survive their own
-        # execution"；receipts 走 90 天窗）。previews 同样存活——closure
-        # 不触碰该族，且其 owner 键是 user_id（行保留原值可数）。
+        # execution"；receipts 走 90 天窗）。previews 不在此列：DataPreview.user_id
+        # 是 FK("users.id", ondelete=CASCADE)（backend/models/data_lifecycle.py，
+        # docstring "transient, 10-minute TTL, cascade with the account"）——
+        # 瞬态用户数据非账本，E7-5 是唯一 users:-1 的用例，users 行删除时
+        # previews 级联清空，注册存活必假红；对照 receipts 的 owner_handle
+        # VALUE、无 users FK 才是 durable 账本键。其余 previews_min=1 的
+        # 用例用户均存活、无级联，注册不受影响。
         count_minimums={
             "U": {
                 "data_operations": 1,
-                "data_previews": 1,
                 "data_barriers": 1,
                 "data_cleanup_items": 1,
                 "data_receipts": 1,
@@ -1045,8 +1049,9 @@ EXPECTATIONS: dict[str, CaseExpectation] = {
         redis_absence=("U:dirty",),
         retained=(
             "audit_logs 行全局存活但 IP/UA/path/JSON 脱敏、user_id SET-NULL（§5；owner 口径归零）",
-            "data_operations/previews/barriers/cleanup/receipts 账本存活"
-            "（owner_handle/user 键保留原值）",
+            "data_operations/barriers/cleanup/receipts 账本存活"
+            "（owner_handle 键保留原值）；previews 随账号级联清空"
+            "（FK CASCADE，瞬态非账本）",
             "data_suppressions 随账号终删（data_closure ACCOUNT_TERMINATION）",
             "V 全部不变",
         ),
