@@ -180,6 +180,13 @@ Status: 开工 2026-10-06；基线 main `31e4743`（#74 合并头，P0-3 全链�
   两跑同镜像 windows-2025-vs2026。定位：失败点 = 写成功后紧接的读
   →CredRead 瞬时故障（keyring get_secret），且泛化错误吞掉底层原因。
   修复后本机 cargo **27/27**（+2 重试机制单测）；CI 回填待新头双跑。
+- 切片 2 CI 实测回填（修复头 49658cf，双跑全绿 12/12，Actions 日志
+  取数）：tauri-rust cargo **27/27** 双跑一致（push 5.03s / PR 5.02s，
+  含 keyring 重试两新例）；frontend contracts **17/17**（1 文件）+
+  desktop **244/244**（33 文件），与本地同数；Backend 双跑
+  **447 passed + 6 skipped**、drift 步双跑 "No contract drift
+  detected"、ruff All checks passed（本 PR 零后端改动，447/6 为 main
+  现状数，skip 归因非本片面）；Compose/Docker/audit 双跑全绿。
 
 ## 5. 实现期判断（待 A 核）
 
