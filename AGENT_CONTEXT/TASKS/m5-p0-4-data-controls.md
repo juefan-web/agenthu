@@ -141,6 +141,13 @@ Status: 开工 2026-10-06；基线 main `31e4743`（#74 合并头，P0-3 全链�
     直通）+ 底层错误保留进消息（至多携带凭据 target 名，与本地回执
     文件名同敏感级，不含密钥本体）+ 密钥只生成一次（重试写同一密钥）
     + 重试机制单测两例（耗尽/直通/恢复）。
+  - **活雷①补落**（预核指出后追加）：`backend_proxy.rs` 请求侧与
+    响应侧白名单各加 `x-data-generation`（D-036 §8-3 代际双向线：
+    批推请求带客户端持久代际、确认/批推响应带 live 代际）；照
+    x-next-cursor 先例新增响应侧单测（透传 + Set-Cookie 仍拦 +
+    无关自定义头仍剥），forward 单测扩代际头断言。此前桌面端双向线
+    全断——客户端拿不到 live 代际 ⇒ 停在旧代际 ⇒ 409
+    generation_stale 防护恒不触发，E7 客户端面必踩。
 
 ## 4. 验证证据（随切片填）
 
@@ -187,6 +194,9 @@ Status: 开工 2026-10-06；基线 main `31e4743`（#74 合并头，P0-3 全链�
   **447 passed + 6 skipped**、drift 步双跑 "No contract drift
   detected"、ruff All checks passed（本 PR 零后端改动，447/6 为 main
   现状数，skip 归因非本片面）；Compose/Docker/audit 双跑全绿。
+- 活雷①补落（本机）：cargo **28/28**（+1：data-generation 响应侧
+  透传；forward 测试扩断言）；backend_proxy/vault clippy 零告警
+  （material_transfer 存量 3 条非本片）。CI 新头数字跑后回填。
 
 ## 5. 实现期判断（待 A 核）
 
@@ -259,3 +269,13 @@ Status: 开工 2026-10-06；基线 main `31e4743`（#74 合并头，P0-3 全链�
     dead code/useless format），CI client.yml 不跑 fmt/clippy 故不
     门控；`cargo fmt` 全 crate 会重排 5 个无关文件，本片手工回退保持
     diff 仅 vault.rs。
+17. **新增自定义响应头 ⇒ 同步查代理两侧白名单**（活雷①教训）：
+    D-036 §8-3 设计了 X-Data-Generation 双向线，后端（events/data
+    端点）与 TS 客户端（client.ts 发送+读取、generation.ts 持久化）
+    均已各自落地，但 Rust `backend_proxy` 的请求/响应白名单未跟——
+    桌面端所有 backend 流量经此代理，白名单是隐形的第三端，缺一侧
+    即断线且无任何报错（头被静默剥掉）。教训：契约新增自定义请求/
+    响应头时，桌面侧要查的不是一个点而是三个点（TS 调用面、代理
+    请求白名单、代理响应白名单）。流程面教训：协调人「随切片 2 修」
+    的处置当时未落进本任务书 §0 边界，实现时即被挤出——外审处置
+    必须先进冻结边界再动手，否则等于没派。
