@@ -17,14 +17,28 @@ import {
   NotificationPreferencesSchema,
   PendingActionMutationSchema,
   PendingActionReadSchema,
+  DataCapabilitiesSchema,
+  DataOperationOutSchema,
+  DataPreviewOutSchema,
+  DeletionConfirmRequestSchema,
+  DeletionRecoverRequestSchema,
+  ExportCreateRequestSchema,
+  OperationRetryRequestSchema,
   type AgentRunRead,
   type ChatMessage,
   type ChatMessageSendResponse,
   type ChatSearchItem,
   type ChatSession,
   type CurrentState,
+  type DataCapabilities,
+  type DataOperationOut,
+  type DataPreviewOut,
+  type DeletionConfirmRequest,
+  type DeletionRecoverRequest,
+  type DeleteTarget,
   type EventBatchRequest,
   type EventBatchResponse,
+  type ExportCreateRequest,
   type FocusSession,
   type NotificationPreferences,
   type PendingActionRead,
@@ -64,10 +78,11 @@ export class BackendAuthError extends Error {
   }
 }
 
-/** 非 2xx（且非会话失效）的 HTTP 错误，携带状态码——讲解页等需要
- *  区分 403（同意门 fail-closed）与 503（provider 不可用，不降级）。 */
+/** 非 2xx（且非会话失效）的 HTTP 错误，携带状态码与信封机器码——
+ *  同步协调器要区分 409 generation_stale（再基）与其他 409；
+ *  讲解页等需要区分 403（同意门 fail-closed）与 503（provider 不可用）。 */
 export class BackendHttpError extends Error {
-  constructor(message: string, readonly status: number) {
+  constructor(message: string, readonly status: number, readonly code?: string) {
     super(message);
     this.name = "BackendHttpError";
   }
@@ -123,6 +138,91 @@ export class BackendClient {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
+  }
+
+  /** P0-4（D-036 §8-3）：批推带 X-Data-Generation 双向线。`generation` 是
+   *  上次响应捕获的代际（null = 兼容窗首推，绝不自动补值）；服务端
+   *  409 generation_stale 时 requestRaw 抛 BackendHttpError（code 可辨），
+   *  成功时返回响应体与本次 live 代际供调用方持久。 */
+  async pushEventsTracked(
+    request: EventBatchRequest,
+    generation: number | null = null,
+  ): Promise<{ body: EventBatchResponse; generation: number | null }> {
+    const body = EventBatchRequestSchema.parse(request);
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (generation !== null) headers["X-Data-Generation"] = String(generation);
+    const response = await this.requestRaw("/v1/events/batch", {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    });
+    const parsed = EventBatchResponseSchema.parse(await response.json());
+    const header = response.headers.get("X-Data-Generation");
+    return { body: parsed, generation: header === null ? null : Number(header) };
+  }
+
+  // --- /v1/data 生命周期面（P0-4；B 稿 §1 冻结形状） ------------------------
+
+  getDataCapabilities(): Promise<DataCapabilities> {
+    return this.requestValidated("/v1/data/capabilities", DataCapabilitiesSchema);
+  }
+
+  createDataPreview(target: DeleteTarget): Promise<DataPreviewOut> {
+    return this.requestValidated("/v1/data/previews", DataPreviewOutSchema, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(target),
+    });
+  }
+
+  /** 202 持久接受 ≠ 清理完成；capability 仅本响应与 recover 可能非空。 */
+  confirmDataDeletion(request: DeletionConfirmRequest): Promise<DataOperationOut> {
+    const body = DeletionConfirmRequestSchema.parse(request);
+    return this.requestValidated("/v1/data/deletions", DataOperationOutSchema, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  /** 幂等键 = (user, kind, client_request_id)：任务重查返回同一 operation。 */
+  createDataExport(request: ExportCreateRequest): Promise<DataOperationOut> {
+    const body = ExportCreateRequestSchema.parse(request);
+    return this.requestValidated("/v1/data/exports", DataOperationOutSchema, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  getDataOperation(operationId: string): Promise<DataOperationOut> {
+    return this.requestValidated(`/v1/data/operations/${operationId}`, DataOperationOutSchema);
+  }
+
+  /** 手动重试仅 source/memory（owner 仍可业务认证）；409 version_conflict
+   *  即天然幂等——与 M4 confirm 的 expected_version 同构。 */
+  retryDataOperation(operationId: string, expectedVersion: number): Promise<DataOperationOut> {
+    const body = OperationRetryRequestSchema.parse({ expected_version: expectedVersion });
+    return this.requestValidated(`/v1/data/operations/${operationId}/retry`, DataOperationOutSchema, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  /** 10 分钟丢响应恢复：原 JWT 身份 + 原 client_request_id + 同请求摘要。 */
+  recoverDataDeletion(request: DeletionRecoverRequest): Promise<DataOperationOut> {
+    const body = DeletionRecoverRequestSchema.parse(request);
+    return this.requestValidated("/v1/data/deletions/recover", DataOperationOutSchema, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  /** 导出包下载：仅 READY；Response 由调用方流式落盘（route 已 no-store）。 */
+  async downloadDataExport(operationId: string): Promise<Response> {
+    return this.requestRaw(`/v1/data/operations/${operationId}/download`);
   }
 
   async getCurrentState(): Promise<CurrentState> {
@@ -435,12 +535,12 @@ export class BackendClient {
     }
     const response = await this.fetcher(`${this.options.baseUrl}${path}`, { ...init, headers, credentials: "omit" });
     if (!response.ok) {
-      const message = await this.errorMessage(response);
+      const { message, code } = await this.errorMessage(response);
       if (response.status === 401 && authenticated) {
         this.options.onUnauthorized?.(requestToken!);
         throw new BackendAuthError(message);
       }
-      throw new BackendHttpError(message, response.status);
+      throw new BackendHttpError(message, response.status, code);
     }
     return response;
   }
@@ -451,14 +551,16 @@ export class BackendClient {
     return response.json();
   }
 
-  private async errorMessage(response: Response): Promise<string> {
+  private async errorMessage(response: Response): Promise<{ message: string; code?: string }> {
     try {
       const body = (await response.json()) as BackendErrorEnvelope;
-      if (body?.error?.message) return body.error.message;
+      if (body?.error?.message) {
+        return { message: body.error.message, code: body.error.code };
+      }
     } catch {
       // Fall through to the generic status message.
     }
-    return `Backend 请求失败（HTTP ${response.status}）`;
+    return { message: `Backend 请求失败（HTTP ${response.status}）` };
   }
 
   private async requestValidated<T>(

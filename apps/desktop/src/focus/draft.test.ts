@@ -59,3 +59,39 @@ describe("LocalFocusDraftStore", () => {
     expect(data.getItem(focusDraftKey(UNOWNED_OWNER))).toContain(draft.note);
   });
 });
+
+describe("unowned draft disposition (P0-4)", () => {
+  function memStore(): Storage {
+    const map = new Map<string, string>();
+    return {
+      getItem: (k: string) => map.get(k) ?? null,
+      setItem: (k: string, v: string) => void map.set(k, v),
+      removeItem: (k: string) => void map.delete(k),
+    } as Storage;
+  }
+
+  it("adopts the unowned draft into the target owner unless one exists there", async () => {
+    const storage = memStore();
+    storage.setItem("agenthu.focus-draft:unowned", JSON.stringify(draft));
+    const store = new LocalFocusDraftStore({ storage, resolveOwner: () => "owner-a" });
+
+    expect(await store.adoptUnownedDraft("owner-a")).toBe(1);
+    expect(await store.read()).toEqual(draft);
+    expect(storage.getItem("agenthu.focus-draft:unowned")).toBeNull();
+
+    // 目标已有草稿优先：无主新草稿不覆盖
+    storage.setItem("agenthu.focus-draft:unowned", JSON.stringify({ ...draft, note: "orphan" }));
+    expect(await store.adoptUnownedDraft("owner-a")).toBe(0);
+    expect((await store.read())?.note).toBe(draft.note);
+    expect(storage.getItem("agenthu.focus-draft:unowned")).toBeNull();
+  });
+
+  it("discards the unowned draft outright", async () => {
+    const storage = memStore();
+    storage.setItem("agenthu.focus-draft:unowned", JSON.stringify(draft));
+    const store = new LocalFocusDraftStore({ storage, resolveOwner: () => "owner-a" });
+    expect(await store.discardUnownedDraft()).toBe(1);
+    expect(storage.getItem("agenthu.focus-draft:unowned")).toBeNull();
+    expect(await store.discardUnownedDraft()).toBe(0);
+  });
+});

@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
+import { MemoryReceiptStore } from "../../backend/receiptStore";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { MaterialAnswer } from "../../backend/grounding";
@@ -69,7 +70,7 @@ function renderView() {
   const backend = {
     listFiles, getGroundingConsent, setGroundingConsent, askGroundedQuestion, listGroundedAnswers, deleteGroundedAnswer,
   } as unknown as AppServices["backend"];
-  const services = { backend, backendSession: null, queue: {} as never, focusDraft: {} as never, sync: null, backendUrl: "http://backend", buildTimeBackendUrl: "" };
+  const services = { backend, backendSession: null, queue: {} as never, focusDraft: {} as never, sync: null, receipts: new MemoryReceiptStore(), backendUrl: "http://backend", buildTimeBackendUrl: "" };
   return render(<QueryClientProvider client={queryClient}><AppServicesContext.Provider value={services}><GroundedAnswersView /></AppServicesContext.Provider></QueryClientProvider>);
 }
 

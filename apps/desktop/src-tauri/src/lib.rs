@@ -192,6 +192,28 @@ impl QueueStore {
         Ok(())
     }
 
+    /// 无主 Focus 草稿的显式处置（P0-4；与事件队列 adopt 同语义：目标
+    /// 已有草稿优先，无主行随后移除——禁止自动归户的反面 = 用户显式归户）。
+    fn focus_adopt_unowned(&mut self, target_owner: &str) -> Result<i64, String> {
+        if target_owner == "unowned" {
+            return Err("cannot adopt the unowned namespace into itself".into());
+        }
+        let adopted = self.connection.execute(
+            "INSERT OR IGNORE INTO focus_draft (owner, payload)
+             SELECT ?1, payload FROM focus_draft WHERE owner = 'unowned'",
+            params![target_owner],
+        ).map_err(|error| error.to_string())?;
+        self.connection.execute("DELETE FROM focus_draft WHERE owner = 'unowned'", [])
+            .map_err(|error| error.to_string())?;
+        Ok(adopted as i64)
+    }
+
+    fn focus_discard_unowned(&mut self) -> Result<i64, String> {
+        let removed = self.connection.execute("DELETE FROM focus_draft WHERE owner = 'unowned'", [])
+            .map_err(|error| error.to_string())?;
+        Ok(removed as i64)
+    }
+
     /// 无主命名空间的显式处置（D-036：禁止自动归户）。adopt 把无主事件与
     /// cursor 并入目标 owner：目标既有事件/cursor 键优先（INSERT OR IGNORE），
     /// 服务端按 client_event_id 幂等，被丢弃的无主 cursor 只是顺序提示。
@@ -322,6 +344,16 @@ fn queue_unowned_discard(db: tauri::State<QueueDb>) -> Result<i64, String> {
 }
 
 #[tauri::command]
+fn focus_adopt_unowned(db: tauri::State<QueueDb>, target_owner: String) -> Result<i64, String> {
+    db.with(|store| store.focus_adopt_unowned(&target_owner))
+}
+
+#[tauri::command]
+fn focus_discard_unowned(db: tauri::State<QueueDb>) -> Result<i64, String> {
+    db.with(|store| store.focus_discard_unowned())
+}
+
+#[tauri::command]
 fn focus_get_draft(db: tauri::State<QueueDb>, owner: String) -> Result<Option<serde_json::Value>, String> {
     db.with(|store| store.focus_get_draft(&owner))
 }
@@ -384,6 +416,40 @@ fn backend_token_clear(app: tauri::AppHandle) -> Result<(), String> {
     vault::clear_backend(&backend_token_path(&app)?)
 }
 
+const RECEIPT_STORAGE_ERROR: &str = "Receipt slot storage failed";
+const MAX_RECEIPT_BYTES: usize = 8 * 1024;
+
+fn receipt_slot_path(app: &tauri::AppHandle, owner: &str) -> Result<std::path::PathBuf, String> {
+    if owner.len() < 8 || owner.len() > 64 || !owner.bytes().all(|b| b.is_ascii_alphanumeric()) {
+        return Err(RECEIPT_STORAGE_ERROR.into());
+    }
+    let dir = app.path().app_local_data_dir().map_err(|_| RECEIPT_STORAGE_ERROR)?;
+    fs::create_dir_all(&dir).map_err(|_| RECEIPT_STORAGE_ERROR)?;
+    Ok(dir.join(format!("receipt-{owner}.hold")))
+}
+
+#[tauri::command]
+fn receipt_get(app: tauri::AppHandle, owner: String) -> Result<Option<String>, String> {
+    let Some(payload) = vault::read_receipt(&receipt_slot_path(&app, &owner)?, &owner)? else {
+        return Ok(None);
+    };
+    if payload.len() > MAX_RECEIPT_BYTES { return Err(RECEIPT_STORAGE_ERROR.into()); }
+    String::from_utf8(payload).map(Some).map_err(|_| RECEIPT_STORAGE_ERROR.into())
+}
+
+#[tauri::command]
+fn receipt_set(app: tauri::AppHandle, owner: String, payload: String) -> Result<(), String> {
+    if payload.len() > MAX_RECEIPT_BYTES || !payload.trim_start().starts_with('{') {
+        return Err(RECEIPT_STORAGE_ERROR.into());
+    }
+    vault::write_receipt(&receipt_slot_path(&app, &owner)?, &owner, payload.into_bytes())
+}
+
+#[tauri::command]
+fn receipt_clear(app: tauri::AppHandle, owner: String) -> Result<(), String> {
+    vault::clear_receipt(&receipt_slot_path(&app, &owner)?, &owner)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -400,7 +466,8 @@ pub fn run() {
             campus::campus_request, campus::campus_restore, campus::campus_save_session, campus::campus_logout,
             queue_add, queue_list, queue_remove, queue_get_cursor, queue_set_cursor,
             queue_unowned_count, queue_unowned_adopt, queue_unowned_discard,
-            focus_get_draft, focus_set_draft,
+            focus_get_draft, focus_set_draft, focus_adopt_unowned, focus_discard_unowned,
+            receipt_get, receipt_set, receipt_clear,
             backend_token_get, backend_token_set, backend_token_clear,
             backend_proxy::backend_request, backend_proxy::backend_origin_list,
             backend_proxy::backend_origin_add, backend_proxy::backend_origin_remove,
@@ -526,6 +593,33 @@ mod tests {
 
         let total = db.with(|store| store.list(&owner).map(|events| events.len())).unwrap();
         assert_eq!(total, 25);
+    }
+
+    #[test]
+    fn focus_draft_adoption_is_explicit_and_target_priority() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = QueueStore::open(&dir.path().join("offline.sqlite3")).unwrap();
+
+        store.focus_set_draft("unowned", Some(serde_json::json!({ "note": "legacy" }))).unwrap();
+        // 未显式处置前：任何 owner 都看不见无主草稿
+        assert!(store.focus_get_draft("owner-a").unwrap().is_none());
+
+        // adopt：目标已有草稿优先（不被无主草稿覆盖），无主行随后移除
+        store.focus_set_draft("owner-a", Some(serde_json::json!({ "note": "current" }))).unwrap();
+        assert_eq!(store.focus_adopt_unowned("owner-a").unwrap(), 0);
+        assert_eq!(store.focus_get_draft("owner-a").unwrap().unwrap()["note"], "current");
+        assert!(store.focus_get_draft("unowned").unwrap().is_none());
+
+        // 无目标时 adopt 落入目标命名空间；discard 直接清除
+        store.focus_set_draft("unowned", Some(serde_json::json!({ "note": "orphan" }))).unwrap();
+        assert_eq!(store.focus_adopt_unowned("owner-b").unwrap(), 1);
+        assert_eq!(store.focus_get_draft("owner-b").unwrap().unwrap()["note"], "orphan");
+
+        store.focus_set_draft("unowned", Some(serde_json::json!({ "note": "again" }))).unwrap();
+        assert_eq!(store.focus_discard_unowned().unwrap(), 1);
+        assert!(store.focus_get_draft("unowned").unwrap().is_none());
+        // unowned 自身不是合法 adopt 目标
+        assert!(store.focus_adopt_unowned("unowned").is_err());
     }
 
     #[test]

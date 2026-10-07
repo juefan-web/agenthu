@@ -894,7 +894,7 @@ Decision：
 - **main 绿**：`058c512`（#65 合并跑）；`422545f` 墙钟红留档为证据，
   不做午夜后刷绿。
 
-## D-035 实现注记 — drift 解析器字面量边界与人工交叉评审防线（2026-10-05）
+## D-035 实现注记 — drift 解析器字面量边界与人工交叉评审防线（2026-10-05；四例更新 2026-10-06）
 
 `backend/scripts/check_contract_drift.py:96` 的 `_SCHEMA_RE` 只匹配
 `export const XSchema = z.object({...})` 字面量，不解析 `.extend(...)` ——
@@ -904,7 +904,20 @@ Decision：
 `PlanSchema.basis` 被旧客户端 Zod 静默剥除，drift 零告警——单向检查只看
 「客户端字段 ⊆ OpenAPI 属性」）与 **null 加宽**（`X | None` 序列化为显式
 null，`.optional()` 拒收；ORMModel 无 exclude_none 时期 26 处 nullable
-全靠人工评审发现，#52/#51 修复合并）。结论：drift check 是底线不是防线，
+全靠人工评审发现，#52/#51 修复合并）。
+
+**第四例（#75 互审双变异实证，2026-10-06）——多行 const 数组 → 空枚举**：
+`_CONST_RE` 单行正则不捕跨行 const 数组，且 `z.enum(CONST)` 参数不展开
+consts，/v1/data 三组枚举全部解析为空集（探针 `enum=()`）；双副本同改
+`RETRY_WAIT`、双副本去 `.nullable()` 双变异实测均仍绿——枚举成员集与
+nullability 从未被比较（nullability 只靠真实载荷样本钉，而 /v1/data 无
+样本）。修复（#75 RC）：`_collect_consts` bracket-balance 捕多行数组 +
+`z.enum` 参数展开 consts（不可解析裸引用改为构造性报错，空枚举从静默
+盲区变硬失败）+ 对齐段新增枚举全集比较与 response 向 nullability 不对称
+检查 + 变异单测双钉。首跑即抓 **7 处存量镜像缺口**（ClientCurrentState
+.updated_at、ClientPlanItem.task_id/start_at/end_at——M4 期 null 加宽
+残留）并随片修复。残留已知面：`z.literal` 字段不进枚举比较（zod 运行时
+与真实载荷样本兜底）。结论再证：drift check 是底线不是防线，
 **schema 演进 PR 中的字段级人工交叉评审仍是必需环节**。
 
 ## 惯例 — 钟敏感集成测试出生即带守卫或锚定（墙钟类第三例，2026-10-05）

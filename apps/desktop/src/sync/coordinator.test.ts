@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { EventEnvelope } from "@agenthu/contracts";
-import { BackendAuthError } from "../backend/client";
+import { BackendAuthError, BackendHttpError } from "../backend/client";
+import { GenerationStaleError } from "./coordinator";
 import { EventSyncCoordinator } from "./coordinator";
 import type { EventQueue } from "./queue";
 import { LocalEventQueue } from "./queue";
@@ -354,6 +355,42 @@ describe("owner switch guard (P0-2 / D-036)", () => {
     expect(calls).toBe(1);
     expect(await q.list()).toEqual([event2]);
     expect(await q.getCursor()).toBe("cursor-1");
+  });
+
+  it("captures the served generation and sends it on the next batch (X-Data-Generation)", async () => {
+    const q = queue();
+    const seen: Array<number | null> = [];
+    const backend = {
+      probeHealth: async () => true,
+      pushEventsTracked: async (_request: unknown, generation: number | null) => {
+        seen.push(generation);
+        return {
+          body: { accepted_event_ids: [event.client_event_id], duplicate_event_ids: [], rejected: [], next_cursor: null },
+          generation: 5,
+        };
+      },
+    } as never;
+    const store = { get: () => seen.at(-1) ?? null, set: vi.fn() };
+    const coordinator = new EventSyncCoordinator(backend, q, { dataGeneration: store });
+    await coordinator.flush();
+    expect(seen).toEqual([null]); // 兼容窗首推不自动补值
+    expect(store.set).toHaveBeenCalledWith(5); // 响应捕获回写
+  });
+
+  it("aborts with GenerationStaleError on 409 generation_stale and clears the stored value", async () => {
+    const q = queue();
+    const backend = {
+      probeHealth: async () => true,
+      pushEventsTracked: async () => {
+        throw new BackendHttpError("moved", 409, "generation_stale");
+      },
+    } as never;
+    const store = { get: () => 4, set: vi.fn() };
+    const coordinator = new EventSyncCoordinator(backend, q, { dataGeneration: store, maxBatchAttempts: 3, retryBaseDelayMs: 1 });
+    await expect(coordinator.flush()).rejects.toBeInstanceOf(GenerationStaleError);
+    // 不进重试梯（generation_stale 直接中止），事件保留，存储清空进兼容窗
+    expect(store.set).toHaveBeenCalledWith(null);
+    expect(await q.list()).toHaveLength(1);
   });
 
   it("leaves the cursor unset when the account switches during settlement removal", async () => {

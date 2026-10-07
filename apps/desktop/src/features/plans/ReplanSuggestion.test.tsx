@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { MemoryReceiptStore } from "../../backend/receiptStore";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
@@ -56,14 +57,14 @@ function renderSuggestion(current: Plan | undefined) {
   confirmPlan.mockReset().mockResolvedValue(suggestion);
   cancelPlan.mockReset().mockResolvedValue(suggestion);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const services = { backend: { listPlans, confirmPlan, cancelPlan } as unknown as AppServices["backend"], backendSession: null, queue: {} as never, focusDraft: {} as never, sync: null, backendUrl: "http://backend", buildTimeBackendUrl: "" };
+  const services = { backend: { listPlans, confirmPlan, cancelPlan } as unknown as AppServices["backend"], backendSession: null, queue: {} as never, focusDraft: {} as never, sync: null, receipts: new MemoryReceiptStore(), backendUrl: "http://backend", buildTimeBackendUrl: "" };
   return render(<QueryClientProvider client={queryClient}><AppServicesContext.Provider value={services}><ReplanSuggestion currentPlan={current} /></AppServicesContext.Provider></QueryClientProvider>);
 }
 
 describe("diffPlans", () => {
   it("按 task_id 归类 moved/added/dropped", () => {
     const diff = diffPlans(currentPlan, suggestion);
-    const fmt = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const fmt = (iso: string | null) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—");
     expect(diff.moved).toEqual([{ title: "线性代数 HW2", from: fmt(currentPlan.items[0]!.start_at), to: fmt(suggestion.items[0]!.start_at) }]);
     expect(diff.added.map((item) => item.title)).toEqual(["数据结构实验"]);
     expect(diff.droppedTitles).toEqual(["人工智能作业"]);
@@ -74,7 +75,7 @@ describe("ReplanSuggestion（D-031 §2 Level 1 建议 UI）", () => {
   it("发现 replaces_plan_id 非空的最新草稿并展示理由与 diff", async () => {
     renderSuggestion(currentPlan);
     expect(await screen.findByText(/Focus 超时 42 分钟/)).toBeTruthy();
-    const fmt = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const fmt = (iso: string | null) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—");
     expect(screen.getByText(new RegExp(`调整 线性代数 HW2：${fmt(currentPlan.items[0]!.start_at).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} →`))).toBeTruthy();
     expect(screen.getByText(/新增 数据结构实验/)).toBeTruthy();
     expect(screen.getByText(/移出 人工智能作业/)).toBeTruthy();
@@ -84,7 +85,7 @@ describe("ReplanSuggestion（D-031 §2 Level 1 建议 UI）", () => {
   it("无建议草稿时不渲染", async () => {
     listPlans.mockReset().mockResolvedValue([makePlan({ id: "plain-draft", status: "draft" })]);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const services = { backend: { listPlans } as unknown as AppServices["backend"], backendSession: null, queue: {} as never, focusDraft: {} as never, sync: null, backendUrl: "http://backend", buildTimeBackendUrl: "" };
+    const services = { backend: { listPlans } as unknown as AppServices["backend"], backendSession: null, queue: {} as never, focusDraft: {} as never, sync: null, receipts: new MemoryReceiptStore(), backendUrl: "http://backend", buildTimeBackendUrl: "" };
     const { container } = render(<QueryClientProvider client={queryClient}><AppServicesContext.Provider value={services}><ReplanSuggestion currentPlan={currentPlan} /></AppServicesContext.Provider></QueryClientProvider>);
     await waitFor(() => expect(listPlans).toHaveBeenCalled());
     expect(container.childElementCount).toBe(0);
@@ -110,7 +111,7 @@ describe("ReplanSuggestion（D-031 §2 Level 1 建议 UI）", () => {
     });
     listPlans.mockReset().mockResolvedValue([withBasis]);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const services = { backend: { listPlans } as unknown as AppServices["backend"], backendSession: null, queue: {} as never, focusDraft: {} as never, sync: null, backendUrl: "http://backend", buildTimeBackendUrl: "" };
+    const services = { backend: { listPlans } as unknown as AppServices["backend"], backendSession: null, queue: {} as never, focusDraft: {} as never, sync: null, receipts: new MemoryReceiptStore(), backendUrl: "http://backend", buildTimeBackendUrl: "" };
     render(<QueryClientProvider client={queryClient}><AppServicesContext.Provider value={services}><ReplanSuggestion currentPlan={currentPlan} /></AppServicesContext.Provider></QueryClientProvider>);
     // BasisPanel 的「为什么」是 <details><summary>：jsdom 中内容恒在 DOM，
     // 直接断言共享渲染器输出（e2e 里点 summary 文本切换 open）

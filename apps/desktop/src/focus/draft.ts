@@ -19,6 +19,13 @@ export interface FocusDraftStore {
   write(draft: FocusDraft | null): Promise<void>;
 }
 
+/** 无主草稿的显式处置（P0-4；事件队列 UnownedQueueApi 的草稿对应面）。
+ *  adopt 目标已有草稿优先；返回受影响行数（0/1）。 */
+export interface UnownedDraftStore {
+  adoptUnownedDraft(targetOwnerKey: string): Promise<number>;
+  discardUnownedDraft(): Promise<number>;
+}
+
 export interface OwnerScopedStoreOptions {
   storage?: Storage | null;
   /** P0-2（D-036）：每次操作现解当前 owner；null → unowned。草稿按账号
@@ -61,6 +68,28 @@ export class LocalFocusDraftStore implements FocusDraftStore {
     if (draft) this.storage?.setItem(this.key(), JSON.stringify(FocusDraftSchema.parse(draft)));
     else this.storage?.removeItem(this.key());
   }
+
+  async adoptUnownedDraft(targetOwnerKey: string): Promise<number> {
+    if (targetOwnerKey === UNOWNED_OWNER || !this.storage) return 0;
+    const unowned = this.storage.getItem(focusDraftKey(UNOWNED_OWNER));
+    if (unowned === null) return 0;
+    // 返回实际迁移数（与 Rust 侧 INSERT OR IGNORE 行数同语义）：
+    // 目标已有草稿时无主草稿仅被清除，返回 0。
+    let adopted = 0;
+    if (this.storage.getItem(focusDraftKey(targetOwnerKey)) === null) {
+      this.storage.setItem(focusDraftKey(targetOwnerKey), unowned);
+      adopted = 1;
+    }
+    this.storage.removeItem(focusDraftKey(UNOWNED_OWNER));
+    return adopted;
+  }
+
+  async discardUnownedDraft(): Promise<number> {
+    const key = focusDraftKey(UNOWNED_OWNER);
+    if (this.storage?.getItem(key) === null) return 0;
+    this.storage?.removeItem(key);
+    return 1;
+  }
 }
 
 export class SqliteFocusDraftStore implements FocusDraftStore {
@@ -86,6 +115,14 @@ export class SqliteFocusDraftStore implements FocusDraftStore {
     const next = this.writes.then(() => invoke<void>("focus_set_draft", { draft: checked, owner: this.owner() }));
     this.writes = next.catch(() => undefined);
     return next;
+  }
+
+  adoptUnownedDraft(targetOwnerKey: string): Promise<number> {
+    return invoke<number>("focus_adopt_unowned", { targetOwner: targetOwnerKey });
+  }
+
+  discardUnownedDraft(): Promise<number> {
+    return invoke<number>("focus_discard_unowned");
   }
 }
 
