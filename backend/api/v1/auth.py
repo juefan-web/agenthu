@@ -10,6 +10,7 @@ from sqlalchemy import select
 from backend.api.deps import CurrentUser, DBSession
 from backend.config import get_settings
 from backend.core.errors import AuthenticationError, ConflictError, RateLimitError
+from backend.core.proxy import client_ip
 from backend.core.rate_limit import RateLimiter
 from backend.core.security import create_access_token, hash_password, verify_password
 from backend.models.user import User
@@ -26,13 +27,13 @@ _auth_limiter = RateLimiter(
 
 
 def _enforce_rate_limit(request: Request) -> None:
-    client_ip = request.client.host if request.client else "unknown"
-    if not _auth_limiter.hit(f"auth:{client_ip}"):
+    source_ip = client_ip(request)
+    if not _auth_limiter.hit(f"auth:{source_ip}"):
         raise RateLimitError(
             "Too many authentication attempts; try again later",
             headers={
                 "Retry-After": str(
-                    _auth_limiter.retry_after(f"auth:{client_ip}"),
+                    _auth_limiter.retry_after(f"auth:{source_ip}"),
                 )
             },
         )

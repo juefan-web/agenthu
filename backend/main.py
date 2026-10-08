@@ -21,6 +21,12 @@ from backend.api.v1.router import api_router
 from backend.config import get_settings
 from backend.core.errors import register_exception_handlers
 from backend.core.logging import configure_logging
+from backend.core.telemetry import (
+    configure_telemetry,
+    instrument_http_server,
+    instrument_outbound_clients,
+    shutdown_telemetry,
+)
 from backend.db.session import reset_engine
 from backend.middleware import AuditMiddleware, RequestContextMiddleware
 from backend.schemas.common import ErrorResponse
@@ -48,6 +54,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception:  # pragma: no cover - depends on external services
         logger.warning("Object storage is not ready at startup", exc_info=True)
     yield
+    shutdown_telemetry()
     await close_arq_pool()
     reset_engine()
 
@@ -64,6 +71,14 @@ def create_app() -> FastAPI:
     if settings.audit_enabled:
         app.add_middleware(AuditMiddleware)
     app.add_middleware(RequestContextMiddleware)
+
+    # P0-5 slice 1: OTel skeleton — a no-op unless OTEL_ENABLED is set. The
+    # server span wraps the middleware stack; outbound client spans cover the
+    # provider (httpx) and storage (boto3) faces.
+    provider = configure_telemetry("agenthu-api")
+    if provider is not None:
+        instrument_http_server(app, provider)
+        instrument_outbound_clients(provider)
 
     allow_credentials = settings.cors_allow_credentials
     if allow_credentials and "*" in settings.cors_origins:

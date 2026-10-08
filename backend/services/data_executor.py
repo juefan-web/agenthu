@@ -36,6 +36,7 @@ from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from backend.core.errors import ConflictError, ValidationError
+from backend.core.telemetry import stage_span
 from backend.db.base import utcnow
 from backend.models.agent import AgentRun, PendingAction, PendingActionMutation
 from backend.models.audit import AuditLog
@@ -472,9 +473,26 @@ def run_deletion(
 
     Called by the worker for QUEUED operations and by the sweep for
     RETRY_WAIT ones whose backoff gate has passed; each call resumes from
-    the persisted phase checkpoint and per-item states.
+    the persisted phase checkpoint and per-item states. Wrapped in the
+    "operation" stage of the OTel chain (P0-5 slice 1) — allowlisted fields
+    only, correlation via the per-operation random id.
     """
 
+    with stage_span(
+        "operation",
+        f"data.operation.{operation.kind.value}",
+        **{"correlation.id": str(operation.id)},
+    ):
+        _run_deletion(session, operation, storage=storage, redis=redis)
+
+
+def _run_deletion(
+    session: Session,
+    operation: DataOperation,
+    *,
+    storage: ObjectStorage,
+    redis: Redis | None = None,
+) -> None:
     if operation.kind != DataOperationKind.DELETION:
         return
     if operation.status not in (

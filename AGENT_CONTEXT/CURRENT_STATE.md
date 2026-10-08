@@ -1469,3 +1469,40 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   时间窗跳过，非改动相关；CI 取日志实测）、三查绿、manifest 重生 +
   钉子 2 passed。栈保持可连（容器运行 + README §5 一条命令）供 B
   库面抽查。N1/N2 在档不处理。待 B 核 delta 转 approve。
+
+- **P0-5 切片 1 交审（A，2026-10-07，分支 `feature/m5-p0-5-observability`）**：
+  OTel 骨架 + 脱敏加固，按四冻结裁定落（任务书 §5/§6）：官方 SDK +
+  fastapi/httpx/botocore 三插桩（OTLP/HTTP 唯一线上格式；不引全家桶），
+  五层 span 链——HTTP server（server_request_hook 播 correlation.id，与
+  RequestContextMiddleware 共享 request id）→ operation（deletion/export
+  包装）→ run（execute_run）→ worker attempt（traced_job 装饰十个 arq
+  任务，wraps 保 cron unique 键）→ provider/storage client；worker 经
+  arq on_startup 配置管线。**allowlist 唯一通道在 exporter 边界机械
+  强制**（AllowlistSpanExporter：非白名单属性/events 全剥/status
+  description 置空）；logging extras 白名单同族加固（user_id/
+  course_name/audit action 串有意移出日志面）；propagator 仅
+  tracecontext（无 baggage，fail-closed）；OTEL_ENABLED 默认 false
+  （dev/test/CI 零发射）。零信任代理：core/proxy.py client_ip() 收口
+  三调用点（auth 限流/data recover 限流/audit IP），XFF 仅 peer 在
+  TRUSTED_PROXIES 显式清单内才读、右起跳过受信代理取第一个非受信
+  地址，清单空处处忽略。alpha compose 加 Collector 容器（debug
+  exporter 骨架，api/worker 不 depend_on——断供不阻塞是设计属性）；
+  CI 单进程形态不动。测试 16 新增：禁列断言/三层同 trace 关联/有界
+  error.code/exporter 断供 3 请求照常/默认 no-op/XFF 五态/extras
+  白名单。顺带修 migrations/env.py fileConfig 缺
+  disable_existing_loggers=False（alembic 默认禁掉 alembic.ini 外全部
+  logger，进程内跑迁移后整进程日志哑火——test_migrations 跑后暴露）。
+  全量 462 passed + 7 skipped（夜窗）+ 1 S3 环境跳过、ruff 双绿、
+  pyright 0、contract drift --require-zod 无漂移。本片不做：Redis
+  共享限流/断供 503（切片 2）、多进程栈与唯一 claim（切片 3）、
+  campus 遥测缝（B，未动）、metrics 面全部。
+
+- **P0-5 切片 1 RC-1 修复（A，2026-10-08）**：B 互审必改落地——
+  `_sanitize` 的 links 由原样透传改为 context-only 重建（Link 自带
+  attributes 不经键白名单，B 变异实验坐实可随 OTLP 出进程；link
+  身份=trace/span id，attributes 整体丢弃、白名单键也不保留），
+  一次性告警与 events 同款，模块/类 docstring 同步把 links 计入
+  "重建而非透传"清单；B 的变异探针转常驻测试。计数分解按 B 核实
+  修正：基线 447+6（此前"453+10"分解有误）+ 本片新增 17（8+8+1）
+  ＝白天窗本地全量 469 passed + 1 skipped（S3 环境跳过）。修复头
+  CI 以实跑日志为准（见 PR）。

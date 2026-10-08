@@ -1,0 +1,30 @@
+# Alpha observability stack (P0-5 slice 1, frozen ruling 1): the OTel
+# Collector container, with api/worker opting into OTLP export against it.
+#
+# The multi-process 2xAPI + 2xworker shape is slice 3 / E7-9 territory and is
+# deliberately NOT part of this override (ruling 3); CI never merges this
+# file — the ci-smoke override keeps its single-process shape. The api/worker
+# services do NOT depend_on the collector: exporter outage is non-blocking by
+# design (BatchSpanProcessor isolates the request path).
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.alpha.yml \
+#          up -d db redis minio otel-collector api worker
+services:
+  otel-collector:
+    image: ${OTEL_COLLECTOR_IMAGE:-otel/opentelemetry-collector:0.116.0}
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./docker/otel-collector/config.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "127.0.0.1:4318:4318"
+
+  api:
+    environment:
+      OTEL_ENABLED: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318/v1/traces
+
+  worker:
+    environment:
+      OTEL_ENABLED: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318/v1/traces

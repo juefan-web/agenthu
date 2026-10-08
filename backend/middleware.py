@@ -11,6 +11,7 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.requests import Request
 from starlette.responses import Response
 
+from backend.core.proxy import client_ip
 from backend.db.session import session_scope
 from backend.services.audit import record_audit
 
@@ -51,7 +52,7 @@ def _persist_audit(request: Request, response: Response, duration_ms: int) -> No
             duration_ms=duration_ms,
             permission_level=2,
             decision="allow" if response.status_code < 400 else "deny",
-            ip_address=request.client.host if request.client else None,
+            ip_address=client_ip(request),
             user_agent=request.headers.get("user-agent"),
         )
 

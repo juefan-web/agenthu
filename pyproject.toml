@@ -29,6 +29,17 @@ dependencies = [
     # SQLAlchemy type for the memories.embedding vector column (M3 slice,
     # TASKS/m3-memory-schema-migration.md §2); pure Python, no native deps.
     "pgvector>=0.4,<0.6",
+    # P0-5 observability (frozen ruling 1): standard OpenTelemetry SDK plus the
+    # official instrumentation libraries, OTLP/HTTP as the only wire format.
+    # Automatic body/exception capture stays off and the span-attribute
+    # allowlist is the only channel — enforced at the exporter boundary in
+    # backend/core/telemetry.py.
+    "opentelemetry-api>=1.35,<2.0",
+    "opentelemetry-sdk>=1.35,<2.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.35,<2.0",
+    "opentelemetry-instrumentation-fastapi>=0.54b0,<1.0",
+    "opentelemetry-instrumentation-httpx>=0.54b0,<1.0",
+    "opentelemetry-instrumentation-botocore>=0.54b0,<1.0",
 ]
 
 [project.optional-dependencies]

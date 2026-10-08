@@ -1,0 +1,23 @@
+# OTel Collector skeleton (P0-5 slice 1, frozen ruling 1): receive OTLP/HTTP,
+# batch, emit to the debug console. Alpha swaps the debug exporter for a real
+# backend when one lands; trace is not a fact layer (ops contract §6) and the
+# allowlist at the backend exporter boundary is the only channel feeding this.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+
+exporters:
+  debug:
+    verbosity: basic
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]

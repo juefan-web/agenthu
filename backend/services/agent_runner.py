@@ -36,6 +36,7 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from backend.config import get_settings
+from backend.core.telemetry import stage_span
 from backend.db.base import utcnow
 from backend.models.agent import AgentRun, PendingAction, PendingActionMutation
 from backend.models.chat import ChatMessage
@@ -788,6 +789,21 @@ def _chat_context(session: Session, run: AgentRun) -> tuple[uuid.UUID | None, Ch
 
 
 async def execute_run(
+    session: Session,
+    *,
+    run_id: uuid.UUID,
+    provider: Any | None = None,
+    worker: str = "worker",
+) -> AgentRun | None:
+    """Execute one agent run; wrapped in the "run" stage of the OTel chain
+    (P0-5 slice 1) — allowlisted fields only, correlation via the run's
+    random id."""
+
+    with stage_span("run", "agent.run", **{"correlation.id": str(run_id)}):
+        return await _execute_run(session, run_id=run_id, provider=provider, worker=worker)
+
+
+async def _execute_run(
     session: Session,
     *,
     run_id: uuid.UUID,
