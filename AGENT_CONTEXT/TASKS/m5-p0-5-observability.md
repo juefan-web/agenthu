@@ -152,3 +152,22 @@ exporter 持续抛错 3 请求照常 200；默认禁用=no-op tracer；XFF 五�
 traceparent 贯通随切片 3 多进程栈验证）；#2 全量达成；#3 达成；
 #4/#5 属切片 2/3；#6 随本 PR 全量跑（测试/ruff/pyright/OpenAPI）；
 #7 未动（campus 缝无变化）。
+
+**RC-1 修复（2026-10-08，B 互审必改，变异实验坐实）**：`_sanitize`
+原样透传 `links=span.links`——Link 自带 attributes 不经键白名单（B 本地
+@2320e49 实跑：`user.email`/`http.request.header.authorization` 带值
+随 OTLP 出进程存活；如实记——现行三插桩不发 attribute-bearing links，
+属承诺面的缝而非现行泄漏）。修复：links 重建为 context-only
+（`tuple(Link(l.context) for l in span.links)`；link 身份=trace/span id，
+attributes 整体丢弃——白名单键也不保留，键过滤器本看不到 link
+attributes），一次性告警与 events 同款；模块/类 docstring 把 links
+计入"重建而非透传"清单。B 的变异探针转常驻测试
+`test_link_attributes_never_reach_the_exporter`（注入带属性 Link →
+断言导出 link attributes 为空、身份保持 donor span/trace id）。
+
+**测试计数修正**（B 互审核实；此前"453+10"分解有误，实测值本身无误）：
+`8efd84b` 后端基线 = **447+6**（与 #77 CI 回填同数，#77 零后端改动）；
+本片新增 = telemetry 8 + proxy/logging 8 + RC-1 探针 1 = **17**，
+447+16=463 与既有 CI 实测严丝合缝。白天窗本地全量 469 passed + 1
+skipped（6 个晚窗守卫白天实跑通过，skip=S3_ENDPOINT_URL 未设）；
+修复头 CI 数字以实跑日志为准回填。

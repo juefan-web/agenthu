@@ -2,10 +2,11 @@
 
 These pin the frozen rulings mechanically: the allowlist is the only channel
 (non-allowlisted attributes never leave the process, events and status
-descriptions are stripped), exporter outage never blocks a request, telemetry
-stays disabled by default, and the five-layer chain correlates within one
-request via parent/child span contexts. Assertions flush the batch processor
-first — production batching is asynchronous by design.
+descriptions are stripped, link attributes are dropped wholesale), exporter
+outage never blocks a request, telemetry stays disabled by default, and the
+five-layer chain correlates within one request via parent/child span
+contexts. Assertions flush the batch processor first — production batching is
+asynchronous by design.
 """
 
 from __future__ import annotations
@@ -21,9 +22,11 @@ import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from opentelemetry import trace
 from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
 from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import Link
 from opentelemetry.trace.status import StatusCode
 
 from backend.core import telemetry
@@ -125,6 +128,47 @@ def test_allowlist_strips_query_strings_headers_and_unlisted_keys(
         )
         # Automatic exception capture is off: no events at all.
         assert span.events == ()
+
+
+def test_link_attributes_never_reach_the_exporter(
+    otel_app: tuple[FastAPI, TracerProvider], mem_exporter: InMemorySpanExporter
+) -> None:
+    """RC-1 regression, B's mutation probe made permanent.
+
+    A ``Link`` carries its own attributes, which the span-attribute filter
+    never sees — the exporter must rebuild links from their span context only,
+    so an attribute-bearing link from any future call site cannot smuggle
+    non-allowlisted values out of the process.
+    """
+
+    _app, provider = otel_app
+    tracer = provider.get_tracer("agenthu.core")
+    donor = tracer.start_span("linked.from")
+    donor_ctx = donor.get_span_context()
+    donor.end()
+    assert donor_ctx is not None
+    span = tracer.start_span(
+        "with.links",
+        links=[
+            Link(
+                donor_ctx,
+                attributes={
+                    "user.email": "student@example.com",
+                    "http.request.header.authorization": "Bearer secret-token",
+                },
+            )
+        ],
+    )
+    with trace.use_span(span, end_on_exit=True):
+        pass
+    provider.force_flush()
+
+    exported = next(s for s in mem_exporter.get_finished_spans() if s.name == "with.links")
+    assert exported.links, "the link itself must survive — identity is trace/span ids"
+    rebuilt = exported.links[0]
+    assert rebuilt.context.span_id == donor_ctx.span_id
+    assert rebuilt.context.trace_id == donor_ctx.trace_id
+    assert not rebuilt.attributes
 
 
 def test_chain_correlates_within_one_request(

@@ -14,9 +14,11 @@ Shaped by the four frozen rulings (coordinator, 2026-10-06):
 
 The enforcement point is the exporter boundary: ``AllowlistSpanExporter``
 strips every span attribute whose key is not allowlisted, drops span events
-(the SDK's automatic exception capture) and blanks status descriptions before
-anything is serialized. Instrumentation libraries may therefore record
-whatever they want internally — only allowlisted keys leave the process.
+(the SDK's automatic exception capture), blanks status descriptions and
+rebuilds links from their span context only — link attributes never pass
+through the key filter, so they are dropped wholesale — before anything is
+serialized. Instrumentation libraries may therefore record whatever they
+want internally — only allowlisted keys leave the process.
 
 Allowlisted values are bounded by construction: framework route templates
 (never instantiated paths), HTTP methods, status codes, counters, durations
@@ -49,7 +51,7 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter, SpanExportResult
 from opentelemetry.sdk.trace.sampling import ParentBased, TraceIdRatioBased
-from opentelemetry.trace import Status, StatusCode
+from opentelemetry.trace import Link, Status, StatusCode
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 from backend import __version__
@@ -86,6 +88,7 @@ SPAN_ATTRIBUTE_ALLOWLIST = frozenset(
 
 _dropped_reported: set[str] = set()
 _events_drop_reported = False
+_link_attributes_drop_reported = False
 
 _provider: TracerProvider | None = None
 _outbound_instrumented = False
@@ -106,9 +109,11 @@ class AllowlistSpanExporter(SpanExporter):
 
     Everything an instrumentation library (or a future careless call site)
     records is filtered here: non-allowlisted attribute keys are dropped, span
-    events are removed entirely (automatic exception capture off) and status
-    descriptions are blanked — the description carries exception messages,
-    which may embed user content.
+    events are removed entirely (automatic exception capture off), status
+    descriptions are blanked — they carry exception messages, which may embed
+    user content — and links are rebuilt carrying only their span context:
+    a link's identity is its trace/span ids, and its attributes (which never
+    pass through the key filter) are dropped wholesale.
     """
 
     def __init__(self, inner: SpanExporter) -> None:
@@ -118,7 +123,7 @@ class AllowlistSpanExporter(SpanExporter):
         return self._inner.export([self._sanitize(span) for span in spans])
 
     def _sanitize(self, span: ReadableSpan) -> ReadableSpan:
-        global _events_drop_reported
+        global _events_drop_reported, _link_attributes_drop_reported
         attributes = span.attributes or {}
         kept = {k: v for k, v in attributes.items() if k in SPAN_ATTRIBUTE_ALLOWLIST}
         for key in attributes.keys() - kept.keys():
@@ -128,6 +133,12 @@ class AllowlistSpanExporter(SpanExporter):
             logger.warning(
                 "Dropping span events — SDK automatic exception capture is off (ops contract §6)"
             )
+        if any(link.attributes for link in span.links) and not _link_attributes_drop_reported:
+            _link_attributes_drop_reported = True
+            logger.warning(
+                "Dropping span link attributes — a link keeps its context, "
+                "never attributes (ops contract §6)"
+            )
         status = span.status
         return ReadableSpan(
             name=span.name,
@@ -136,7 +147,10 @@ class AllowlistSpanExporter(SpanExporter):
             resource=span.resource,
             attributes=kept,
             events=(),
-            links=span.links,
+            # Rebuilt, not passed through: the key filter above never sees
+            # link attributes, so a link keeps only its context (its identity
+            # is the trace/span ids) and drops its attributes wholesale.
+            links=tuple(Link(link.context) for link in span.links),
             kind=span.kind,
             status=Status(status.status_code),
             start_time=span.start_time,

@@ -1496,3 +1496,13 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   pyright 0、contract drift --require-zod 无漂移。本片不做：Redis
   共享限流/断供 503（切片 2）、多进程栈与唯一 claim（切片 3）、
   campus 遥测缝（B，未动）、metrics 面全部。
+
+- **P0-5 切片 1 RC-1 修复（A，2026-10-08）**：B 互审必改落地——
+  `_sanitize` 的 links 由原样透传改为 context-only 重建（Link 自带
+  attributes 不经键白名单，B 变异实验坐实可随 OTLP 出进程；link
+  身份=trace/span id，attributes 整体丢弃、白名单键也不保留），
+  一次性告警与 events 同款，模块/类 docstring 同步把 links 计入
+  "重建而非透传"清单；B 的变异探针转常驻测试。计数分解按 B 核实
+  修正：基线 447+6（此前"453+10"分解有误）+ 本片新增 17（8+8+1）
+  ＝白天窗本地全量 469 passed + 1 skipped（S3 环境跳过）。修复头
+  CI 以实跑日志为准（见 PR）。
