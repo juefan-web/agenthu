@@ -1,8 +1,8 @@
 # M5 P0-5：可观测与多进程（A）
 
-Status: 切片 1 实施中（2026-10-07 协调人放行令开工；四裁定已冻结入
-§5）。基线 main `8efd84b`（#76 合并后）。依据：ops 契约
-`m5-data-lifecycle-ops-contract.md` §6（冻结）；规划
+Status: 切片 1 已合并（main `931324f`，#78；B 反打探针闭合）。**切片 2
+开工（2026-10-08 协调人放行令：A 并行开工）——§7 边界先行落字后动手。**
+依据：ops 契约 `m5-data-lifecycle-ops-contract.md` §6（冻结）；规划
 `m5-planning-guidance.md` §3 切片表（前置 = P0-1 trace 字段冻结，已随
 phase-0 契约闭合）；协调人 P0-5 GO 派工（2026-10-06）+ 2026-10-07
 放行（B 转 P0-4 切片 2 / P0-6，A 开本片）。
@@ -171,3 +171,83 @@ attributes），一次性告警与 events 同款；模块/类 docstring 把 link
 447+16=463 与既有 CI 实测严丝合缝。白天窗本地全量 469 passed + 1
 skipped（6 个晚窗守卫白天实跑通过，skip=S3_ENDPOINT_URL 未设）；
 修复头 CI 数字以实跑日志为准回填。
+
+## 7. 切片 2 边界（2026-10-08 开工前冻结；落字在先，实现在后）
+
+**负责**：
+
+- `core/rate_limit.py` 的 `hit`/`retry_after` 缝换 **Redis 滑动窗实现**
+  （ZSET + Lua 单脚本原子：trim 过期 → count → 未满则 ZADD 唯一成员
+  → PEXPIRE；`retry_after` 读 oldest score。语义与进程内版一致：同
+  窗口、同上限、同 Retry-After 口径；时间取 Redis 服务器钟
+  （脚本内 TIME），免客户端钟偏）。
+- **断供 fail-closed 503 分面**：Redis 不可达/超时（bounded socket
+  timeout，显式配置项）⇒ `RateLimitUnavailableError(
+  ServiceUnavailableError)`、code=`rate_limit_unavailable`——与 429
+  `rate_limited` 区分；不静默放行（fail-open = 跨进程/重启后暴力面
+  失守），不伪装 429。
+- **键名与分桶**：`rl:` 前缀命名空间（与 arq 键隔离）；分桶保持现状
+  ——auth=`auth:{client_ip}`、recover=`recover:id:{identity}` +
+  `recover:ip:{client_ip}`（owner 分桶即 recover:id）。裁定④对齐：
+  Redis 账单唯一事实源；B 的 UI 维持只读服务端响应，**本片不加新
+  额度 API**。
+- **测试**：现有 auth/register/recover 限流测试改注入 Redis 版
+  limiter（namespace 按 test 唯一隔离）；断供分面单测（不可达 Redis
+  URL → 503 + code 断言 + Retry-After 缺席）；滑动窗语义测试（短窗
+  实跑）；一条"限流键取 client_ip"回归（XFF 受信链下键值正确，
+  TRUSTED_PROXIES 应用面随切片 1 已收口，此处只钉回归）。
+- **Redis 客户端**：复用 `redis_url` 配置（与 health 检查同源），
+  sync 客户端（调用点均为 sync def 端点），连接池进程内懒建单例。
+
+**不负责**：多进程 compose 栈、唯一 claim/租约、跨进程 traceparent
+（切片 3）；数值额度展示 API（B 的 UI 契约不变；若需数值面另开
+裁定）；limiter 遥测 span（遥测面切片 1 已定型，本片不加新 span
+面）；worker 侧限流（worker 无此缝）。
+
+**兼容与回滚**：`RateLimiter` 类名与 `hit`/`retry_after` 方法签名
+保持；构造签名扩可选参数（redis client 注入口 + namespace，测试
+隔离用）；**进程内实现删除**（保留 = 第二账本 = 违反裁定④；回滚 =
+revert 本片提交）。旧进程内账本无迁移（窗口 ≤600s，滚动即清）。
+
+**验收**：①滑动窗语义 + 跨键隔离测试钉（CI 起 redis 服务、本地
+agenthu-redis-1，单代码路径无 fallback）；②断供分面 503+code 测试
+钉；③contract drift 无漂移（错误 code 不入 OpenAPI 枚举则无漂移，
+以实测为准）；④全量测试 + ruff + pyright 绿。
+
+## 8. 切片 2 实施记录（2026-10-08，随本 PR 落）
+
+**交付面**：`core/rate_limit.py` 整体替换为 Redis 滑动窗——ZSET + 两个
+Lua 脚本（`register_script` SHA 缓存；服务器钟 TIME 免客户端钟偏；
+`rl:` 键前缀与 arq 键隔离；**进程内实现删除**，保留即第二账本=违反
+裁定④，回滚=revert 本片）。`RateLimiter` 类名与 `hit`/`retry_after`
+缝保持；构造签名扩 keyword-only `client`（测试注入口）与 `namespace`
+（默认 "rl"）。**断供 fail-closed 503 分面**：Redis 不可达
+（connect/socket 双超时 = `RATE_LIMIT_REDIS_TIMEOUT_SECONDS`，默认
+0.5s）⇒ `RateLimitUnavailableError(ServiceUnavailableError)`，code=
+`rate_limit_unavailable`——全局 AppError 处理链直接落 503 信封，
+auth/recover 调用点零 try/except（缝内收口）。**调用面零改动**：
+auth `_auth_limiter` 与 data `_RECOVER_LIMITS` 构造不变（分桶/上限/
+窗口保持：auth=IP 单桶；recover=id+IP 双桶 3/10 每 600s）；仅 auth
+限流器注释更新（"per process"→账本跨进程语义）。Redis 客户端：
+`redis_url` 同源、进程内懒建单例（一线程安全连接池）。
+
+**测试**：新增 `tests/unit/test_rate_limit_redis.py`（真 Redis，不可达
+自动 skip）：窗内放行/超限、窗口滑动（1s 实窗）、键隔离、**双实例共
+账本**（跨进程单事实源的钉子）、namespace 隔离、max=0 禁用不触后端、
+断供双方法抛 503 分面；`test_security.py` 三条进程内旧测试移除（语义
+由新文件覆盖）。集成面：auth 两条限流测试改注入隔离 namespace
+limiter；**新增 503 分面集成测试**（死端口 client → login 503 +
+`rate_limit_unavailable` + 无 Retry-After）；**新增 client_ip 键回归**
+（TRUSTED_PROXIES 受信链下不同转发客户端各获独立预算、同客户端独耗
+己桶）；recover autouse fixture 由清 `_hits` 改为按测试换隔离
+namespace limiter 对。conftest 的 `AUTH_RATE_LIMIT_MAX=0` 使默认测试
+路径短路（不触 Redis），仅显式注入的 limiter 连 Redis——CI redis
+服务/本地 agenthu-redis-1 承载；测试键自带 PEXPIRE，无清理负担。
+
+**验证**：全量 **475 passed + 1 skipped**（白天窗；469 基线 +9 新
+[8 单测+503 集成+client_ip 回归−3 移除] 之实跑数）、ruff/format/
+pyright 0、contract drift --require-zod 无漂移（新错误码走统一错误
+信封，不入 OpenAPI 枚举）。
+
+**不做**：多进程栈/唯一 claim/跨进程 traceparent（切片 3）、数值额度
+API（B 的 UI 维持读服务端响应）、limiter 遥测 span。
