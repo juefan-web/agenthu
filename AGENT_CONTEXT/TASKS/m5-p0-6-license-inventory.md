@@ -1,8 +1,9 @@
 # M5-P0-6 许可逐文件盘点（提前启动的清点阶段）
 
-Status: **清点阶段完成（2026-10-07，#75 合并后并行启动——协调人既有授权
-"许可盘点可在 #75 合并后启动，与代码线无耦合"）；正式 P0-6 切片待派工，
-本文档即其输入。阻断规则：未澄清 → 不发布二进制。**
+Status: **两实测动作已执行（2026-10-08）：§5-1 闭合结论不利——info-lib
+四文件实测为 post-BSL（v3.17.0）派生，源码+二进制分发双双封印待
+§5-6 路径裁决；§5-2 闭合红线全过。清点启动于 2026-10-07（#75 合并后，
+协调人既有授权）；阻断规则：未澄清 → 不发布。**
 
 依据：THIRD_PARTY_NOTICES.md（项目级骨架，已存在）、
 vendor/onethu/{LICENSE,VENDORED_FROM.md,LICENSES/THIRD-PARTY.md,
@@ -48,25 +49,36 @@ OneTHU `2e3455fc235719b7f91fffaf5fe35e09220dda73`。
 | `src/info`（InfoClient：门户/校历/作业/课程文件） | info 模块 | OneTHU MIT+附加限制 | **是**（CalendarData/CourseFile/CourseInfo/Homework/ScheduleEntry import 实测） | 同上 |
 | `src/learn`（LearnClient：网络学堂） | client/time/types/urls.ts | OneTHU MIT+附加限制；**本树无任何 `learnX 移植` 标注**（grep 实测唯一 learnx 字样在 coursex） | 是（requireLearnSession/csrfToken 路径实测） | 同上；上游 learnX 移植标注完整性 → §5-1 随上游 diff 一并闭合 |
 | `src/coursex` | client.ts | OneTHU MIT+附加限制；文件头自证 **learnX 仅"接口结论验证"**（未取用代码，上游分类法第 3/4 类） | 否（未见 import） | 源码树分发；二进制理论上可摇树剔除（§5-2 验证） |
-| `src/caldav`/`src/exthw`/`src/privacy`/`src/zhjwxk` | 各模块 | OneTHU MIT+附加限制 | 否 | 同上 |
+| `src/caldav`/`src/exthw`/`src/privacy` | 各模块 | OneTHU MIT+附加限制 | 否 | 同上 |
+| `src/zhjwxk`（选课系统客户端） | client/gbk-table/xk-tab/xk-vol/anchor.ts | OneTHU MIT+附加限制 | **传递引用**（§5-2 实测修正：InfoClient `#crScheduleFallback` import `fetchZhjwxkPage`——夏季学期一级课表只读兜底，GET `kbSearch`，无提交面；直接 import 为 0） | 源码树分发；**bundle 实测部分进入**（fetchZhjwxkPage + 私有会话管道：ZHJWXK 常量/URL 前缀改写/anchor 正则/60s 热缓存）；提交类函数与 `xkAction` 路径实测 0 命中——附加限制②（抢课）红线在二进制面成立 |
 | `src/venue`（场馆） | client/sign/types.ts | OneTHU MIT+附加限制；**附加限制②点名"场馆自动预约提交"为禁用用途** | **否**（desktop 无 import 实测） | 源码树随仓分发无碍；**二进制与 UI 不得暴露自动预约提交能力**——现状一致（未引用），摇树验证 §5-2；产品红线：切片 2+ 的数据控制页等任何 UI 不接入 venue 提交面 |
 | `test/*.smoke.mjs` 等其余 | 测试/配置 | OneTHU MIT+附加限制 | 否 | 源码树分发 |
 | npm 依赖 | `aes-js`、`sm-crypto`（core package.json 实测仅此两项） | 各自 MIT（随包保留声明） | 经 auth/加密路径入 bundle | 二进制分发保留其许可声明；全量机械普查 → §5-3 |
 
 ### 2.2 `vendor/onethu/info-lib`（8 文件，6 .ts；auth-only 瘦身版）
 
-| 文件 | 出处/许可 | 备注 |
+**§5-1 实测已闭合（2026-10-08，上游两基线三方逐文件 diff，方法与数字见
+§5-1）**：四个上游派生文件全部为 **v3.17.0（BSL 期）谱系**，随树
+LICENSE 的"`06dc3cf0` MIT 快照、post-BSL 不拷贝"声明**与事实不符**；
+上游 THIRD-PARTY.md 的"Vendored 基线 3.17.0"才是实情。
+
+| 文件 | 出处/许可（实测修正） | 备注 |
 | --- | --- | --- |
-| `LICENSE` | 自带边界声明：基线 = 上游 `06dc3cf0`（**MIT 末代快照**，BSL 切换前），声明"post-BSL commits NOT incorporated by copy"，其上新增为 OneTHU 自有 MIT | **与上游 THIRD-PARTY.md 的"Vendored 基线 3.17.0"存在口径张力** → §5-1 |
-| `src/lib/core.ts`（472 行，InfoHelper） | 上游 thu-info-lib 派生 + `OneTHU 适配` 标注（platformFetch 注入等适配层） | MIT 期代码 + OneTHU 适配；desktop import（login/roam/getCsrfToken）实测 |
-| `src/utils/network.ts`（136 行） | 同上（`OneTHU 适配` 标注文件之一，上游 THIRD-PARTY 明列） | setPlatformFetch/uFetch import 实测 |
-| `src/utils/error.ts`、`src/constants/strings.ts` | 上游 MIT 期常量/错误码 | — |
+| `LICENSE` | **声明失实待改**：自称基线 `06dc3cf0`，实测派生基线为 `v3.17.0`（BSL 1.1） | 改正文案随 §5-1 裁决路径（A 授权确认 / B 回退重推导）一并落 |
+| `src/lib/core.ts`（472 行，InfoHelper） | **v3.17.0 + OneTHU 适配层**（48 行差全为自述适配：rtn-network-utils require 块剔除、finger3 响应修复、type import）；对 MIT 期基线差 242 行 | desktop import（login/roam/getCsrfToken/clearOutstandingLogin）实测——**该面在 06dc3cf0 基座全部存在**（回退路径 B 无功能损失） |
+| `src/utils/network.ts`（136 行） | OneTHU 重写（对上游两基线差 336/475 行）；残留重叠偏 3.17.0 侧（common 51 vs 43） | 按 3.17.0 谱系从严归类 |
+| `src/utils/error.ts`（107 行） | **与 v3.17.0 逐行相同**（0 行差；对 MIT 期差 4 行） | post-BSL 拷贝实锤 |
+| `src/constants/strings.ts`（317 行） | v3.17.0 + 7 行 OneTHU 改动（对 MIT 期差 136 行） | 同 core.ts |
 | `src/index.ts`（16 行） | **Agenthu 自写**（文件头首行 "Agenthu: auth-only interface" 实测） | auth-only 接口收窄声明 |
 | `src/vendor.d.ts` | Agenthu 自写（sm-crypto 极小类型声明，仅 sm2.doEncrypt） | — |
 | `package.json` | 元数据 | workspace: `@onethu/info-lib` |
 
-**该 624 行瘦身树 ≠ 上游整库**；逐文件对上游两基线（`06dc3cf0` MIT 期 /
-3.17.0 BSL 期）的 diff 归属 = §5-1 未澄清项主体。
+**法律面（上游 v3.17.0 LICENSE 实读）**：BSL 1.1，**Additional Use
+Grant: None**，Change Date = 该版本首发满四年（3.17.0 首发
+2026-09-16 → **2030-09-16**），Change License MIT。即裸 BSL 在 Change
+Date 前不覆盖 Agenthu 的任何分发；承重件只剩 THU Info 邮件授权
+（点名 OneTHU、非商业、至 2036-12-31）——其对 Agenthu 链条的延伸性
+= §5-6 现为**发布总门**。
 
 ### 2.3 `apps/desktop` 派生码面
 
@@ -79,17 +91,15 @@ OneTHU `2e3455fc235719b7f91fffaf5fe35e09220dda73`。
 - 结论：**Agenthu 自有代码 + 以依赖方式使用 vendored 包**；二进制为
   vendored 代码与 Agenthu 代码的合并作品，分发结论见 §3。
 
-## 3. 分发结论（当前证据下的结论，§5 未澄清项闭合前**不构成放行**）
+## 3. 分发结论（§5-1/§5-2 实测后修订）
 
-- **源码分发**（仓库/源码包）：随树保留 `vendor/onethu/LICENSE`（含附加
-  限制全文）、`LICENSES/THIRD-PARTY.md`、授权邮件 eml、根
-  `THIRD_PARTY_NOTICES.md`；接受方受 OneTHU 附加限制约束。条件现状：
-  Agenthu 非商业个人工具 ✓；无攻击性访问用途面 ✓（venue 未接入）。
-- **二进制分发**（Tauri 安装包）：bundle 内含 @onethu/core + info-lib
-  编译产物（MIT 许可 + 附加限制随 NOTICE 保留）+ aes-js/sm-crypto +
-  Rust crate 链。**放行前置**：§5-1 基线归属闭合（决定 BSL 1.1/授权邮件
-  是否适用）+ §5-2 bundle 内含物实测 + §5-3/5-4 依赖机械普查。
-  **未澄清 → 不发布二进制。**
+- **源码分发**（仓库/源码包）：**降级为受 §5-6 约束**——§5-1 实测
+  证明 info-lib 四文件为 post-BSL（v3.17.0）派生，仓库分发本身即属
+  BSL 意义上的再分发；在 §5-6（授权延伸确认，路径 A）或回退重推导
+  （路径 B）落定前，**对外公开分发（含仓库公开化）暂停**；当前私库
+  协作态维持。OneTHU 附加限制（非商业/禁滥用）继续适用且现状一致 ✓。
+- **二进制分发**（Tauri 安装包）：维持封印。放行前置 = §5-6 路径裁决
+  + §5-3/5-4 依赖机械普查。§5-2 摇树实测已闭合（红线全过，见 §5-2）。
 
 ## 4. 与冻结规则的对齐检查
 
@@ -100,20 +110,35 @@ OneTHU `2e3455fc235719b7f91fffaf5fe35e09220dda73`。
   列入澄清问题（§5-5）。
 - OneTHU 附加限制①的"资助"子句同样依赖项目资助事实（§5-5 同问）。
 
-## 5. 未澄清清单（发布硬门；每项附闭合动作）
+## 5. 未澄清清单（§5-1/§5-2 已实测闭合；其余为发布硬门）
 
-1. **info-lib 基线口径张力**（最高优先）：随树 LICENSE 称基线
-   `06dc3cf0`（MIT 期、post-BSL 不拷贝）vs 上游 THIRD-PARTY.md 称
-   "Vendored 基线 3.17.0"（BSL 期 + 授权邮件）。若任一文件含 post-BSL
-   派生逻辑 → BSL 1.1 与"授权点名 OneTHU"两个问题同时激活。
-   **动作**：对上游两 tag 逐文件 diff（`git diff 06dc3cf0 3.17.0 --
-   <files>` 于 thu-info-app 检出），把 6 个 .ts 归到 MIT 期/OneTHU 自有/
-   post-BSL 三类；结论回填 §2.2。
-2. **bundle 内含物实测**：desktop 经 `main: src/index.ts` barrel 引用
-   core，无 `sideEffects` 声明——learn/venue/coursex 等未引用模块是否
-   被摇树剔除未经证实。**动作**：`pnpm -C apps/desktop build` 后
-   `grep -l "venue\|coursex\|zhjwxk" dist/ -r`；若在场且无无害解释 →
-   需显式子路径 import 收窄引用面。
+1. **[已闭合，结论不利] info-lib 基线归属**：上游两基线三方逐文件
+   diff（thu-info-app @ `06dc3cf0` vs tag `v3.17.0`，工作副本
+   blob:none + sparse 检出；行变化数 = `diff | grep -c '^[<>]'`）：
+   `core.ts` ours-vs-3.17.0=**48** / ours-vs-06dc3cf0=242（48 行全为
+   THIRD-PARTY.md 自述 OneTHU 适配：rtn-network-utils 剔除、finger3
+   修复）；`error.ts` ours-vs-3.17.0=**0**（逐行相同）；`strings.ts`
+   =**7**（vs 136）；`network.ts` 重写（336/475），残留重叠偏 3.17.0
+   侧（51 vs 43）。**结论：四文件均 post-BSL（v3.17.0）派生**，BSL 1.1
+   与授权点名问题同时激活（上游 v3.17.0 LICENSE：Grant **None**、
+   Change Date 2030-09-16）。**裁决路径二选一**（协调人/用户决定）：
+   **A** = 向 THU Info 团队确认 2026-09-16 邮件授权延伸至 Agenthu
+   分发链（书面答复存档）+ 改正 info-lib/LICENSE 基线声明为 3.17.0；
+   **B** = 四文件回退从 `06dc3cf0` MIT 快照重推导（desktop 引用面
+   login/roam/getCsrfToken/clearOutstandingLogin/setPlatformFetch/uFetch
+   在 MIT 基座全存在，实测无功能损失；OneTHU 适配层 48/7/0 行可平移），
+   使现 LICENSE 声明成真。
+2. **[已闭合，红线全过] bundle 内含物实测**（`pnpm -C apps/desktop
+   build`，vite 单 chunk `index-*.js` 1005.76 kB / gzip 329.15 kB）：
+   - **venue：0 命中**（符号与 `sports.tsinghua.edu.cn` host 串双探针）
+     ——附加限制②场馆自动预约能力二进制面零存在 ✓；
+   - **coursex：0 命中** ✓；
+   - **zhjwxk：5 处上下文命中**，归属 `core/src/info/client.ts:47`
+     →`fetchZhjwxkPage` 传递引用（夏季学期一级课表只读兜底，GET
+     `kbSearch`）；提交/退课/志愿类函数（submitXkCourse 等 6 符号）与
+     `xkAction` 路径 0 命中——**无害解释成立，无需收窄**；§2.1 引用
+     结论已修正（直接 import 0 ≠ 传递引用 0）；
+   - learn/auth/info 等被引用模块在场 = 预期行为。
 3. **npm 依赖全量普查**（desktop + contracts 的 package.json 树）：
    `pnpm dlx license-checker` 出 JSON 归档；非许可（GPL 族等）若出现
    即升级为阻断项。
@@ -124,12 +149,15 @@ OneTHU `2e3455fc235719b7f91fffaf5fe35e09220dda73`。
 5. **项目资助事实确认**（协调人层面）：Agenthu 是否接受/计划接受任何
    清华关联机构资助——同时决定 OneTHU 附加限制①子句与 LearnX 例外
    条款的风险评估输入。
-6. **授权邮件延伸**：THU Info 授权点名 OneTHU；若 §5-1 判定存在
-   post-BSL 派生文件，需向 THU Info 团队确认授权是否延伸至 Agenthu
-   的分发（或该等文件改从 MIT 期快照重实现）。
+6. **授权邮件延伸**（§5-1 后升级为**发布总门**）：THU Info 授权点名
+   OneTHU；实测已证 post-BSL 派生文件存在 → 路径 A 的书面确认或
+   路径 B 的回退重推导，二者必居其一才能解除源码+二进制分发封印。
 
 ## 6. 下一步（正式 P0-6 切片内）
 
-执行 §5-1/5-2 的两个实测动作 → 回填 §2 → 更新根 THIRD_PARTY_NOTICES.md
-（吸收逐文件表与分发结论）→ PR 走 head-bound 互审。本清点阶段结论：
-**源码面条款链完整可守；二进制面在 §5-1/5-2/5-3/5-4 闭合前保持封印。**
+§5-1/§5-2 两实测动作**已执行并回填**（本提交）。剩余序列：
+**协调人/用户对 §5-1 裁决路径 A/B 拍板** → 按路径改正
+info-lib/LICENSE（A）或执行回退重推导（B）→ §5-3/5-4 依赖机械普查 →
+更新根 THIRD_PARTY_NOTICES.md（吸收逐文件表与分发结论）→ PR 走
+head-bound 互审。清点阶段总结论修订：**源码面与二进制面在 §5-6
+裁决前双双封印；venue 红线与摇树面已实测过关。**
