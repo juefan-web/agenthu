@@ -1519,7 +1519,10 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   （sm-crypto 已声明依赖）；getRedirectLocation/forgetDevice/设备
   管理 URL/cr 分支整体剔除。回差实测：core-vs-p06 242→145、
   strings 136→7、error 4→0；vs-p317 48→233、7→136、0→4；残留
-  grep 12 模式全零；finger 面 12=12 对齐 p06；typecheck 三包绿、
+  grep 12 模式全零；finger 面同口径实测（A 互审修正口径）：core
+  敏感行 12/18、不敏感行 18/12、出现次数 27/17（ours/p06）——增量
+  = OneTHU finger3 信任链净 6 行/10 次，无设备管理流残留；
+  typecheck 三包绿、
   vitest 33/244 全绿、build 1005.79 kB 与基线等值；红线复测
   venue/coursex/zhjwxk/xkAction 全 0（zhjwxk 5→0）。LICENSE 改为
   三段真话（基座事实/自有工作清单/边界声明）。分发封印不因本片解除
