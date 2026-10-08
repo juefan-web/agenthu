@@ -19,8 +19,12 @@ def is_client_valid_plan(plan: Plan) -> bool:
     """Whether every plan item satisfies the desktop client's PlanItemSchema.
 
     ``reason`` is intentionally not checked here: ``client_view.plan_to_client``
-    always produces a non-empty value (item notes -> plan strategy ->
-    replan_reason -> "planned"), covered by ``tests/unit/test_client_view.py``.
+    always produces a non-empty value — the fallback chain is item notes
+    (nullable since #75) -> v2 basis render (``render_reason``) ->
+    ``plan.replan_reason`` (nullable) -> the literal "planned" — covered by
+    ``tests/unit/test_client_view.py``. The Python/SQL double validation
+    (``is_client_valid_plan`` + ``client_invalid_item_exists``) stays by
+    design: the projection boundary keeps checking the client schema.
     """
 
     return all(
