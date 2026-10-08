@@ -9,7 +9,9 @@ Status: **两实测动作已执行（2026-10-08）：§5-1 闭合结论不利—
 vendor/onethu/{LICENSE,VENDORED_FROM.md,LICENSES/THIRD-PARTY.md,
 info-lib/LICENSE} 全文（本轮全部重读）、vendored 树与 apps/desktop 的
 grep/结构普查（数字为实测）。上游 pin：
-OneTHU `2e3455fc235719b7f91fffaf5fe35e09220dda73`。
+OneTHU `2e3455fc235719b7f91fffaf5fe35e09220dda73`；
+info-lib 上游仓 = <https://github.com/thu-info-community/thu-info-app>
+（`packages/thu-info-lib`，两基线 `06dc3cf0` / tag `v3.17.0`）。
 
 ## 0. 边界
 
@@ -65,7 +67,7 @@ LICENSE 的"`06dc3cf0` MIT 快照、post-BSL 不拷贝"声明**与事实不符**
 | 文件 | 出处/许可（实测修正） | 备注 |
 | --- | --- | --- |
 | `LICENSE` | **声明失实待改**：自称基线 `06dc3cf0`，实测派生基线为 `v3.17.0`（BSL 1.1） | 改正文案随 §5-1 裁决路径（A 授权确认 / B 回退重推导）一并落 |
-| `src/lib/core.ts`（472 行，InfoHelper） | **v3.17.0 + OneTHU 适配层**（48 行差全为自述适配：rtn-network-utils require 块剔除、finger3 响应修复、type import）；对 MIT 期基线差 242 行 | desktop import（login/roam/getCsrfToken/clearOutstandingLogin）实测——**该面在 06dc3cf0 基座全部存在**（回退路径 B 无功能损失） |
+| `src/lib/core.ts`（472 行，InfoHelper） | **v3.17.0 + OneTHU 适配层**（48 行差全为自述适配：rtn-network-utils require 块剔除、finger3 响应修复、type import）；对 MIT 期基线差 242 行 | desktop import（login/roam/getCsrfToken/clearOutstandingLogin）实测——引用面 **4/6 在 06dc3cf0 基座**（login/roam/getCsrfToken/uFetch）+ `clearOutstandingLogin`/`setPlatformFetch` **随适配层平移**（两符号对两基座零命中、零上游谱系，OneTHU 自有新增，与 vendored LICENSE 自述的"其上新增为 OneTHU 自有"咬合；基座只有模块私有 `outstandingLoginPromise`）（回退路径 B 无功能损失） |
 | `src/utils/network.ts`（136 行） | OneTHU 重写（对上游两基线差 336/475 行）；残留重叠偏 3.17.0 侧（common 51 vs 43） | 按 3.17.0 谱系从严归类 |
 | `src/utils/error.ts`（107 行） | **与 v3.17.0 逐行相同**（0 行差；对 MIT 期差 4 行） | post-BSL 拷贝实锤 |
 | `src/constants/strings.ts`（317 行） | v3.17.0 + 7 行 OneTHU 改动（对 MIT 期差 136 行） | 同 core.ts |
@@ -74,9 +76,11 @@ LICENSE 的"`06dc3cf0` MIT 快照、post-BSL 不拷贝"声明**与事实不符**
 | `package.json` | 元数据 | workspace: `@onethu/info-lib` |
 
 **法律面（上游 v3.17.0 LICENSE 实读）**：BSL 1.1，**Additional Use
-Grant: None**，Change Date = 该版本首发满四年（3.17.0 首发
-2026-09-16 → **2030-09-16**），Change License MIT。即裸 BSL 在 Change
-Date 前不覆盖 Agenthu 的任何分发；承重件只剩 THU Info 邮件授权
+Grant: None**，Change Date = 该版本首发满四年（3.17.0 首发 **2026-09-15**
+——commit `2026-09-15T06:02:04Z` 与 GitHub Release
+`2026-09-15T06:22:52Z` 双源坐实 → **2030-09-15**；§1/§5-6 的邮件日期
+2026-09-16 是另一事实，保留不混），Change License MIT。即裸 BSL 在
+Change Date 前不覆盖 Agenthu 的任何分发；承重件只剩 THU Info 邮件授权
 （点名 OneTHU、非商业、至 2036-12-31）——其对 Agenthu 链条的延伸性
 = §5-6 现为**发布总门**。
 
@@ -121,12 +125,15 @@ Date 前不覆盖 Agenthu 的任何分发；承重件只剩 THU Info 邮件授�
    =**7**（vs 136）；`network.ts` 重写（336/475），残留重叠偏 3.17.0
    侧（51 vs 43）。**结论：四文件均 post-BSL（v3.17.0）派生**，BSL 1.1
    与授权点名问题同时激活（上游 v3.17.0 LICENSE：Grant **None**、
-   Change Date 2030-09-16）。**裁决路径二选一**（协调人/用户决定）：
+   Change Date 2030-09-15，首发 2026-09-15 双源坐实——与 §1 的邮件日期
+   2026-09-16 非同一事实）。**裁决路径二选一**（协调人/用户决定）：
    **A** = 向 THU Info 团队确认 2026-09-16 邮件授权延伸至 Agenthu
    分发链（书面答复存档）+ 改正 info-lib/LICENSE 基线声明为 3.17.0；
    **B** = 四文件回退从 `06dc3cf0` MIT 快照重推导（desktop 引用面
-   login/roam/getCsrfToken/clearOutstandingLogin/setPlatformFetch/uFetch
-   在 MIT 基座全存在，实测无功能损失；OneTHU 适配层 48/7/0 行可平移），
+   **4/6 在 MIT 基座**——login/roam/getCsrfToken/uFetch；
+   clearOutstandingLogin/setPlatformFetch 随适配层平移，两符号零上游
+   谱系、OneTHU 自有，与 vendored LICENSE 自述咬合——实测无功能损失；
+   OneTHU 适配层 48/7/0 行可平移），
    使现 LICENSE 声明成真。
 2. **[已闭合，红线全过] bundle 内含物实测**（`pnpm -C apps/desktop
    build`，vite 单 chunk `index-*.js` 1005.76 kB / gzip 329.15 kB）：
