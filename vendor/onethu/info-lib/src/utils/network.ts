@@ -1,14 +1,15 @@
 /**
- * thu-info-lib 网络层（OneTHU 移植版，MIT © 2023-2024 UNIDY2002；上游边界 06dc3cf0）。
+ * info-lib 网络层（OneTHU/Agenthu 自有重写；基座谱系见本包 LICENSE）。
  *
- * 移植要点（2026-09-16 dev2 管线移植）：
- * - 原版依赖 cross-fetch + 自维护扁平 cookie 表（浏览器模式下靠原生 cookie 存储）；
- *   OneTHU 运行在 Tauri WebView，fetch 受 CORS 限制，必须走 Rust reqwest 连接池。
- * - 因此本文件把「发请求」抽成可注入的 platformFetch，由 app 启动时注入
- *   tauriFetch 适配器；cookie 的存储/发送/重定向跟随全部由平台传输层
- *   （域名感知 cookie jar + 逐跳记账）负责，本文件不再自维护 cookie。
- * - 业务逻辑（SSO 链、roamingWrapper 重试阶梯、页面解析）零改动。
- * - getRedirectUrl 改由平台传输回传 finalUrl（原 RN 走 XHR responseURL）。
+ * 与 06dc3cf0 MIT 基座的差异（2026-10 路径 B 复核，任务书 §0）：
+ * - 基座依赖 cross-fetch + 自维护扁平 cookie 表 + iconv 多字符集；本仓运行在
+ *   Tauri WebView，fetch 受 CORS 限制，必须走 Rust reqwest 连接池。
+ * - 因此「发请求」抽成可注入的 platformFetch，由 app 启动时注入 tauriFetch
+ *   适配器；cookie 的存储/发送/重定向跟随全部由平台传输层（域名感知 cookie
+ *   jar + 逐跳记账）负责，本文件不自维护 cookie。
+ * - uFetch 的状态码路径折叠与 stringify/arbitraryEncode 形态承自基座（MIT）；
+ *   字符集收窄为 UTF-8 only（桌面面无 GBK 需求，非 UTF-8 显式报错）。
+ * - getRedirectUrl 改由平台传输回传 finalUrl（基座 RN 形态走 XHR responseURL）。
  */
 
 export class ResponseStatusError extends Error {

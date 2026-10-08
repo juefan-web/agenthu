@@ -1506,3 +1506,21 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   修正：基线 447+6（此前"453+10"分解有误）+ 本片新增 17（8+8+1）
   ＝白天窗本地全量 469 passed + 1 skipped（S3 环境跳过）。修复头
   CI 以实跑日志为准（见 PR）。
+
+- **P0-6 路径 B 执行片（B，2026-10-08）**：协调人裁定路径 B（回退
+  `06dc3cf0` MIT 基座重推导）后即刻执行。新规矩首用：执行框先落
+  `AGENT_CONTEXT/TASKS/m5-p0-6-path-b.md` §0 并独立 commit（3779846）
+  后才动四文件。交付面恰好 5 文件（info-lib 四源文件 + LICENSE），
+  契约面（index.ts/vendor.d.ts/package.json/桌面网关与测试）零改动。
+  关键落法：hunk 二分（ours-vs-p317 的 48/7/0 行 OneTHU 增量平移；
+  其余按活面独立重推导/死面回 06 二分）；finger3 裁定修正为保留
+  （捕获块在 48 行增量内且桌面信任链活用，预核的"丢弃"倾向被实测
+  推翻——桌面测试零改动即达成）；SM2/OAuth/totp 按学校协议独立实现
+  （sm-crypto 已声明依赖）；getRedirectLocation/forgetDevice/设备
+  管理 URL/cr 分支整体剔除。回差实测：core-vs-p06 242→145、
+  strings 136→7、error 4→0；vs-p317 48→233、7→136、0→4；残留
+  grep 12 模式全零；finger 面 12=12 对齐 p06；typecheck 三包绿、
+  vitest 33/244 全绿、build 1005.79 kB 与基线等值；红线复测
+  venue/coursex/zhjwxk/xkAction 全 0（zhjwxk 5→0）。LICENSE 改为
+  三段真话（基座事实/自有工作清单/边界声明）。分发封印不因本片解除
+  （§5-3/5-4/5-5 仍待）。待 PR 互审。
