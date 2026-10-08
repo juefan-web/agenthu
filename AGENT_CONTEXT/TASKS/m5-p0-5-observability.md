@@ -272,11 +272,14 @@ API（B 的 UI 维持读服务端响应）、limiter 遥测 span。
 - **多进程 compose 承载 = E7-9 正式承载**（裁定③）：新
   `docker-compose.multi.yml`——Collector 服务同 alpha 定义；api/worker
   OTEL env 打开指向 collector；api 端口改区间
-  `127.0.0.1:8000-8001:8000`（compose `!override`，需 compose
-  ≥ 2.24，头注写明）；一次性 `migrate` 服务（alembic upgrade head）
-  + api command 去迁移化 + depends_on migrate（双 api 不赛跑 DDL）；
-  起栈 `--scale api=2 --scale worker=2`；真实 Redis = 既有 redis
-  服务；auth 限流上限/窗口透传 `${AUTH_RATE_LIMIT_MAX:-10}` /
+  `127.0.0.1:8100-8101:8000`（compose `!override`，需 compose
+  ≥ 2.24，头注写明；**2026-10-08 实测修正**：原冻结 8000-8001，实测
+  宿主 8000 被 WSL 内开发者常驻 llm_gateway 长期占用、dev api 缺省
+  亦为 8000——证据区间挪 8100-8101 与两者共存）；一次性 `migrate`
+  服务（alembic upgrade head）+ api command 去迁移化 + depends_on
+  migrate（双 api 不赛跑 DDL）；起栈 `--scale api=2 --scale worker=2`；
+  真实 Redis = 既有 redis 服务；auth 限流上限/窗口透传
+  `${AUTH_RATE_LIMIT_MAX:-10}` /
   `${AUTH_RATE_LIMIT_WINDOW_SECONDS:-60}`（证据跑可压小上限）；
   ci-smoke 保持单进程、零合并。
 - **唯一 claim 验证（CI 单进程可跑，双会话/双线程模拟跨进程）**：
@@ -304,3 +307,69 @@ CI 化（裁定③不变）；limiter/claim 语义改动（本片只验证不重
 ④B 两条注记测试落；⑤全量测试 + ruff + pyright 绿、OpenAPI 零漂移
 （无 API 变更）；⑥新增配置零项（OTEL_* 既有，compose 透传不动
 config 缺省）。
+
+## 10. 切片 3 实施记录（2026-10-08，随本 PR 落）
+
+**交付面**：
+
+- **跨进程 traceparent 缝**：`worker/queue.py` 新增 `enqueue`
+  （producer 的 traceparent 经 `TraceContextTextMapPropagator.inject`
+  作为 `_traceparent` job kwarg 入队；无活动 span 则 kwarg 缺席，
+  worker span 保持根——切片前语义）；`telemetry.traced_job` pop 该
+  kwarg 并 extract 为父（任务函数签名零变化；畸形头降级根 span 不
+  崩）。**`stage_span` 有意不加 `context` 参数**：现有调用方全部经
+  dict-splat 传字段，带类型的非 str keyword 参会让 splat 调用在
+  pyright 下全数报错（实测 16 错）；traced_job 改为自行开 span，
+  属性面（stage + correlation.id/job.try + 有界 error.code）与
+  stage_span 完全同构。六个 enqueue 调用点换缝（chat / tasks×2 /
+  jobs / material / files，`_job_id` 透传保持）。
+- **`docker-compose.multi.yml` = E7-9 正式承载**：Collector 服务 +
+  一次性 `migrate`（双 api 不赛跑 DDL）+ api 端口区间 8100-8101
+  （`!override`，需 compose ≥ 2.24）+ OTEL env + auth 限流上限/窗口
+  透传 + S3 缺省 s3mock；db/redis/s3mock **丢弃宿主端口**与 dev 栈
+  共存；ci-smoke 单进程零合并。配套
+  `docker/otel-collector/config.evidence.yaml`（verbosity detailed
+  ——E7-9 从 `docker logs` 直读 span 名/trace id；alpha 骨架的
+  basic 不动）。
+- **同版部署耦合**（写入 queue.py docstring 与 compose 头注）：
+  `_traceparent` kwarg 只有同版 traced_job 会 pop，api/worker 随
+  compose 全栈同版升级，滚动混布不在兼容面；回滚 = revert 本片。
+
+**测试（+6）**：telemetry 3（有父贯通按 trace/span id 断言/无父
+根 span/畸形头降级 + 严格签名任务充当 pop 证明）；lifecycle 1（两
+连接两线程并发 `claim_cleanup_items`：所得互斥、并集 = 全部 due、
+attempts 恰一——对任意交错成立，不赌时序）；executor 1（同一
+operation 双 `run_data_operation` 并发：每对象存储删除恰一次、
+operation 收敛 COMPLETED、items DONE attempts=1）；rate-limit 2
+（B 的 #81 两注记：窗长推导区间断言 + 空键归零态专测）。两并发
+测试在真提交连接上各自开会话（finally 自清行）——单进程 CI 可跑，
+claim 层面等价两个 worker。
+
+**本地验证**（独占窗口，无并发 pytest 干扰）：全量 **473 passed +
+9 skipped**（总量 = 476 基线 + 6 新测试；9 skip = S3 1 + 晚窗守卫
+8）、ruff/format/pyright 0、OpenAPI 零漂移（再生成内容一致，仅
+CRLF 假改）。**CI 数字以实跑日志为准回填**。
+
+**multi 栈实测**（本机 compose v5.3.1，项目名 `agenthu-multi`，
+证据跑完已拆栈、dev 栈未动）：
+
+- **起栈**：migrate 一次性 + db + redis + s3mock + otel-collector +
+  api×2 + worker×2 共 8 容器全 healthy（`--scale api=2
+  --scale worker=2`，端口 8100/8101）。
+- **跨进程限流一致**（AUTH_RATE_LIMIT_MAX=10）：1 次真登录（200）
+  + 8 次错密码（401）交替打 :8100/:8101 后，第 10 次命中
+  **429@8101**，续打 :8100 仍 **429**——预算跨两 API 进程单一账本。
+- **跨进程 traceparent**：ping@8100 202 → collector detailed 面
+  `POST /v1/jobs/ping`（Server，Trace ID `8143a4e5…55e`，ID
+  `5fe0e088…`）与 `worker.ping`（**Trace ID 相同、Parent ID =
+  server span 的 ID**）——一条 trace 贯穿 api→redis→worker 三个
+  进程边界。§4 验收 #1 的跨进程半面就此闭合。
+- **环境事实**（留存）：① 本地 `otel-collector:0.116.0` 镜像层
+  损坏（裸跑 `--version` 即 exec 失败；0.117.0 重拉实测可用——起栈
+  时以 `OTEL_COLLECTOR_IMAGE=otel/opentelemetry-collector:0.117.0`
+  覆盖，文件缺省不动）；② 宿主 8000 被 WSL 内开发者常驻
+  llm_gateway 长期占用（保持不动）→ 证据区间 8100-8101（§9 修正
+  已注）。
+
+**不做**：E7-9 执行本身（执行轮）；metrics 面；campus/native 遥测；
+CI 多进程化（裁定③不变）。

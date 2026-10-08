@@ -10,6 +10,8 @@ dependency inventory.
 
 from __future__ import annotations
 
+import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 
 import pytest
@@ -407,3 +409,71 @@ class TestDependencyInventory:
             if entry.store == Store.POSTGRES:
                 assert entry.table and entry.owner and entry.disposal
                 assert entry.classification
+
+
+class TestConcurrentClaims:
+    """P0-5 slice 3: two claimers on two real connections — the in-process
+    stand-in for two worker processes. SKIP LOCKED must keep their claims
+    disjoint and, under ANY interleaving (including one side finishing
+    first), every due item is claimed exactly once with a single attempt.
+
+    Setup and assertions run on committed connections: the db_session
+    fixture's outer transaction is invisible to other connections, and
+    cross-connection visibility is exactly what this test exercises."""
+
+    def test_two_sessions_claim_each_due_item_exactly_once(self, engine) -> None:
+        handle = f"conc-{uuid.uuid4().hex}"[:32]
+        refs = [f"objects/conc-{index}" for index in range(4)]
+        operation_id: uuid.UUID | None = None
+
+        def _claim_once() -> list[uuid.UUID]:
+            with engine.connect() as connection, connection.begin():
+                session = Session(bind=connection, expire_on_commit=False)
+                return [item.id for item in dl.claim_cleanup_items(session)]
+
+        try:
+            with engine.connect() as connection, connection.begin():
+                session = Session(bind=connection, expire_on_commit=False)
+                operation, _ = dl.get_or_create_operation(
+                    session, handle, _deletion_request({"kind": "source", "ids": refs})
+                )
+                dl.enqueue_cleanup_items(session, operation, [_object_spec(ref) for ref in refs])
+                operation_id = operation.id
+                expected = set(
+                    session.scalars(
+                        select(DataCleanupItem.id).where(
+                            DataCleanupItem.operation_id == operation_id
+                        )
+                    )
+                )
+            assert operation_id is not None
+            assert len(expected) == len(refs)
+
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                futures = [pool.submit(_claim_once) for _ in range(2)]
+                claims = [item_id for future in futures for item_id in future.result()]
+
+            assert len(claims) == len(set(claims)), "the two claimers must be disjoint"
+            assert set(claims) == expected, "together they cover every due item once"
+
+            with engine.connect() as connection, connection.begin():
+                attempts = (
+                    connection.execute(
+                        text("SELECT attempts FROM data_cleanup_items WHERE operation_id = :oid"),
+                        {"oid": str(operation_id)},
+                    )
+                    .scalars()
+                    .all()
+                )
+            assert set(attempts) == {1}
+        finally:
+            if operation_id is not None:
+                with engine.connect() as connection, connection.begin():
+                    connection.execute(
+                        text("DELETE FROM data_cleanup_items WHERE operation_id = :oid"),
+                        {"oid": str(operation_id)},
+                    )
+                    connection.execute(
+                        text("DELETE FROM data_operations WHERE id = :oid"),
+                        {"oid": str(operation_id)},
+                    )
