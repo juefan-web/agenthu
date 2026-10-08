@@ -1,7 +1,8 @@
 # M5 P0-5：可观测与多进程（A）
 
-Status: 切片 1 已合并（main `931324f`，#78；B 反打探针闭合）。**切片 2
-开工（2026-10-08 协调人放行令：A 并行开工）——§7 边界先行落字后动手。**
+Status: 切片 1、2 已合并（main `931324f` / `c15a6dd`，#78/#81）。**切片 3
+开工（2026-10-08 协调人放行令：#81 合并后即开）——§9 边界先行落字
+后动手。**
 依据：ops 契约 `m5-data-lifecycle-ops-contract.md` §6（冻结）；规划
 `m5-planning-guidance.md` §3 切片表（前置 = P0-1 trace 字段冻结，已随
 phase-0 契约闭合）；协调人 P0-5 GO 派工（2026-10-06）+ 2026-10-07
@@ -251,3 +252,55 @@ pyright 0、contract drift --require-zod 无漂移（新错误码走统一错误
 
 **不做**：多进程栈/唯一 claim/跨进程 traceparent（切片 3）、数值额度
 API（B 的 UI 维持读服务端响应）、limiter 遥测 span。
+
+## 9. 切片 3 边界（多进程竞态验证；2026-10-08 开工前冻结，落字在先）
+
+**负责**：
+
+- **跨进程 traceparent 缝**（切片 1 §6 留待本片的贯通面）：
+  `worker/queue.py` 新增 enqueue helper——把当前 span 的 traceparent
+  （`TraceContextTextMapPropagator.inject`）作为 `_traceparent` kwarg
+  随任务入队；`telemetry.traced_job` pop 该 kwarg 并 extract 为父
+  上下文（任务函数签名零变化，`_job_id` 透传保持）；六个 enqueue
+  调用点（chat / tasks×2 / jobs / material / files）换 helper。无
+  活动 span → 无 kwarg → worker span 为根（现状语义）；cron 任务
+  无 kwarg → 根 span。隐私面：traceparent 是随机关联 ID 载体，不入
+  span 属性/日志字段、不触 allowlist；"trace 不是事实层"不变。滚动
+  混布不在兼容面（compose 全栈重建、api/worker 同版升级，旧 worker
+  收到 `_traceparent` 会当多余 kwarg 报错——同版约束写头注）；
+  回滚 = revert 本片。
+- **多进程 compose 承载 = E7-9 正式承载**（裁定③）：新
+  `docker-compose.multi.yml`——Collector 服务同 alpha 定义；api/worker
+  OTEL env 打开指向 collector；api 端口改区间
+  `127.0.0.1:8000-8001:8000`（compose `!override`，需 compose
+  ≥ 2.24，头注写明）；一次性 `migrate` 服务（alembic upgrade head）
+  + api command 去迁移化 + depends_on migrate（双 api 不赛跑 DDL）；
+  起栈 `--scale api=2 --scale worker=2`；真实 Redis = 既有 redis
+  服务；auth 限流上限/窗口透传 `${AUTH_RATE_LIMIT_MAX:-10}` /
+  `${AUTH_RATE_LIMIT_WINDOW_SECONDS:-60}`（证据跑可压小上限）；
+  ci-smoke 保持单进程、零合并。
+- **唯一 claim 验证（CI 单进程可跑，双会话/双线程模拟跨进程）**：
+  ①并发 claim——两会话两线程对同一批 due cleanup items 并发
+  `claim_cleanup_items`：各自所得互斥、并集 = 全部 due、attempts
+  恰一（SKIP LOCKED 语义钉；断言对任意交错成立，不赌时序）；
+  ②双派发恰一执行——同一 deletion operation 双 `run_data_operation`
+  并发驱动：终态一致、存储删除恰一次（operation/items 状态守卫面）；
+  ③arq 面机制句——cron unique 键 + `max_tries`/`job_timeout` +
+  claim 幂等 = 至少一次投递、恰一次生效（任务书记录，不加代码）。
+- **跨进程限流一致性**：语义已由切片 2"双实例共账本"单测钉；本片补
+  栈级验证程序（E7-9 证据句，落 §10）：multi 栈下对 :8000/:8001 交替
+  打 login，同一预算耗尽处 429（计数跨进程一致）。
+- **B 两条非阻塞注记顺手补**（随 #81 合并议定）：within-window 断言
+  改窗长推导区间 `1 ≤ retry_after ≤ window`；新增空键归零态专测
+  （fresh key → `retry_after() == 0`）。
+
+**不负责**：E7-9 执行本身（等 P0-5/P0-6 收口后的执行轮）；负载均衡/
+反代（双端口直连即证据面）；metrics 面；campus/native 遥测；多进程
+CI 化（裁定③不变）；limiter/claim 语义改动（本片只验证不重写）。
+
+**验收**：①traceparent 缝三态单测（有父贯通/无父根 span/畸形头不崩）
+钉死；②并发 claim 与双派发恰一执行测试绿；③multi 栈本地可起、E7-9
+验证句组落 §10（跨进程同 trace id 证据 = collector 面实测，非推演）；
+④B 两条注记测试落；⑤全量测试 + ruff + pyright 绿、OpenAPI 零漂移
+（无 API 变更）；⑥新增配置零项（OTEL_* 既有，compose 透传不动
+config 缺省）。
