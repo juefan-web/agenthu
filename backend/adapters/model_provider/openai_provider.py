@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import replace
 
 import httpx
 
@@ -29,6 +30,7 @@ from backend.adapters.model_provider.base import (
     ProviderCapabilities,
     ToolCall,
     ToolResult,
+    TurnContext,
 )
 from backend.config import get_settings
 
@@ -223,42 +225,78 @@ class OpenAIProvider:
         instructions: str | None,
         tool_schemas: list[dict[str, object]],
     ) -> ModelTurn:
-        """First tool-capable turn. ``store=False`` stays hardcoded (D-033)."""
+        """First tool-capable turn. ``store=False`` stays hardcoded (D-033).
+
+        The returned turn carries the replay context (ruling 2a) so
+        ``continue_with_tool_results`` can rebuild the full request.
+        """
 
         body = self.build_responses_request(
             get_settings().responses_model, input_text, instructions
         )
         body["tools"] = self._tool_wire(tool_schemas)
-        return self._parse_turn(await self._post_responses(body))
+        turn = self._parse_turn(await self._post_responses(body))
+        return replace(
+            turn,
+            context=TurnContext(
+                input_text=input_text,
+                instructions=instructions,
+                tool_schemas=list(tool_schemas),
+            ),
+        )
 
     async def continue_with_tool_results(
         self, turn: ModelTurn, results: list[ToolResult]
     ) -> ModelTurn:
         """Next turn feeding safe tool results back (§6.2: only schema-safe
-        results ever travel back to the provider)."""
+        results ever travel back to the provider).
 
+        Under ``store=False`` the server holds no conversation state, so the
+        original prompt (as the first input item), the instructions and the
+        tool schemas are replayed from the turn's in-process context —
+        without them Turn 2+ would be a beheaded request that can never
+        issue another tool call (audit beta). The context rides the
+        ModelTurn only and never reaches logs or spans.
+        """
+
+        context = turn.context
+        input_items: list[dict[str, object]] = []
+        if context is not None and context.input_text:
+            input_items.append(
+                {
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": context.input_text}],
+                }
+            )
+        input_items.extend(
+            {
+                "type": "function_call",
+                "call_id": call.call_id,
+                "name": call.name,
+                "arguments": call.arguments_json,
+            }
+            for call in turn.tool_calls
+        )
+        input_items.extend(
+            {
+                "type": "function_call_output",
+                "call_id": result.call_id,
+                "output": result.safe_result_json,
+            }
+            for result in results
+        )
         body: dict[str, object] = {
             "model": get_settings().responses_model,
             "store": False,
-            "input": [
-                {
-                    "type": "function_call",
-                    "call_id": call.call_id,
-                    "name": call.name,
-                    "arguments": call.arguments_json,
-                }
-                for call in turn.tool_calls
-            ]
-            + [
-                {
-                    "type": "function_call_output",
-                    "call_id": result.call_id,
-                    "output": result.safe_result_json,
-                }
-                for result in results
-            ],
+            "input": input_items,
         }
-        return self._parse_turn(await self._post_responses(body))
+        if context is not None:
+            if context.instructions is not None:
+                body["instructions"] = context.instructions
+            if context.tool_schemas:
+                body["tools"] = self._tool_wire(context.tool_schemas)
+        next_turn = self._parse_turn(await self._post_responses(body))
+        return replace(next_turn, context=context)
 
     async def embed_texts(self, texts: list[str]) -> EmbeddingResult:
         if not texts:

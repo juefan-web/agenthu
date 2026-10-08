@@ -16,6 +16,7 @@ from backend.adapters.model_provider import (
     ModelProviderUnavailable,
     OpenAIProvider,
 )
+from backend.adapters.model_provider.base import ModelTurn, ToolCall, ToolResult
 
 
 class _RecordingTransport(httpx.MockTransport):
@@ -143,3 +144,123 @@ async def test_embed_texts_rejects_wrong_dimension(monkeypatch) -> None:
     provider._max_retries = 0
     with pytest.raises(mod.ModelProviderError, match="dims"):
         await provider.embed_texts(["a"])
+
+
+# ------------------------------------------------ audit beta (ruling 2a) ---
+
+
+def _function_call_response(*calls: dict) -> httpx.Response:
+    return httpx.Response(
+        200,
+        json={
+            "output": [{"type": "function_call", **call} for call in calls],
+            "usage": {"input_tokens": 5, "output_tokens": 2},
+            "id": f"req-{len(calls)}",
+            "status": "completed",
+        },
+    )
+
+
+def _text_response(text: str = "done") -> httpx.Response:
+    return httpx.Response(
+        200,
+        json={
+            "output": [{"type": "message", "content": [{"type": "output_text", "text": text}]}],
+            "usage": {"input_tokens": 7, "output_tokens": 3},
+            "id": "req-final",
+            "status": "completed",
+        },
+    )
+
+
+def _tool_schemas() -> list[dict]:
+    return [
+        {
+            "name": "state.read",
+            "description": "Read current state",
+            "input_schema": {"type": "object", "properties": {}},
+        },
+        {
+            "name": "memory.retrieve",
+            "description": "Retrieve memories",
+            "input_schema": {"type": "object", "properties": {}},
+        },
+    ]
+
+
+async def test_generate_with_tools_sends_tools_and_carries_replay_context() -> None:
+    transport = _handler(
+        [_function_call_response({"call_id": "c1", "name": "state.read", "arguments": "{}"})]
+    )
+    provider = OpenAIProvider(api_key="k", transport=transport)
+    provider._max_retries = 0
+    turn = await provider.generate_with_tools("今天的安排是什么", "be concise", _tool_schemas())
+    body = transport.calls[0]["body"]
+    assert body["store"] is False
+    assert [tool["name"] for tool in body["tools"]] == ["state.read", "memory.retrieve"]
+    assert turn.context is not None
+    assert turn.context.input_text == "今天的安排是什么"
+    assert turn.context.instructions == "be concise"
+    assert [s["name"] for s in turn.context.tool_schemas] == ["state.read", "memory.retrieve"]
+
+
+async def test_continue_with_tool_results_replays_the_full_request_body() -> None:
+    transport = _handler(
+        [
+            _function_call_response(
+                {"call_id": "c1", "name": "state.read", "arguments": "{}"},
+                {"call_id": "c2", "name": "memory.retrieve", "arguments": "{}"},
+            ),
+            _text_response(),
+        ]
+    )
+    provider = OpenAIProvider(api_key="k", transport=transport)
+    provider._max_retries = 0
+    turn = await provider.generate_with_tools("今天的安排是什么", "be concise", _tool_schemas())
+    final = await provider.continue_with_tool_results(
+        turn,
+        [
+            ToolResult(call_id="c1", status="succeeded", safe_result_json='{"ok": 1}'),
+            ToolResult(call_id="c2", status="succeeded", safe_result_json='{"rows": 0}'),
+        ],
+    )
+    body = transport.calls[1]["body"]
+    # store stays hardcoded off (D-033) — the replay is stateless by design.
+    assert body["store"] is False
+    # The original prompt leads the input, then calls, then outputs, in order.
+    assert body["input"][0] == {
+        "role": "user",
+        "content": [{"type": "input_text", "text": "今天的安排是什么"}],
+    }
+    assert [item["type"] for item in body["input"][1:]] == [
+        "function_call",
+        "function_call",
+        "function_call_output",
+        "function_call_output",
+    ]
+    assert [item["call_id"] for item in body["input"][1:]] == ["c1", "c2", "c1", "c2"]
+    # The tools array travels again: Turn 2+ can still issue tool calls.
+    assert [tool["name"] for tool in body["tools"]] == ["state.read", "memory.retrieve"]
+    assert body["instructions"] == "be concise"
+    # The context rides along for Turn 3+ (no re-derivation needed).
+    assert final.context == turn.context
+
+
+async def test_continue_without_context_keeps_the_legacy_shape() -> None:
+    transport = _handler([_text_response()])
+    provider = OpenAIProvider(api_key="k", transport=transport)
+    provider._max_retries = 0
+    bare_turn = ModelTurn(
+        tool_calls=[ToolCall(call_id="c1", name="state.read", arguments_json="{}")]
+    )
+    await provider.continue_with_tool_results(
+        bare_turn,
+        [ToolResult(call_id="c1", status="succeeded", safe_result_json='{"ok": 1}')],
+    )
+    body = transport.calls[0]["body"]
+    assert body["store"] is False
+    assert [item["type"] for item in body["input"]] == [
+        "function_call",
+        "function_call_output",
+    ]
+    assert "tools" not in body and "instructions" not in body

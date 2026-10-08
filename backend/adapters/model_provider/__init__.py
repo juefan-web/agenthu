@@ -10,6 +10,7 @@ from backend.adapters.model_provider.base import (
     ModelProvider,
     ModelProviderError,
     ModelProviderUnavailable,
+    TurnContext,
 )
 from backend.adapters.model_provider.openai_provider import (
     OpenAIProvider,
@@ -23,6 +24,7 @@ __all__ = [
     "ModelProviderError",
     "ModelProviderUnavailable",
     "OpenAIProvider",
+    "TurnContext",
     "get_model_provider",
     "reset_model_provider",
 ]
