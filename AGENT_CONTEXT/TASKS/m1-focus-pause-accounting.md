@@ -1,7 +1,8 @@
 # M1 活雷②：Focus 暂停时长计入实际耗时（方案 §0 先落字）
 
-Status: **§0 方案草案（A，2026-10-08）——待协调人裁定后开工；未裁
-不动。**病灶实测基线 main `931324f`。
+Status: **§0 已冻结（A 拟，2026-10-08；a/b 裁定同日落字——协调人
+委托 A 拟、B 复审把关）。B 复审过即开工。**病灶实测基线 main
+`931324f`。
 
 ## 0. 边界（冻结候选）
 
@@ -25,9 +26,12 @@ Status: **§0 方案草案（A，2026-10-08）——待协调人裁定后开工�
   `accumulated_pause_seconds int not null default 0`（已闭合段累计）。
   内部列不入 client 契约（ClientFocusSession 不变，OpenAPI 无漂移，
   以 drift 实测为准）。
-- RUNNING→PAUSED：`paused_at=now` + emit `focus.paused`；
-  PAUSED→RUNNING：`accumulated += now−paused_at`、`paused_at=null`
-  + emit `focus.resumed`。
+- RUNNING→PAUSED：`paused_at=now` + emit `focus.paused`，payload 携
+  `accumulated_pause_seconds`（暂停时刻的已闭合累计；本段此刻未闭
+  合、无时长可携）；PAUSED→RUNNING：`accumulated += now−paused_at`、
+  `paused_at=null` + emit `focus.resumed`，payload 携 `pause_seconds`
+  （刚闭合段时长）+ `accumulated_pause_seconds`（闭合后新累计）。
+  快照与列值同一事务同源写入，不构成第二事实源。
 - 事件 dedupe 改按转换序号：`focus-session:{id}:{verb}:{n}`，n = 该
   会话该类型已发生事件数（emit 时查询计数）；多轮同类型转换各有
   其键。并发同键竞态（双客户端同时 resume）落在 dedupe 上=正确面
@@ -46,11 +50,17 @@ Status: **§0 方案草案（A，2026-10-08）——待协调人裁定后开工�
 暂停-恢复全计；③PAUSED 直达 COMPLETED/ABANDONED 闭合暂停段；
 ④同类型转换事件 dedupe 各自独立（两次 pause = 两条事件）；⑤
 docstring 声明补真（每次转换有事件）；⑥迁移 + fixtures + 全量
-测试 + ruff/pyright 绿。
+测试 + ruff/pyright 绿；⑦paused/resumed payload 快照断言（多轮
+各段时长独立可读，单事件自解释）。
 
-**待裁定项（协调人）**：
+**已裁定项（2026-10-08 落字：协调人委托 A 拟，B 复审）**：
 
-- a) 历史会话 actual_minutes 是否标注可疑（不加则如实留档，修正面
-  留给用户编辑）。
-- b) focus.paused/resumed 事件 payload 是否携带 pause 段时长快照
-  （audit 免回放；不带则从列状态可推）。
+- a) **历史会话不标注可疑**。承重理由：暂停转换历史上从未落事件/
+  时间戳（病灶 1 本身），"哪些历史行被污染"**不可判定**——无暂停
+  会话的 actual＝墙钟本就正确，全量标注将误伤多数正确行，选择性
+  标注又无信号可选。落法：迁移前历史值语义在 DECISIONS 记一行
+  "actual_minutes＝含暂停的墙钟上界"；单行修正面沿用客户端
+  actual_minutes 覆盖。零 schema 成本、不回改（与"不负责"一致）。
+- b) **payload 携带暂停快照**（规格已并入上方修法与验收⑦）。理由：
+  paused/resumed 均为本片新增事件类型，一次定形免日后 payload 版
+  本化；audit 单事件自解释、免回放列状态。
