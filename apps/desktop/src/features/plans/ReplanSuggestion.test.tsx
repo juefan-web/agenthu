@@ -57,7 +57,7 @@ function renderSuggestion(current: Plan | undefined) {
   confirmPlan.mockReset().mockResolvedValue(suggestion);
   cancelPlan.mockReset().mockResolvedValue(suggestion);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const services = { backend: { listPlans, confirmPlan, cancelPlan } as unknown as AppServices["backend"], backendSession: null, queue: {} as never, focusDraft: {} as never, sync: null, receipts: new MemoryReceiptStore(), backendUrl: "http://backend", buildTimeBackendUrl: "" };
+  const services = { backend: { listPlans, confirmPlan, cancelPlan } as unknown as AppServices["backend"], backendSession: null, queue: {} as never, focusDraft: {} as never, sync: null, receipts: new MemoryReceiptStore(), resolveOwner: () => null, backendUrl: "http://backend", buildTimeBackendUrl: "" };
   return render(<QueryClientProvider client={queryClient}><AppServicesContext.Provider value={services}><ReplanSuggestion currentPlan={current} /></AppServicesContext.Provider></QueryClientProvider>);
 }
 
@@ -85,7 +85,7 @@ describe("ReplanSuggestion（D-031 §2 Level 1 建议 UI）", () => {
   it("无建议草稿时不渲染", async () => {
     listPlans.mockReset().mockResolvedValue([makePlan({ id: "plain-draft", status: "draft" })]);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const services = { backend: { listPlans } as unknown as AppServices["backend"], backendSession: null, queue: {} as never, focusDraft: {} as never, sync: null, receipts: new MemoryReceiptStore(), backendUrl: "http://backend", buildTimeBackendUrl: "" };
+    const services = { backend: { listPlans } as unknown as AppServices["backend"], backendSession: null, queue: {} as never, focusDraft: {} as never, sync: null, receipts: new MemoryReceiptStore(), resolveOwner: () => null, backendUrl: "http://backend", buildTimeBackendUrl: "" };
     const { container } = render(<QueryClientProvider client={queryClient}><AppServicesContext.Provider value={services}><ReplanSuggestion currentPlan={currentPlan} /></AppServicesContext.Provider></QueryClientProvider>);
     await waitFor(() => expect(listPlans).toHaveBeenCalled());
     expect(container.childElementCount).toBe(0);
@@ -111,7 +111,7 @@ describe("ReplanSuggestion（D-031 §2 Level 1 建议 UI）", () => {
     });
     listPlans.mockReset().mockResolvedValue([withBasis]);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const services = { backend: { listPlans } as unknown as AppServices["backend"], backendSession: null, queue: {} as never, focusDraft: {} as never, sync: null, receipts: new MemoryReceiptStore(), backendUrl: "http://backend", buildTimeBackendUrl: "" };
+    const services = { backend: { listPlans } as unknown as AppServices["backend"], backendSession: null, queue: {} as never, focusDraft: {} as never, sync: null, receipts: new MemoryReceiptStore(), resolveOwner: () => null, backendUrl: "http://backend", buildTimeBackendUrl: "" };
     render(<QueryClientProvider client={queryClient}><AppServicesContext.Provider value={services}><ReplanSuggestion currentPlan={currentPlan} /></AppServicesContext.Provider></QueryClientProvider>);
     // BasisPanel 的「为什么」是 <details><summary>：jsdom 中内容恒在 DOM，
     // 直接断言共享渲染器输出（e2e 里点 summary 文本切换 open）

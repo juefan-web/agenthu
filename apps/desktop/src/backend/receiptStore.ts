@@ -23,10 +23,21 @@ export const StoredReceiptSchema = z.object({
 
 export type StoredReceipt = z.infer<typeof StoredReceiptSchema>;
 
+/** 槽位枚举的非敏感元数据（独立回执视图用；capability 永不出现在
+ *  列表里——Rust 侧 receipt_list 构造性剥离，本类型即卫生边界）。 */
+export interface ReceiptSlotSummary {
+  owner: string;
+  receipt_id: string;
+  client_request_id: string;
+  issued_at: string;
+  expires_at: string;
+}
+
 export interface ReceiptStore {
   read(ownerKey: string): Promise<StoredReceipt | null>;
   write(ownerKey: string, receipt: StoredReceipt): Promise<void>;
   clear(ownerKey: string): Promise<void>;
+  list(): Promise<ReceiptSlotSummary[]>;
 }
 
 /** Tauri：per-owner Stronghold 槽（receipt-{owner}.hold，独立快照与
@@ -52,6 +63,10 @@ export class StrongholdReceiptStore implements ReceiptStore {
   async clear(ownerKey: string): Promise<void> {
     await invoke<void>("receipt_clear", { owner: ownerKey });
   }
+
+  async list(): Promise<ReceiptSlotSummary[]> {
+    return await invoke<ReceiptSlotSummary[]>("receipt_list");
+  }
 }
 
 /** Web 开发 fallback：仅内存（B 稿 §3——不写 localStorage；刷新即失，
@@ -69,6 +84,18 @@ export class MemoryReceiptStore implements ReceiptStore {
 
   async clear(ownerKey: string): Promise<void> {
     this.slots.delete(ownerKey);
+  }
+
+  async list(): Promise<ReceiptSlotSummary[]> {
+    return [...this.slots.entries()]
+      .map(([owner, receipt]) => ({
+        owner,
+        receipt_id: receipt.receipt_id,
+        client_request_id: receipt.client_request_id,
+        issued_at: receipt.issued_at,
+        expires_at: receipt.expires_at,
+      }))
+      .sort((a, b) => a.issued_at.localeCompare(b.issued_at));
   }
 }
 

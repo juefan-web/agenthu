@@ -131,11 +131,12 @@ pub fn allowed_backend_url(url: &url::Url, origins: &BTreeSet<String>) -> bool {
 }
 
 /// 请求头白名单：Authorization/Content-Type/Accept——沿用 campus 侧的
-/// 敏感头剥离语义（Cookie 等一律不透传；Backend 会话是 Bearer JWT）。
+/// 敏感头剥离语义（Cookie 等一律不透传；Backend 会话是 Bearer JWT）；
+/// X-Data-Generation 透传客户端持久代际（D-036 §8-3 批推双向线）。
 fn forward_headers(values: std::collections::HashMap<String, String>) -> reqwest::header::HeaderMap {
     let mut headers = reqwest::header::HeaderMap::new();
     for (name, value) in values {
-        if !matches!(name.to_ascii_lowercase().as_str(), "authorization" | "content-type" | "accept") {
+        if !matches!(name.to_ascii_lowercase().as_str(), "authorization" | "content-type" | "accept" | "x-data-generation") {
             continue;
         }
         if let (Ok(name), Ok(value)) = (
@@ -148,11 +149,13 @@ fn forward_headers(values: std::collections::HashMap<String, String>) -> reqwest
     headers
 }
 
-/// 响应头白名单：正文类型、限流提示与 D-029 分页游标（tasks 列表经
-/// `X-Next-Cursor` 携带下一页；缺省头 = 末页）；Set-Cookie 一律不进 WebView。
+/// 响应头白名单：正文类型、限流提示、D-029 分页游标（tasks 列表经
+/// `X-Next-Cursor` 携带下一页；缺省头 = 末页）与 D-036 §8-3 存储代际
+/// （确认/批推响应携带 live generation；不透传 = 客户端停在旧代际，
+/// 409 generation_stale 防护失效）；Set-Cookie 一律不进 WebView。
 fn response_headers(response: &reqwest::Response) -> std::collections::HashMap<String, String> {
     response.headers().iter()
-        .filter(|(name, _)| matches!(name.as_str(), "content-type" | "retry-after" | "location" | "x-next-cursor"))
+        .filter(|(name, _)| matches!(name.as_str(), "content-type" | "retry-after" | "location" | "x-next-cursor" | "x-data-generation"))
         .filter_map(|(name, value)| value.to_str().ok().map(|v| (name.to_string(), v.to_owned())))
         .collect()
 }
@@ -259,15 +262,33 @@ mod tests {
     }
 
     #[test]
+    fn response_headers_pass_the_data_generation_but_never_cookies() {
+        // D-036 §8-3：确认/批推响应经 X-Data-Generation 携带 live 代际；
+        // 代理剥掉它 = 桌面端永远停在旧代际，409 generation_stale 防护
+        // 失效（活雷①）。Set-Cookie 仍然一律拦截。
+        let mut inner = http::Response::builder().status(200).body(Vec::new()).unwrap();
+        inner.headers_mut().insert("X-Data-Generation", "7".parse().unwrap());
+        inner.headers_mut().insert("Set-Cookie", "session=secret".parse().unwrap());
+        inner.headers_mut().insert("X-Dropped", "noise".parse().unwrap());
+        let response = reqwest::Response::from(inner);
+        let headers = response_headers(&response);
+        assert_eq!(headers.get("x-data-generation").map(String::as_str), Some("7"));
+        assert!(!headers.contains_key("set-cookie"));
+        assert!(!headers.contains_key("x-dropped"));
+    }
+
+    #[test]
     fn forward_headers_whitelist_and_response_header_filter() {
         let headers = forward_headers(std::collections::HashMap::from([
             ("Authorization".into(), "Bearer x".into()),
             ("Content-Type".into(), "application/json".into()),
+            ("X-Data-Generation".into(), "7".into()),
             ("Cookie".into(), "secret".into()),
             ("X-Custom".into(), "anything".into()),
         ]));
-        assert_eq!(headers.len(), 2);
+        assert_eq!(headers.len(), 3);
         assert!(headers.contains_key("authorization"));
+        assert!(headers.contains_key("x-data-generation"));
         assert!(!headers.contains_key("cookie"));
     }
 

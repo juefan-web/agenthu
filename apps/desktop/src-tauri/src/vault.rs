@@ -22,21 +22,60 @@ fn credential_name(slot: &str) -> String {
     format!("{slot}-vault-v1")
 }
 
+// Windows Credential Manager 在共享机器（CI runner）上会出现瞬时故障
+// （实测：写入成功后紧接的读取偶发失败，同 SHA 双跑一绿一红）。有界重试
+// 只覆盖瞬时类错误；NoEntry 等确定性结果直通，避免把"确实没有"重试成
+// "可能有"。
+#[cfg(windows)]
+const KEYRING_ATTEMPTS: usize = 3;
+#[cfg(windows)]
+const KEYRING_RETRY_DELAY_MS: u64 = 150;
+
+#[cfg(windows)]
+fn keyring_transient(err: &keyring::Error) -> bool {
+    matches!(err, keyring::Error::NoStorageAccess(_) | keyring::Error::PlatformFailure(_))
+}
+
+#[cfg(windows)]
+fn with_keyring_retry<T>(mut op: impl FnMut() -> Result<T, keyring::Error>) -> Result<T, keyring::Error> {
+    for attempt in 1..=KEYRING_ATTEMPTS {
+        match op() {
+            Ok(value) => return Ok(value),
+            Err(err) if attempt < KEYRING_ATTEMPTS && keyring_transient(&err) => {
+                std::thread::sleep(std::time::Duration::from_millis(KEYRING_RETRY_DELAY_MS));
+            }
+            Err(err) => return Err(err),
+        }
+    }
+    unreachable!("retry loop returns on the final attempt");
+}
+
+// 保留底层错误便于诊断：CI 日志里 unwrap 只能看到泛化串时无从定位。
+// 错误文本最多携带凭据 target 名，与本地回执文件名同敏感级，不含密钥本体。
+#[cfg(windows)]
+fn vault_unavailable(step: &str, err: &keyring::Error) -> String {
+    format!("{VAULT_ERROR}: {step} ({err})")
+}
+
 #[cfg(windows)]
 fn key(slot: &str, create: bool) -> Result<Vec<u8>, String> {
     use rand::RngCore;
     let entry = keyring::Entry::new("dev.agenthu.desktop", &credential_name(slot))
-        .map_err(|_| VAULT_ERROR)?;
-    match entry.get_secret() {
-        Ok(key) if key.len() == 32 => Ok(key),
-        Err(keyring::Error::NoEntry) if create => {
-            let mut key = zeroize::Zeroizing::new(vec![0u8; 32]);
-            rand::rngs::OsRng.fill_bytes(&mut key);
-            entry.set_secret(&key).map_err(|_| VAULT_ERROR)?;
-            Ok(key.to_vec())
-        }
-        _ => Err(VAULT_ERROR.into()),
+        .map_err(|err| vault_unavailable("open credential", &err))?;
+    match with_keyring_retry(|| entry.get_secret()) {
+        Ok(key) if key.len() == 32 => return Ok(key),
+        // 持久化出的错误长度是损坏态，重试无意义
+        Ok(key) => return Err(format!("{VAULT_ERROR}: stored key has {} bytes, expected 32", key.len())),
+        Err(keyring::Error::NoEntry) if create => {}
+        Err(keyring::Error::NoEntry) => return Err(String::from(VAULT_ERROR) + ": no stored key"),
+        Err(err) => return Err(vault_unavailable("read key", &err)),
     }
+    let mut key = zeroize::Zeroizing::new(vec![0u8; 32]);
+    rand::rngs::OsRng.fill_bytes(&mut key);
+    // 密钥只生成一次：重试始终写同一密钥，不留半写状态
+    with_keyring_retry(|| entry.set_secret(&key))
+        .map_err(|err| vault_unavailable("write key", &err))?;
+    Ok(key.to_vec())
 }
 
 #[cfg(not(windows))]
@@ -184,5 +223,54 @@ mod tests {
         assert!(read_record(&path, "campus", CAMPUS_CLIENT, CAMPUS_RECORD).is_err());
         clear_record(&path).unwrap();
         assert!(!path.exists());
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn keyring_retry_retries_transient_and_passes_deterministic_through() {
+        use std::cell::Cell;
+        let transient = || -> Result<Vec<u8>, keyring::Error> {
+            Err(keyring::Error::NoStorageAccess(Box::new(std::io::Error::other("ci blip"))))
+        };
+        // 瞬时错误耗尽有界次数：重试满额后仍然失败，且每次重试真实发生
+        let attempts = Cell::new(0u32);
+        let result = with_keyring_retry(|| {
+            attempts.set(attempts.get() + 1);
+            transient()
+        });
+        assert!(matches!(result, Err(keyring::Error::NoStorageAccess(_))));
+        assert_eq!(attempts.get(), KEYRING_ATTEMPTS as u32);
+        // NoEntry 与 Invalid 是确定性结果：直通，不做任何重试
+        let deterministic: [fn() -> keyring::Error; 2] = [
+            || keyring::Error::NoEntry,
+            || keyring::Error::Invalid("attr".into(), "reason".into()),
+        ];
+        for build_deterministic in deterministic {
+            attempts.set(0);
+            let result: Result<Vec<u8>, keyring::Error> = with_keyring_retry(|| {
+                attempts.set(attempts.get() + 1);
+                Err(build_deterministic())
+            });
+            assert!(result.is_err());
+            assert_eq!(attempts.get(), 1);
+        }
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn keyring_retry_recovers_after_transient_failure() {
+        use std::cell::Cell;
+        let attempts = Cell::new(0u32);
+        let result = with_keyring_retry(|| {
+            let n = attempts.get();
+            attempts.set(n + 1);
+            if n == 0 {
+                Err(keyring::Error::PlatformFailure(Box::new(std::io::Error::other("rpc hiccup"))))
+            } else {
+                Ok(b"recovered".to_vec())
+            }
+        });
+        assert_eq!(result.unwrap(), b"recovered".to_vec());
+        assert_eq!(attempts.get(), 2);
     }
 }

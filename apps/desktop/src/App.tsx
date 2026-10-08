@@ -16,14 +16,16 @@ import { GroundedAnswersView } from "./features/grounding/GroundedAnswersView";
 import { PendingActionsView } from "./features/agent/PendingActions";
 import { ChatView } from "./features/chat/ChatView";
 import { NotificationPreferencesView } from "./features/notifications/NotificationPreferencesView";
+import { DataControlsView } from "./features/data-controls/DataControlsView";
+import { ReceiptViewer } from "./features/data-controls/ReceiptViewer";
 import { errorText } from "./lib/errors";
 import { useSessionStore } from "./state/session";
 import { formatAvailableMinutes } from "./state/format";
 import { useBackendSessionStore } from "./state/backendSession";
 import type { EventSyncCoordinator } from "./sync/coordinator";
 
-type View = "today" | "tasks" | "focus" | "memory" | "explain" | "pending" | "chat" | "reminders";
-const VIEW_LABELS: Record<View, string> = { today: "今天", tasks: "任务", focus: "专注", memory: "记忆", explain: "讲解", pending: "确认", chat: "对话", reminders: "提醒" };
+type View = "today" | "tasks" | "focus" | "memory" | "explain" | "pending" | "chat" | "reminders" | "data";
+const VIEW_LABELS: Record<View, string> = { today: "今天", tasks: "任务", focus: "专注", memory: "记忆", explain: "讲解", pending: "确认", chat: "对话", reminders: "提醒", data: "数据与隐私" };
 type CollectionStage = "collecting" | "saving" | "syncing" | null;
 
 function syncResultText(result: Awaited<ReturnType<EventSyncCoordinator["flush"]>>): string {
@@ -45,6 +47,7 @@ export default function App() {
   const [pending, setPending] = useState(0);
   const [collectionElapsed, setCollectionElapsed] = useState(0);
   const [collectionStage, setCollectionStage] = useState<CollectionStage>(null);
+  const [showReceipts, setShowReceipts] = useState(false);
   const session = useSessionStore();
   const backendState = useBackendSessionStore();
   const queryClient = useQueryClient();
@@ -205,6 +208,12 @@ export default function App() {
           </div>
         </header>
         {backend && backendState.status !== "ready" && <BackendForms onNotice={setNotice} />}
+        {/* 回执独立入口（B 稿 §1）：业务 401/未登录时仍可读——不经业务会话
+            与 React Query；capability 只在 ReceiptViewer 内部流转 */}
+        {backend && backendState.status !== "ready" && <div className="top-actions" style={{ justifyContent: "flex-start" }}>
+          <button className="ghost-button" onClick={() => setShowReceipts((value) => !value)}>{showReceipts ? "收起删除回执" : "查看删除回执"}</button>
+        </div>}
+        {backend && showReceipts && backendState.status !== "ready" && <ReceiptViewer baseUrl={backendUrl} store={services.receipts} />}
         {backendState.message && <p className="error-text" role="alert">{backendState.message}</p>}
         {notice && <div className="notice" role="status">{notice}</div>}
         {view === "today" && <div className="workspace-grid">
@@ -232,6 +241,7 @@ export default function App() {
           backend={backendReady ? backend : null}
           onOpenAction={(actionId) => { setFocusActionId(actionId); setView("pending"); }} />}
         {view === "reminders" && <NotificationPreferencesView backend={backendReady ? backend : null} />}
+        {view === "data" && <DataControlsView />}
       </section>
     </main>
   </AppServicesContext.Provider>;

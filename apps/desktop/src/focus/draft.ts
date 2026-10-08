@@ -126,6 +126,6 @@ export class SqliteFocusDraftStore implements FocusDraftStore {
   }
 }
 
-export function createFocusDraftStore(options: { resolveOwner?: () => string | null } = {}): FocusDraftStore {
+export function createFocusDraftStore(options: { resolveOwner?: () => string | null } = {}): FocusDraftStore & UnownedDraftStore {
   return isTauriRuntime() ? new SqliteFocusDraftStore(options) : new LocalFocusDraftStore(options);
 }

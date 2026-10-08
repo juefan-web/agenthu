@@ -11,7 +11,7 @@ const backend = { confirmPlan } as unknown as AppServices["backend"];
 
 function renderWithServices(ui: ReactNode) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const services = { backend, backendSession: null, queue: {} as never, focusDraft: {} as never, sync: null, receipts: new MemoryReceiptStore(), backendUrl: "http://backend", buildTimeBackendUrl: "" };
+  const services = { backend, backendSession: null, queue: {} as never, focusDraft: {} as never, sync: null, receipts: new MemoryReceiptStore(), resolveOwner: () => null, backendUrl: "http://backend", buildTimeBackendUrl: "" };
   return render(<QueryClientProvider client={queryClient}><AppServicesContext.Provider value={services}>{ui}</AppServicesContext.Provider></QueryClientProvider>);
 }
 

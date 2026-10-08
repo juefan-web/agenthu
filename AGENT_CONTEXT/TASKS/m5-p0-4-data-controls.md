@@ -16,11 +16,20 @@ Status: 开工 2026-10-06；基线 main `31e4743`（#74 合并头，P0-3 全链�
   B 稿 §5 为待裁增量——端点冻结后另行切片）、E7 执行、许可盘点主体
   （P0-6 可提前启动，独立交付）、服务端语义。
 - **切片**：
-  - **切片 1（本 PR）**：契约镜像 + drift 注册 + client 数据 API +
+  - **切片 1（已合并 #75）**：契约镜像 + drift 注册 + client 数据 API +
     Stronghold 回执分槽 + 无主草稿处置原语 + X-Data-Generation 接线。
     无 UI。
-  - **切片 2**：数据控制页 + 回执最小视图 + 本机清理状态机 + 无主
-    处置 UI。
+  - **切片 2（本 PR，基线 main `8efd84b`）**：数据控制页
+    （capabilities 卡 + 导出全流 + 删除全流含账号两步确认 + 状态文案表
+    + poll 5s→30s/30min/visibilitychange）+ 回执独立最小视图（登录屏
+    入口，receipt_list 槽位枚举去 capability，不经业务会话/RQ）+ 本机
+    清理状态机（not_started→cleaning→verified/failed，verified = 可复
+    跑检查输出：键存在性/SQLite 行数/token 槽清空；账号路径 VACUUM，
+    回执槽不动）+ 无主处置 UI（队列计数 + 草稿在场，adopt 需在席会话
+    ——#69 advisory #4 live-session ownerKey 守卫；discard 恒可用）。
+    Rust 增量：queue_clear_owner/queue_count_owner/receipt_list 三命令。
+    **红线**：额度不自算（P0-5 裁定④——本片无额度面）；venue 不接入
+    （P0-6 红线）；旧删除入口语义不动。
 
 ## 1. 冻结形状对照（B 稿 §1/§3/§4）
 
@@ -98,6 +107,47 @@ Status: 开工 2026-10-06；基线 main `31e4743`（#74 合并头，P0-3 全链�
   - **completion_scope 收紧** z.string() → const 数组枚举；**存量镜像
     缺口 7 处修复**（§5-7）+ UI 两处可空守卫；fixtures 头部恢复角色与
     禁手编纪律注记（CI 唯一契约源）。
+- 切片 2（2026-10-07，基线 main `8efd84b`）：
+  - **Rust**：queue_clear_owner（行级清除 + WAL checkpoint + 账号路径
+    VACUUM）/ queue_count_owner / receipt_list（目录扫描槽位，构造性
+    剥离 capability，损坏槽跳过）；测试 +2（owner 范围隔离 / capability
+    不出列表）。
+  - **队列/存储面**：OwnerCleanupApi（clearOwnerData/countOwnerData，
+    owner 显式入参——清理运行在登出后）；Local 实现含损坏隔离备份键
+    清除；ReceiptStore.list()（槽位枚举非敏感元数据）。
+  - **数据控制页**（features/data-controls/）：statusCopy（B 稿 §2 冻结
+    文案表逐条落地：preview 行/QUEUED-RUNNING/RETRY_WAIT/FAILED/
+    COMPLETED/READY/EXPIRED/未知状态停危险操作/409 与已知码）；导出
+    面板（include_files 默认勾选、client_request_id 稳定幂等、READY 才
+    下载、"不含未同步草稿"明示）；删除全流（source/memory 单确认、
+    account 两步 + checkbox「我理解此操作不可恢复」+ 可读身份 +
+    不自动代导出）；poll 钩子（5s→30s 梯、30min 上限、visibilitychange
+    暂停/回前台新鲜拉取、手动刷新只 GET）；无主处置卡（adopt 需在席
+    会话——live ownerKey 守卫，discard 恒可用）；本机清理卡（状态机
+    展示 + 可复跑检查清单 + failed 重试/verified 重新核账）。
+  - **回执独立最小视图**（ReceiptViewer）：登录屏入口（未登录/401 态
+    可见）、不经业务会话/RQ、capability 仅内存中转（槽位→直连请求）、
+    无效能力统一「回执不可用」、手动刷新。
+  - **本机清理状态机**（cleanup.ts）：not_started→cleaning→verified/
+    failed；顺序 = logout（业务 token 槽，回执槽不动）→ 队列清除 →
+    草稿清除 → 代际清除 → 检查（键存在性/行数/代际/token 面，回执槽
+    为恒 ok 信息行）；verified = 全部检查通过。
+  - **AppServices** 增 resolveOwner；App 增「数据与隐私」视图与登录屏
+    回执入口。
+  - **CI flake 修复**（切片 2 首推后追加）：vault `key()` 对 Windows
+    Credential Manager 的读写无重试、错误被 `|_| VAULT_ERROR` 泛化吞掉
+    （CI 红时无从定位底层原因）。修复 = 有界重试（3 次/150ms 间隔，
+    仅瞬时类 NoStorageAccess/PlatformFailure；NoEntry 等确定性结果
+    直通）+ 底层错误保留进消息（至多携带凭据 target 名，与本地回执
+    文件名同敏感级，不含密钥本体）+ 密钥只生成一次（重试写同一密钥）
+    + 重试机制单测两例（耗尽/直通/恢复）。
+  - **活雷①补落**（预核指出后追加）：`backend_proxy.rs` 请求侧与
+    响应侧白名单各加 `x-data-generation`（D-036 §8-3 代际双向线：
+    批推请求带客户端持久代际、确认/批推响应带 live 代际）；照
+    x-next-cursor 先例新增响应侧单测（透传 + Set-Cookie 仍拦 +
+    无关自定义头仍剥），forward 单测扩代际头断言。此前桌面端双向线
+    全断——客户端拿不到 live 代际 ⇒ 停在旧代际 ⇒ 409
+    generation_stale 防护恒不触发，E7 客户端面必踩。
 
 ## 4. 验证证据（随切片填）
 
@@ -122,6 +172,33 @@ Status: 开工 2026-10-06；基线 main `31e4743`（#74 合并头，P0-3 全链�
   conftest.py:65——CI 时点北京 22:5x 撞 <130/65 分钟窗，非本片测试；
   算术：437 存量 + 7 新增 = 444）；drift 步双跑 "No contract drift
   detected"；frontend/tauri-rust/Compose/Docker/audit 12/12 全绿。
+- 切片 2（本机 @504e823；CI 数字以推送头实测日志为准，跑后回填）：
+  desktop vitest **244/244**（+24 新例：statusCopy 7 / poll 3 / cleanup
+  6 / DataControlsView 5 / ReceiptViewer 3；另 4 个存量视图测试文件补
+  resolveOwner 注入）；desktop + contracts tsc 零错；cargo test
+  **25/25**（+2：owner 范围隔离清除 / receipt_list 剥离 capability 与
+  损坏槽跳过）；clippy 无新告警（material_transfer 两处存量告警非
+  本片，CI 不门控）。
+- 切片 2 首推 CI 红 + flake 修复（本机，修复头见 git log）：首推
+  504e823 双跑中 push 事件跑（run 37629858921）tauri-rust FAILED——
+  `vault::tests::receipt_slots_isolate_owners_and_reject_bad_keys`
+  panicked vault.rs:159:53 `Secure session storage is unavailable`
+  （24 passed/1 failed）；同 SHA pull_request 跑（37629870462）全绿；
+  两跑同镜像 windows-2025-vs2026。定位：失败点 = 写成功后紧接的读
+  →CredRead 瞬时故障（keyring get_secret），且泛化错误吞掉底层原因。
+  修复后本机 cargo **27/27**（+2 重试机制单测）；CI 回填待新头双跑。
+- 切片 2 CI 实测回填（修复头 49658cf，双跑全绿 12/12，Actions 日志
+  取数）：tauri-rust cargo **27/27** 双跑一致（push 5.03s / PR 5.02s，
+  含 keyring 重试两新例）；frontend contracts **17/17**（1 文件）+
+  desktop **244/244**（33 文件），与本地同数；Backend 双跑
+  **447 passed + 6 skipped**、drift 步双跑 "No contract drift
+  detected"、ruff All checks passed（本 PR 零后端改动，447/6 为 main
+  现状数，skip 归因非本片面）；Compose/Docker/audit 双跑全绿。
+- 活雷①补落（本机）：cargo **28/28**（+1：data-generation 响应侧
+  透传；forward 测试扩断言）；backend_proxy/vault clippy 零告警
+  （material_transfer 存量 3 条非本片）。
+- 活雷①补落 CI 实测回填（头 b97e972，双跑全绿 12/12）：tauri-rust
+  cargo **28/28** 双跑一致（pull_request 5.02s / push 5.04s）。
 
 ## 5. 实现期判断（待 A 核）
 
@@ -163,3 +240,44 @@ Status: 开工 2026-10-06；基线 main `31e4743`（#74 合并头，P0-3 全链�
 9. **TS unowned adopt 静默返 0 vs Rust 报错**（注记③处置）：可接受
    不对称——Stronghold 命令层对 unowned 目标显式报错，Web fallback
    （无命令层）返 0 无副作用；单一显式防线在命令层。
+10. **回执视图手动刷新**（切片 2）：B 稿只冻结了 operation poll 参数
+    （5s→30s/30min/前后台），回执视图的轮询节奏未冻结——本片只做
+    手动刷新（GET），不擅自定参；账号删除后的状态面 = 回执视图 +
+    本机清理卡（owner 401，不 poll，B 稿 §2 收紧原文）。
+11. **token 单槽非 owner 维度**：backend_token_* 是单槽（无 owner
+    列），清理检查的 tokenPresent 探针按环境注入（Tauri =
+    backend_token_get；Web = null）；null 时检查行如实标注「当前环境
+    无持久凭据面，未检查」，不伪 verified。
+12. **损坏隔离备份随 owner 清除**：queueCorruptKey 保留原 payload
+    （用户内容面），clearOwnerData 一并移除；SQLite 面的行级清除在
+    Rust 命令内（无隔离表）。
+13. **被删来源的本地待同步事件不预清**：服务端抑制 + rejected 出队
+    （切片 1 coordinator 机制）自然处理；「客户端不是权限判定者」
+    （B 稿 §4）——COMPLETED 文案明示该行为。
+14. **campus 会话不动**：独立于 Backend 账号；B 稿「共用会话先隔离或
+    停自动复用」是后续边界，本片以说明文案 + 顶栏退出按钮承接。
+15. **测试形态**：fake timers 下单发 advanceTimersByTimeAsync(全量)
+    不驱动 .then 链里排程的定时器——cap 用例改 30s 步进推进（≤70 步
+    必跨 30 分钟）；waitFor 在假钟下会饿死，改 advance(0) 微任务冲刷。
+16. **keyring flake 修在根因而非重跑**（切片 2 首推 CI 红处置）：
+    同 SHA 双跑一绿一红 + 失败点在「写成功后紧接的读」= CredRead
+    瞬时故障，坐实环境抖动而非代码回归。选择有界重试 + 错误保留
+    （AGENTS.md §7-2 外部调用重试上限 + 可观测），而非 `gh run rerun`
+    碰运气——每次推送双跑两票，重跑不改中奖率。NoEntry 直通不重试
+    （确定性结果重试会把「确实没有」拖成延迟失败）；错误长度（≠32B）
+    同为确定性损坏态，不重试。密钥生成一次、重试写同一密钥——避免
+    半写状态。附带发现（不本片处置）：main 上 material_transfer.rs
+    存在 fmt 漂移与两条 clippy 告警（unused import/TRANSFER_TIMEOUT
+    dead code/useless format），CI client.yml 不跑 fmt/clippy 故不
+    门控；`cargo fmt` 全 crate 会重排 5 个无关文件，本片手工回退保持
+    diff 仅 vault.rs。
+17. **新增自定义响应头 ⇒ 同步查代理两侧白名单**（活雷①教训）：
+    D-036 §8-3 设计了 X-Data-Generation 双向线，后端（events/data
+    端点）与 TS 客户端（client.ts 发送+读取、generation.ts 持久化）
+    均已各自落地，但 Rust `backend_proxy` 的请求/响应白名单未跟——
+    桌面端所有 backend 流量经此代理，白名单是隐形的第三端，缺一侧
+    即断线且无任何报错（头被静默剥掉）。教训：契约新增自定义请求/
+    响应头时，桌面侧要查的不是一个点而是三个点（TS 调用面、代理
+    请求白名单、代理响应白名单）。流程面教训：协调人「随切片 2 修」
+    的处置当时未落进本任务书 §0 边界，实现时即被挤出——外审处置
+    必须先进冻结边界再动手，否则等于没派。

@@ -255,6 +255,35 @@ impl QueueStore {
         Ok(removed)
     }
 
+    /// P0-4 本机清理：整 owner 行级清除（事件 + 同步游标）。账号删除走
+    /// VACUUM 抹物理残留（B 稿 §4「全账号删除才 VACUUM」）；其余清理只
+    /// 行级删除 + WAL checkpoint。返回清除的事件行数（可复跑清理检查的
+    /// 证据之一是 count_owner 归零，两者配套）。
+    fn clear_owner(&mut self, owner: &str, vacuum: bool) -> Result<i64, String> {
+        let removed = self.connection.execute(
+            "DELETE FROM pending_events WHERE owner = ?1",
+            params![owner],
+        ).map_err(|error| error.to_string())? as i64;
+        self.connection.execute(
+            "DELETE FROM sync_state WHERE owner = ?1",
+            params![owner],
+        ).map_err(|error| error.to_string())?;
+        self.connection.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+            .map_err(|error| error.to_string())?;
+        if vacuum {
+            self.connection.execute_batch("VACUUM;").map_err(|error| error.to_string())?;
+        }
+        Ok(removed)
+    }
+
+    fn count_owner(&self, owner: &str) -> Result<i64, String> {
+        self.connection.query_row(
+            "SELECT COUNT(*) FROM pending_events WHERE owner = ?1",
+            params![owner],
+            |row| row.get(0),
+        ).map_err(|error| error.to_string())
+    }
+
     /// B-4：用户显式添加的 Backend 源（allowlist 的持久化部分；构建期默认由
     /// build.rs 常量提供，不落库）。
     fn backend_origins(&self) -> Result<Vec<String>, String> {
@@ -341,6 +370,18 @@ fn queue_unowned_adopt(db: tauri::State<QueueDb>, target_owner: String) -> Resul
 #[tauri::command]
 fn queue_unowned_discard(db: tauri::State<QueueDb>) -> Result<i64, String> {
     db.with(|store| store.unowned_discard())
+}
+
+/// P0-4 本机清理：owner 显式入参（清理运行在登出后，不能依赖会话现解
+/// 的 owner）。vacuum 仅账号删除路径置 true。
+#[tauri::command]
+fn queue_clear_owner(db: tauri::State<QueueDb>, owner: String, vacuum: bool) -> Result<i64, String> {
+    db.with(|store| store.clear_owner(&owner, vacuum))
+}
+
+#[tauri::command]
+fn queue_count_owner(db: tauri::State<QueueDb>, owner: String) -> Result<i64, String> {
+    db.with(|store| store.count_owner(&owner))
 }
 
 #[tauri::command]
@@ -450,6 +491,58 @@ fn receipt_clear(app: tauri::AppHandle, owner: String) -> Result<(), String> {
     vault::clear_receipt(&receipt_slot_path(&app, &owner)?, &owner)
 }
 
+/// 回执独立最小视图的槽位枚举（B 稿 §3：业务 401 退出后仍可读回执）。
+/// 只回非敏感元数据——capability 永不出现在列表里（该命令的输出是
+/// 「回执能力不进日志/遥测」的守卫面之一）；损坏槽跳过不报错（统一
+/// 「回执不可用」语义在 UI 层）。
+#[derive(serde::Serialize)]
+struct ReceiptSlotSummary {
+    owner: String,
+    receipt_id: String,
+    client_request_id: String,
+    issued_at: String,
+    expires_at: String,
+}
+
+fn receipt_owner_valid(owner: &str) -> bool {
+    (8..=64).contains(&owner.len()) && owner.bytes().all(|b| b.is_ascii_alphanumeric())
+}
+
+fn receipt_summaries_in_dir(dir: &std::path::Path) -> Vec<ReceiptSlotSummary> {
+    let Ok(entries) = fs::read_dir(dir) else { return Vec::new() };
+    let mut summaries = Vec::new();
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let Some(owner) = name.strip_prefix("receipt-").and_then(|s| s.strip_suffix(".hold")) else {
+            continue;
+        };
+        if !receipt_owner_valid(owner) {
+            continue;
+        }
+        let Ok(payload) = vault::read_receipt(&entry.path(), owner) else { continue };
+        let Some(payload) = payload else { continue };
+        let Ok(value) = serde_json::from_slice::<serde_json::Value>(&payload) else { continue };
+        let text = |key: &str| value.get(key).and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let receipt_id = text("receipt_id");
+        if receipt_id.is_empty() { continue; }
+        summaries.push(ReceiptSlotSummary {
+            owner: owner.to_string(),
+            receipt_id,
+            client_request_id: text("client_request_id"),
+            issued_at: text("issued_at"),
+            expires_at: text("expires_at"),
+        });
+    }
+    summaries.sort_by(|a, b| a.issued_at.cmp(&b.issued_at));
+    summaries
+}
+
+#[tauri::command]
+fn receipt_list(app: tauri::AppHandle) -> Result<Vec<ReceiptSlotSummary>, String> {
+    let dir = app.path().app_local_data_dir().map_err(|_| RECEIPT_STORAGE_ERROR.to_string())?;
+    Ok(receipt_summaries_in_dir(&dir))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -466,8 +559,9 @@ pub fn run() {
             campus::campus_request, campus::campus_restore, campus::campus_save_session, campus::campus_logout,
             queue_add, queue_list, queue_remove, queue_get_cursor, queue_set_cursor,
             queue_unowned_count, queue_unowned_adopt, queue_unowned_discard,
+            queue_clear_owner, queue_count_owner,
             focus_get_draft, focus_set_draft, focus_adopt_unowned, focus_discard_unowned,
-            receipt_get, receipt_set, receipt_clear,
+            receipt_get, receipt_set, receipt_clear, receipt_list,
             backend_token_get, backend_token_set, backend_token_clear,
             backend_proxy::backend_request, backend_proxy::backend_origin_list,
             backend_proxy::backend_origin_add, backend_proxy::backend_origin_remove,
@@ -695,5 +789,57 @@ mod tests {
         let removed = store.unowned_discard().unwrap();
         assert_eq!(removed, 1);
         assert_eq!(store.unowned_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn clear_owner_is_scoped_and_counts_track_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = QueueStore::open(&dir.path().join("offline.sqlite3")).unwrap();
+        store.add("owner-a", vec![event_json("a-1"), event_json("a-2")]).unwrap();
+        store.add("owner-b", vec![event_json("b-1")]).unwrap();
+        store.add("unowned", vec![event_json("u-1")]).unwrap();
+        store.set_cursor("owner-a", Some("cursor-a".into())).unwrap();
+        store.set_cursor("owner-b", Some("cursor-b".into())).unwrap();
+
+        assert_eq!(store.count_owner("owner-a").unwrap(), 2);
+        let removed = store.clear_owner("owner-a", true).unwrap();
+        assert_eq!(removed, 2);
+        assert_eq!(store.count_owner("owner-a").unwrap(), 0);
+        assert!(store.get_cursor("owner-a").unwrap().is_none());
+        // 他 owner 与无主面不受影响（「本地删除不清另一账号」）
+        assert_eq!(store.count_owner("owner-b").unwrap(), 1);
+        assert_eq!(store.get_cursor("owner-b").unwrap().as_deref(), Some("cursor-b"));
+        assert_eq!(store.count_owner("unowned").unwrap(), 1);
+    }
+
+    #[test]
+    fn receipt_list_strips_capability_and_skips_invalid_slots() {
+        let dir = tempfile::tempdir().unwrap();
+        let payload = |receipt_id: &str| serde_json::json!({
+            "capability": "SECRET-CAPABILITY-VALUE",
+            "receipt_id": receipt_id,
+            "client_request_id": "req-0001",
+            "confirm_body": { "preview_id": "p", "preview_digest": "d", "client_request_id": "req-0001", "confirmed": true },
+            "issued_at": "2026-10-07T10:00:00+08:00",
+            "expires_at": "2027-01-05T10:00:00+08:00",
+        }).to_string();
+        let slot = |owner: &str| dir.path().join(format!("receipt-{owner}.hold"));
+        vault::write_receipt(&slot("owneraaaaaaaa"), "owneraaaaaaaa", payload("11111111-1111-1111-1111-111111111111").into_bytes()).unwrap();
+        vault::write_receipt(&slot("ownerbbbbbbbb"), "ownerbbbbbbbb", payload("22222222-2222-2222-2222-222222222222").into_bytes()).unwrap();
+        // 名字不合法的槽（charset 短）、非回执文件：一律跳过。short 不是
+        // vault 可写 owner——用普通文件模拟外部落进目录的可疑文件名。
+        std::fs::write(dir.path().join("receipt-short.hold"), b"{}").unwrap();
+        std::fs::write(dir.path().join("unrelated.txt"), b"noise").unwrap();
+        // 损坏载荷槽：能解密但非 JSON → 跳过不报错
+        vault::write_receipt(&slot("ownercorrupt"), "ownercorrupt", b"not-json".to_vec()).unwrap();
+
+        let summaries = receipt_summaries_in_dir(dir.path());
+        assert_eq!(summaries.len(), 2);
+        let rendered = serde_json::to_string(&summaries).unwrap();
+        assert!(!rendered.contains("SECRET-CAPABILITY-VALUE"), "capability must never leave the slot list");
+        assert!(rendered.contains("11111111"));
+        assert!(rendered.contains("22222222"));
+        // issued_at 升序
+        assert!(summaries[0].receipt_id.starts_with("11111111"));
     }
 }
