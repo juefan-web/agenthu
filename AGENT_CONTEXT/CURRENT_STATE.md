@@ -1506,3 +1506,13 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   修正：基线 447+6（此前"453+10"分解有误）+ 本片新增 17（8+8+1）
   ＝白天窗本地全量 469 passed + 1 skipped（S3 环境跳过）。修复头
   CI 以实跑日志为准（见 PR）。
+
+- **P0-5 切片 2 交审（A，2026-10-08，分支 `feature/m5-p0-5-rate-limit-redis`）**：
+  Redis 共享限流按 §7 冻结边界落地——`core/rate_limit.py` 换 Redis 滑动
+  窗（ZSET+Lua 双脚本、服务器钟、`rl:` 前缀、进程内实现删除），缝
+  （`hit`/`retry_after`）与调用面（auth 单桶/recover 双桶）全保持；
+  断供 fail-closed 503 分面（`rate_limit_unavailable`，调用点零
+  try/except）；测试：双实例共账本钉跨进程单事实源、503 分面集成、
+  client_ip 键回归、namespace 隔离。全量 475+1（白天窗实测）、
+  ruff/pyright 0、drift 无漂移。活雷② §0 草案并行落 **PR #80** 待
+  协调人裁定（两待裁项：历史脏数据标注、事件时长快照）。

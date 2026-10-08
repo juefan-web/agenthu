@@ -46,31 +46,3 @@ def test_tampered_token_is_rejected() -> None:
     token = create_access_token("user-123")
     with pytest.raises(AuthenticationError):
         decode_access_token(token + "tampered")
-
-
-def test_rate_limiter_allows_within_window_and_blocks_after() -> None:
-    from backend.core.rate_limit import RateLimiter
-
-    limiter = RateLimiter(max_requests=2, window_seconds=10)
-    assert limiter.hit("k", now=0.0) is True
-    assert limiter.hit("k", now=1.0) is True
-    assert limiter.hit("k", now=2.0) is False
-    assert limiter.retry_after("k", now=2.0) == 9
-
-
-def test_rate_limiter_window_slides() -> None:
-    from backend.core.rate_limit import RateLimiter
-
-    limiter = RateLimiter(max_requests=2, window_seconds=10)
-    assert limiter.hit("k", now=0.0) is True
-    assert limiter.hit("k", now=1.0) is True
-    assert limiter.hit("k", now=2.0) is False
-    # The oldest hit has aged out by t=10.5.
-    assert limiter.hit("k", now=10.5) is True
-
-
-def test_rate_limiter_disabled_when_max_zero() -> None:
-    from backend.core.rate_limit import RateLimiter
-
-    limiter = RateLimiter(max_requests=0, window_seconds=10)
-    assert all(limiter.hit("k") for _ in range(50))

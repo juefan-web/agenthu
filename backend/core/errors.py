@@ -81,6 +81,17 @@ class ServiceUnavailableError(AppError):
     code = "service_unavailable"
 
 
+class RateLimitUnavailableError(ServiceUnavailableError):
+    """The shared rate-limit ledger is unreachable — a distinct 503 facet.
+
+    Fail-closed (P0-5 §7): the throttled endpoints refuse the attempt rather
+    than silently allowing it; the code separates "the budget is spent"
+    (429 ``rate_limited``) from "the limiter itself is down" (503).
+    """
+
+    code = "rate_limit_unavailable"
+
+
 class RateLimitError(AppError):
     status_code = status.HTTP_429_TOO_MANY_REQUESTS
     code = "rate_limited"
