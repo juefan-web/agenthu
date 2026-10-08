@@ -1,8 +1,8 @@
 # M5 P0-5：可观测与多进程（A）
 
-Status: 切片 1 实施中（2026-10-07 协调人放行令开工；四裁定已冻结入
-§5）。基线 main `8efd84b`（#76 合并后）。依据：ops 契约
-`m5-data-lifecycle-ops-contract.md` §6（冻结）；规划
+Status: 切片 1 已合并（main `931324f`，#78；B 反打探针闭合）。**切片 2
+开工（2026-10-08 协调人放行令：A 并行开工）——§7 边界先行落字后动手。**
+依据：ops 契约 `m5-data-lifecycle-ops-contract.md` §6（冻结）；规划
 `m5-planning-guidance.md` §3 切片表（前置 = P0-1 trace 字段冻结，已随
 phase-0 契约闭合）；协调人 P0-5 GO 派工（2026-10-06）+ 2026-10-07
 放行（B 转 P0-4 切片 2 / P0-6，A 开本片）。
@@ -171,3 +171,45 @@ attributes），一次性告警与 events 同款；模块/类 docstring 把 link
 447+16=463 与既有 CI 实测严丝合缝。白天窗本地全量 469 passed + 1
 skipped（6 个晚窗守卫白天实跑通过，skip=S3_ENDPOINT_URL 未设）；
 修复头 CI 数字以实跑日志为准回填。
+
+## 7. 切片 2 边界（2026-10-08 开工前冻结；落字在先，实现在后）
+
+**负责**：
+
+- `core/rate_limit.py` 的 `hit`/`retry_after` 缝换 **Redis 滑动窗实现**
+  （ZSET + Lua 单脚本原子：trim 过期 → count → 未满则 ZADD 唯一成员
+  → PEXPIRE；`retry_after` 读 oldest score。语义与进程内版一致：同
+  窗口、同上限、同 Retry-After 口径；时间取 Redis 服务器钟
+  （脚本内 TIME），免客户端钟偏）。
+- **断供 fail-closed 503 分面**：Redis 不可达/超时（bounded socket
+  timeout，显式配置项）⇒ `RateLimitUnavailableError(
+  ServiceUnavailableError)`、code=`rate_limit_unavailable`——与 429
+  `rate_limited` 区分；不静默放行（fail-open = 跨进程/重启后暴力面
+  失守），不伪装 429。
+- **键名与分桶**：`rl:` 前缀命名空间（与 arq 键隔离）；分桶保持现状
+  ——auth=`auth:{client_ip}`、recover=`recover:id:{identity}` +
+  `recover:ip:{client_ip}`（owner 分桶即 recover:id）。裁定④对齐：
+  Redis 账单唯一事实源；B 的 UI 维持只读服务端响应，**本片不加新
+  额度 API**。
+- **测试**：现有 auth/register/recover 限流测试改注入 Redis 版
+  limiter（namespace 按 test 唯一隔离）；断供分面单测（不可达 Redis
+  URL → 503 + code 断言 + Retry-After 缺席）；滑动窗语义测试（短窗
+  实跑）；一条"限流键取 client_ip"回归（XFF 受信链下键值正确，
+  TRUSTED_PROXIES 应用面随切片 1 已收口，此处只钉回归）。
+- **Redis 客户端**：复用 `redis_url` 配置（与 health 检查同源），
+  sync 客户端（调用点均为 sync def 端点），连接池进程内懒建单例。
+
+**不负责**：多进程 compose 栈、唯一 claim/租约、跨进程 traceparent
+（切片 3）；数值额度展示 API（B 的 UI 契约不变；若需数值面另开
+裁定）；limiter 遥测 span（遥测面切片 1 已定型，本片不加新 span
+面）；worker 侧限流（worker 无此缝）。
+
+**兼容与回滚**：`RateLimiter` 类名与 `hit`/`retry_after` 方法签名
+保持；构造签名扩可选参数（redis client 注入口 + namespace，测试
+隔离用）；**进程内实现删除**（保留 = 第二账本 = 违反裁定④；回滚 =
+revert 本片提交）。旧进程内账本无迁移（窗口 ≤600s，滚动即清）。
+
+**验收**：①滑动窗语义 + 跨键隔离测试钉（CI 起 redis 服务、本地
+agenthu-redis-1，单代码路径无 fallback）；②断供分面 503+code 测试
+钉；③contract drift 无漂移（错误 code 不入 OpenAPI 枚举则无漂移，
+以实测为准）；④全量测试 + ruff + pyright 绿。
