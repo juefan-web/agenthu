@@ -1516,3 +1516,22 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   client_ip 键回归、namespace 隔离。全量 475+1（白天窗实测）、
   ruff/pyright 0、drift 无漂移。活雷② §0 草案并行落 **PR #80** 待
   协调人裁定（两待裁项：历史脏数据标注、事件时长快照）。
+
+- **P0-5 切片 3 交审（A，2026-10-08，分支 `feature/m5-p0-5-multiprocess-stack`，
+  §9 边界先行独立 commit）**：多进程竞态验证片——①跨进程 traceparent 缝
+  （`worker/queue.py` 新 `enqueue` 注入 producer traceparent 为 job kwarg，
+  `traced_job` pop 并 extract 为父；六调用点换缝；`stage_span` 有意不加
+  context 参——dict-splat 调用方与带类型 keyword 参在 pyright 下冲突，
+  traced_job 自行开 span 同构属性面）；②`docker-compose.multi.yml` = E7-9
+  承载（2 API + 2 worker + 真实 Redis + Collector detailed 证据配置 +
+  一次性 migrate；db/redis/s3mock 弃宿主端口与 dev 栈共存；ci-smoke 不
+  动）；③唯一 claim 验证：双连接并发 claim（互斥+并集全 due+attempts 恰
+  一，任意交错成立）与同 operation 双 `run_data_operation`（存储删除恰一
+  次、收敛 COMPLETED）两测试，真提交连接自清；④B 的 #81 两注记（窗长推
+  导区间断言、空键归零态专测）。本地独占全量 473+9（=476 基线+6 新；9
+  skip = S3 1 + 晚窗 8）、ruff/pyright 0、drift 零。multi 栈实测：8 容器
+  全 healthy；限流预算跨 :8100/:8101 单账本（第 10 次 429、换端口仍
+  429）；`worker.ping` 的 Parent ID = api server span 的 ID、Trace ID 同
+  ——跨进程贯通实测。环境事实：本地 otel-collector 0.116.0 镜像损坏
+  （0.117.0 覆盖实测可用）；宿主 8000 被 WSL 内 llm_gateway 长占（证据
+  区间挪 8100-8101，§9 修正已注）。CI 实测（修复头 `4e2545c`，run 37869406909）：**482 passed + 0 skipped**（= 476 基线 + 6 新）。首头两败已修并留痕 §10：CI 的 DATABASE_URL 与 TEST_DATABASE_URL 不同库使生产 session_scope 静默 not_found（测试改绑测试 engine）；retry_after 同毫秒进位 window+1 入断言上界。

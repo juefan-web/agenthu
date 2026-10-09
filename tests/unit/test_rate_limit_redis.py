@@ -44,13 +44,28 @@ def _dead_client() -> redis.Redis:
 
 @requires_redis
 def test_allows_within_window_and_blocks_after() -> None:
+    window = 30.0
     namespace = _fresh_namespace()
-    limiter = RateLimiter(max_requests=2, window_seconds=30.0, namespace=namespace)
+    limiter = RateLimiter(max_requests=2, window_seconds=window, namespace=namespace)
     assert limiter.hit("k") is True
     assert limiter.hit("k") is True
     assert limiter.hit("k") is False
-    # The oldest of two hits leaves the window in at most window_seconds.
-    assert 1 <= limiter.retry_after("k") <= 30
+    # The oldest hit is milliseconds old, so the wait is almost the full
+    # window (B's #81 review note). The honest interval is window-derived
+    # with TWO slop seconds below for runner jitter, and +1 above: the
+    # read can land in the same Redis TIME millisecond as the hit, where
+    # floor(window - 0) + 1 = window + 1 (measured on CI: 31 for a 30s
+    # window) — the +1 ceiling is part of the documented semantics.
+    assert window - 2 <= limiter.retry_after("k") <= window + 1
+
+
+@requires_redis
+def test_retry_after_on_a_never_hit_key_is_zero() -> None:
+    """The empty-key zero state (B's #81 review note): nothing pending is a
+    clean zero, not an error and not a fabricated wait."""
+
+    limiter = RateLimiter(max_requests=2, window_seconds=30.0, namespace=_fresh_namespace())
+    assert limiter.retry_after("unseen") == 0
 
 
 @requires_redis

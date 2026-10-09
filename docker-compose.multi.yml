@@ -1,0 +1,89 @@
+# Multi-process stack (P0-5 slice 3, frozen ruling 3): the E7-9 evidence
+# carrier — 2 API processes + 2 arq workers against the shared db/redis, with
+# the OTel Collector so cross-process traces land in one place. CI keeps its
+# single-process shape: the ci-smoke override is untouched and nothing from
+# the alpha file is merged here (the collector service definition is
+# duplicated verbatim instead — compose cannot `extends` across override
+# files cleanly).
+#
+# Requires docker compose >= 2.24 (the `!override` tag on api ports; older
+# versions concatenate port lists instead of replacing, which collides when
+# scaled). Rolling mixed versions are unsupported by design: the enqueue seam
+# adds a `_traceparent` job kwarg that only the matching traced_job knows to
+# pop, so api and worker upgrade together as this one stack.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.multi.yml \
+#          --profile s3mock up -d --wait --scale api=2 --scale worker=2 \
+#          migrate db redis s3mock otel-collector api worker
+# The two API processes answer on 127.0.0.1:8100 and 127.0.0.1:8101 (NOT
+# 8000-8001: the developer's llm_gateway holds 8000 in WSL, and the dev api
+# defaults to 8000 — the evidence range must coexist with both). For the
+# cross-process rate-limit evidence run, export a small AUTH_RATE_LIMIT_MAX
+# first (it interpolates into the api environment).
+services:
+  # The evidence stack must coexist with the running dev stack: db/redis/
+  # s3mock drop their host port bindings entirely (containers talk over the
+  # internal network; the dev stack keeps 5432/6379/9090). The API range
+  # (8000-8001) and the collector (4318) stay published — that is the
+  # evidence surface. Bring the dev api down first if it holds 8000.
+  db:
+    ports: !override []
+  redis:
+    ports: !override []
+  s3mock:
+    ports: !override []
+
+  otel-collector:
+    image: ${OTEL_COLLECTOR_IMAGE:-otel/opentelemetry-collector:0.116.0}
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      # Evidence-grade config: detailed verbosity so cross-process trace
+      # assertions can read span names and trace ids from `docker logs`
+      # (the alpha skeleton stays at basic).
+      - ./docker/otel-collector/config.evidence.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "127.0.0.1:4318:4318"
+
+  # One-shot migration so two API containers never race DDL on first boot;
+  # the api command below drops its own `alembic upgrade head` prefix.
+  migrate:
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-local}
+      DATABASE_URL: postgresql+psycopg://agenthu:agenthu@db:5432/agenthu
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    environment:
+      OTEL_ENABLED: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318/v1/traces
+      AUTH_RATE_LIMIT_MAX: ${AUTH_RATE_LIMIT_MAX:-10}
+      AUTH_RATE_LIMIT_WINDOW_SECONDS: ${AUTH_RATE_LIMIT_WINDOW_SECONDS:-60}
+      # The evidence stack runs the s3mock profile by default (the minio
+      # image is unavailable upstream, same posture as ci-smoke); override
+      # to point at a real MinIO when one is reachable.
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://s3mock:9090}
+    # Base publishes a single host port; a ranged mapping lets both scaled
+    # instances publish without colliding. 8100-8101, not 8000-8001: the
+    # developer's llm_gateway holds 8000 in WSL and the dev api defaults to
+    # 8000 — see the §9 amendment in the observability task doc.
+    ports: !override
+      - "127.0.0.1:8100-8101:8000"
+    command: >
+      uvicorn backend.main:app --host 0.0.0.0 --port 8000
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    environment:
+      OTEL_ENABLED: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318/v1/traces
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://s3mock:9090}

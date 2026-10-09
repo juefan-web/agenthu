@@ -11,13 +11,17 @@ export staging invalidated, receipt surviving).
 
 from __future__ import annotations
 
+import asyncio
 import uuid
+from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from datetime import UTC, datetime
 
 import pytest
 import redis as redis_lib
-from sqlalchemy import func, insert, select
-from sqlalchemy.orm import Session
+from sqlalchemy import func, insert, select, text
+from sqlalchemy.orm import Session, sessionmaker
 
 from backend.config import get_settings
 from backend.models.audit import AuditLog
@@ -29,6 +33,7 @@ from backend.models.data_lifecycle import (
 )
 from backend.models.enums import (
     CleanupItemAction,
+    CleanupItemState,
     DataBarrierState,
     DataOperationStatus,
 )
@@ -44,10 +49,12 @@ from backend.services.data_executor import (
     run_deletion,
 )
 from backend.services.data_exports import staging_key
-from backend.services.storage import get_storage
+from backend.services.storage import InMemoryStorage, get_storage
+from backend.worker.tasks import run_data_operation
 from tests.fixtures.payloads import assignment_event
 
 from .test_data_api import _confirm, _effects, _me, _preview, _seed_citing_memory
+from .test_data_lifecycle import _deletion_request, _object_spec
 
 pytestmark = pytest.mark.integration
 
@@ -401,3 +408,102 @@ class TestAccountSettlement:
         assert not redis_client.sismember("agenthu:trigger:dirty", str(user_id))
         receipt = db_session.scalar(select(DataReceipt))
         assert receipt is not None
+
+
+class TestConcurrentDispatch:
+    """P0-5 slice 3: double dispatch of one operation (a lost enqueue plus a
+    sweep re-dispatch) through the real worker entry on two threads — the
+    in-process stand-in for two worker processes. Item claims are exclusive
+    under SKIP LOCKED, so each object is deleted exactly once and the
+    operation converges no matter how the two drives interleave.
+
+    Setup commits on a dedicated connection (the db_session fixture's outer
+    transaction is invisible to the worker's own session_scope sessions),
+    and the rows are cleaned up in finally — the session-scoped engine keeps
+    tables across tests, so committed leftovers would leak into other tests."""
+
+    def test_double_dispatch_deletes_each_object_once(self, engine, monkeypatch) -> None:
+        handle = f"conc-{uuid.uuid4().hex}"[:32]
+        refs = [f"objects/conc-{index}" for index in range(3)]
+
+        class _CountingStorage(InMemoryStorage):
+            def __init__(self) -> None:
+                super().__init__()
+                self.deleted: list[str] = []
+
+            def delete(self, key: str) -> None:
+                self.deleted.append(key)
+                super().delete(key)
+
+        storage = _CountingStorage()
+        for ref in refs:
+            storage.put(ref, b"payload", "application/octet-stream")
+        monkeypatch.setattr("backend.worker.tasks.get_storage", lambda: storage)
+
+        operation_id: uuid.UUID | None = None
+        try:
+            with engine.connect() as connection, connection.begin():
+                session = Session(bind=connection, expire_on_commit=False)
+                operation, _ = dl.get_or_create_operation(
+                    session, handle, _deletion_request({"kind": "source", "ids": refs})
+                )
+                dl.enqueue_cleanup_items(session, operation, [_object_spec(ref) for ref in refs])
+                operation_id = operation.id
+            assert operation_id is not None
+
+            # Bind the worker entry's session_scope to THIS test engine. CI
+            # points DATABASE_URL and TEST_DATABASE_URL at different
+            # databases; the production factory would read the other one,
+            # find no operation and silently delete nothing (the first CI
+            # run failed exactly that way — empty deletes, no errors).
+            factory = sessionmaker(bind=engine, expire_on_commit=False)
+
+            @contextmanager
+            def _engine_scope() -> Iterator[Session]:
+                session = factory()
+                try:
+                    yield session
+                    session.commit()
+                except Exception:
+                    session.rollback()
+                    raise
+                finally:
+                    session.close()
+
+            monkeypatch.setattr("backend.worker.tasks.session_scope", _engine_scope)
+
+            def _drive() -> None:
+                asyncio.run(run_data_operation(None, str(operation_id)))
+
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                futures = [pool.submit(_drive) for _ in range(2)]
+                for future in futures:
+                    future.result()  # neither drive may raise
+
+            # Exactly-once effect: every object deleted, none twice.
+            assert sorted(storage.deleted) == sorted(refs)
+            with engine.connect() as connection:
+                states = connection.execute(
+                    text(
+                        "SELECT state, attempts FROM data_cleanup_items WHERE operation_id = :oid"
+                    ),
+                    {"oid": str(operation_id)},
+                ).all()
+                operation_status = connection.execute(
+                    text("SELECT status FROM data_operations WHERE id = :oid"),
+                    {"oid": str(operation_id)},
+                ).scalar_one()
+            assert operation_status == DataOperationStatus.COMPLETED.value
+            assert {state for state, _ in states} == {CleanupItemState.DONE.value}
+            assert {attempts for _, attempts in states} == {1}
+        finally:
+            if operation_id is not None:
+                with engine.connect() as connection, connection.begin():
+                    connection.execute(
+                        text("DELETE FROM data_cleanup_items WHERE operation_id = :oid"),
+                        {"oid": str(operation_id)},
+                    )
+                    connection.execute(
+                        text("DELETE FROM data_operations WHERE id = :oid"),
+                        {"oid": str(operation_id)},
+                    )
