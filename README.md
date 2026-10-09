@@ -45,3 +45,10 @@ python -m backend.scripts.check_contract_drift
 # Refresh the committed OpenAPI artifact after an intentional change.
 python -m backend.scripts.check_contract_drift --write
 ```
+
+## License
+
+This is a development repository that is temporarily public. **No license is
+granted** - all rights reserved - and the repository will be closed once
+development completes. Third-party and vendored materials (including
+`vendor/onethu/`) remain under their own in-tree LICENSE files.
