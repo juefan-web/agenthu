@@ -1535,3 +1535,15 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   ——跨进程贯通实测。环境事实：本地 otel-collector 0.116.0 镜像损坏
   （0.117.0 覆盖实测可用）；宿主 8000 被 WSL 内 llm_gateway 长占（证据
   区间挪 8100-8101，§9 修正已注）。CI 实测（修复头 `4e2545c`，run 37869406909）：**482 passed + 0 skipped**（= 476 基线 + 6 新）。首头两败已修并留痕 §10：CI 的 DATABASE_URL 与 TEST_DATABASE_URL 不同库使生产 session_scope 静默 not_found（测试改绑测试 engine）；retry_after 同毫秒进位 window+1 入断言上界。
+
+- **活雷②实现片交审（A，2026-10-09，分支 `feature/m1-focus-pause-accounting`，
+  基 main `6a13b08`）**：Focus 暂停记账——迁移 `b8e4f1a26d39` 两列
+  （`paused_at` + `accumulated_pause_seconds`，server_default 0）；dedupe 键
+  改转换序号 `focus-session:{id}:{verb}:{n}`（多轮 pause 各存其键）；
+  paused/resumed/completed 三角 payload 快照（completed 携完成时刻累计含
+  PAUSED 直达闭合段）；`_complete` 默认 = 墙钟 − 已闭合暂停（下限 1），
+  显式覆盖面不变；PAUSED→ABANDONED 同口径闭段；遗留 NULL `paused_at` 行
+  零段闭合（专测）。消费侧（estimates/replan_triggers）语义注释 + D-037
+  历史口径行落地。测试 6 新用例（墙钟回拨模拟，无 sleep）。本地全量
+  **492 passed + 1 skipped**（S3 env；487 基线 + 6 新）、ruff/format 过、
+  pyright 0。CI 实测与 compose smoke（迁移实跑）待推头后补录。

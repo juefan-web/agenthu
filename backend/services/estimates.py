@@ -129,7 +129,12 @@ def course_actuals(session: Session, *, user_id: uuid.UUID, course: str) -> list
 
 def plan_item_ratios(session: Session, *, user_id: uuid.UUID) -> list[float]:
     """actual / planned of the most recent completed plan items (erratum:
-    only real planned values count — see the module docstring)."""
+    only real planned values count — see the module docstring).
+
+    actual_minutes semantics: pre-pause-accounting rows are wall-clock upper
+    bounds including pauses (live-mine-2 §0 / D-037); new rows are net of
+    closed pause segments.
+    """
 
     from backend.models.plan import Plan, PlanItem  # local: avoid import cycle
 
