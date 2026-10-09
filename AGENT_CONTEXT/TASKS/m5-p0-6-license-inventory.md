@@ -185,15 +185,22 @@ Change Date 前不覆盖 Agenthu 的任何分发；承重件只剩 THU Info 邮�
 ### 方法（三面谱系）
 
 - **权威清单** = `pnpm-lock.yaml`（分发携带物本体）：`packages:` 段 232 个
-  name@spec 锁定项 + `snapshots:` 段 232 条依赖图（解析覆盖 232/232）。
-  五 importer：root、apps/desktop、packages/contracts、vendor/onethu/core、
-  vendor/onethu/info-lib。
+  name@spec 锁定项 = `snapshots:` 段 232 条依赖图（peer 后缀全剥离后
+  集合相等；RC 修正轮 yaml 全量解析复核，脚本 v10）。五 importer：root、
+  apps/desktop、packages/contracts、vendor/onethu/core、vendor/onethu/info-lib。
+  注：单层剥离 snapshots 多重 peer 后缀会残留 7 个伪基键，232+7=239 即
+  任务书 §0 冻结数的来源（见 m5-p0-6-npm-census.md §2 漂移链）。
 - **许可事实** = 本地 store（`node_modules/.pnpm`，`pnpm install
-  --frozen-lockfile` 对齐后）各包 package.json license 字段，182 项；
-  其余 50 项为**平台 optional 二进制**（@esbuild/* 非 win32-x64 的 24、
-  @rollup/* 非 win32-x64-msvc 的 22、@napi-rs/lzma-linux-x64-gnu、
-  fsevents）本机未装——许可取 npm registry 元数据（`npm view`，50/50
-  全部 MIT）。
+  --frozen-lockfile` 对齐后）：ls 共 184 项 = 182 个版本目录 + 1 个
+  `node_modules` 目录 + `lock.yaml` 文件；182 个版本目录身份全部在
+  lock（零过期目录；含 5 个 Windows 长路径截断名目录，身份由目录内
+  package.json 反查），各按精确路径
+  `.pnpm/<dir>/node_modules/<name>/package.json` 读取 license 字段；
+  其余 50 项为**平台 optional 二进制本机未装**——未装侧 = @esbuild/*
+  25（家族总 26，win32-x64 本机已装）+ @rollup/* 23（家族总 25，
+  win32-x64-gnu 与 win32-x64-msvc 本机已装）+ @napi-rs/lzma-linux-x64-gnu
+  1 + fsevents 1——许可取 npm registry 元数据（`npm view`，50/50 全部
+  MIT，v10 重跑复核）。
 - **交叉工具** = `pnpm dlx license-checker`（§5-3 原文点名）：pnpm 符号
   链接布局下仅能见 23 项（已知局限，非树不全）——可见面上与本普查结论
   一致（其 3 个 UNLICENSED = workspace link 无 license 字段，见 finding）。
@@ -211,14 +218,34 @@ Change Date 前不覆盖 Agenthu 的任何分发；承重件只剩 THU Info 邮�
 （caniuse-lite 数据面，署名要求随 Notice 满足）、`Apache-2.0 OR MIT`
 （双许可任选）。
 
-### vendored 传递闭包（25 项，全宽松）
+小桶逐键清单（RC 修正轮补，供 head-bound 复核；MIT 199 项过长不列，
+逐键表在任务书 §2 所指脚本输出中）：
+
+- **MIT-0 (1)**：@csstools/color-helpers@5.1.0
+- **Apache-2.0 (8)**：@playwright/test@1.63.0、playwright@1.63.0、
+  playwright-core@1.63.0、typescript@5.9.3、aria-query@5.3.0、
+  baseline-browser-mapping@2.11.26、expect-type@1.4.0、xml-name-validator@5.0.0
+- **ISC (9)**：boolbase、electron-to-chromium、lru-cache@10.4.3、
+  lru-cache@5.1.1、picocolors、saxes、semver@6.3.1、siginfo、yallist
+- **BSD-3-Clause (2)**：source-map-js@1.2.1、tough-cookie@5.1.2
+- **BSD-2-Clause (11)**：cheerio-select、css-select、css-what、
+  domelementtype、domhandler、domutils、entities@4.5.0、entities@6.0.1、
+  entities@7.0.1、nth-check、webidl-conversions
+- **Apache-2.0 OR MIT (1)**：@tauri-apps/api@2.11.1
+- **CC-BY-4.0 (1)**：caniuse-lite@1.0.30001812
+
+### vendored 传递闭包（27 项，全宽松；RC 修正轮由 25 上修）
 
 `vendor/onethu/core`（aes-js、sm-crypto + typescript devDep）与
 `vendor/onethu/info-lib`（cheerio、sm-crypto）经 snapshots 图 BFS：
 aes-js@3.1.2 (MIT)、sm-crypto@0.5.7 (MIT)、cheerio@1.2.0 (MIT) 及其
 全子树（parse5 族 / htmlparser2 族 / domutils 族 / undici / iconv-lite
-/ jsbn 等，BSD-2/MIT/ISC），**闭包内零非宽松项**——路径 B 后 vendored
-树自身干净。apps/desktop 全闭包（含 dev）209 项同样零非宽松。
+/ jsbn / entities 三版本 4.5.0+6.0.1+7.0.1 等，BSD-2/MIT/ISC），
+**闭包内零非宽松项**——路径 B 后 vendored 树自身干净。v4 原报 25 系
+正则依赖解析漏 entities@6.0.1/@7.0.1 双版本 peer（yaml 图 BFS 修正）。
+apps/desktop 全闭包（含 dev）**212** 项（原报 209，同因正则解析欠计；
+v4 未留逐键清单，无法逐键归因差异）同样零
+非宽松；五 importer 闭包并集 = 232 = lock 全量（完整性复核闭合）。
 
 ### 事实面抽查（license 字段 vs 包内 LICENSE 文件）
 
@@ -235,6 +262,27 @@ aes-js@3.1.2 (MIT)、sm-crypto@0.5.7 (MIT)、cheerio@1.2.0 (MIT) 及其
    属协调人/用户层决策，非本普查职权）。
 2. **caniuse-lite (CC-BY-4.0)**：数据集署名条款，THIRD_PARTY_NOTICES
    吸收时需保留署名链（browserslist 数据来源标注）。
+
+### RC 修正轮（2026-10-09；全账见 m5-p0-6-npm-census.md §2）
+
+- **修正执行**：optional 明细 24+22 → 未装侧 **25+23+1+1**（家族总
+  esbuild 26 / rollup 25 / lzma 1 / fsevents 1 = 53，win32 本机实装 3）；
+  vendored 闭包 25 → **27**、desktop 闭包 209 → **212**、五 importer
+  并集 = 232 完整复核；小桶逐键清单上墙；5 个截断目录名披露。
+- **数字漂移链**：§0 冻结 239 = 232 + 7 个单层剥离伪基键（机制已复现）；
+  v4 终报 232 宇宙数正确、错在闭包/optional 明细/截断目录披露。
+- **与 RC 锚点的未决分歧（提请协调人复核）**：RC 称 lock 227/227、
+  「3 个 playwright 目录过期不在 lock」、227 = 177 + 50、分布
+  MIT 190/ISC 13/BSD-2 10/Apache 9/MIT-0 2/BSD-3 1——以上均无法
+  复现：yaml 全量解析 232/232/5（一行复现命令在任务书 §2）；
+  playwright 三键 @1.63.0 即锁定版本（lock 行号在案）且 store 三目录
+  皆活；store 实测 182 版本目录全部在 lock 零过期；实测自洽模型
+  **232 = 182 已装 + 50 未装**；分布逐键可查（上方小桶清单）。
+  **本节所有数字以实测 232 为锚，待协调人以同命令复核裁定。**
+- **新规生效**（RC 裁定⑤ + 实测收紧）：普查分母永远取 lock（yaml
+  全量解析）；store 只作 license 事实源且须精确路径读取（禁止目录内
+  首匹配枚举）；截断目录名反查身份；冻结时点数字必须与终测同脚本
+  同保存命令产出。
 
 ### 边界重申
 
