@@ -1,6 +1,6 @@
 # M5 P0-6 §5-3：npm 依赖树许可普查（B）
 
-- 状态：已完成实测（结果落 m5-p0-6-license-inventory.md §7，2026-10-09）；RC 修正轮 2026-10-09（见 §2）
+- 状态：已完成实测（结果落 m5-p0-6-license-inventory.md §8，2026-10-09；cargo 普查先并占 §7）；RC 修正轮 2026-10-09（见 §2）
 - 负责人：B（juefan-web）
 - 分支：`docs/m5-p0-6-npm-census`（基 main `bf8f243`）
 - 依据：P0-6 发布门序列（m5-p0-6-license-inventory.md §6：路径 B 合并后 → §5-3/§5-4 依赖机械普查 → §5-5 资助事实）；方法沿用 #79 三面逐文件谱系法；产出直接进 `m5-p0-6-license-inventory.md` 新节
@@ -43,7 +43,7 @@
 
 ## §1 实测记录（2026-10-09）
 
-全部数字见 `m5-p0-6-license-inventory.md` §7。要点：232/232 全量分级
+全部数字见 `m5-p0-6-license-inventory.md` §8。要点：232/232 全量分级
 **零红旗**；平台 optional 50 项经 npm registry 全 MIT；vendored 闭包 25
 项全宽松；desktop 全闭包 209 项零非宽松；交叉工具 license-checker 受
 pnpm 布局限制仅见 23 项、可见面一致。Findings：自有 5 包无 license
@@ -77,7 +77,7 @@ RC 令五项修正；执行中用 yaml 全量解析 + 精确路径 license 读�
   （家族**总**数 esbuild 26 + rollup 25 + 1 + 1 = 53；win32 本机实装 3：
   esbuild/win32-x64、rollup win32-x64-gnu + win32-x64-msvc——v4 漏计 gnu 那个）；
   ② vendored 闭包 25 → **27**、desktop 闭包 209 → **212**（v4 正则依赖
-  解析漏了 entities@6.0.1/@7.0.1 双版本 peer 等 3 键）；
+  解析漏了 entities@6.0.1/@7.0.1 两个版本键等 3 键）；
   ③ 5 个 pnpm Windows 长路径**截断目录名**未披露
   （`@babel+plugin-transform-rea_<hash>`、`@csstools+css-parser-algori_<hash>`、
   `@csstools+css-color-parser@_<hash>`、`@testing-library+react@16.3_<hash>`）——
@@ -95,7 +95,7 @@ RC 令五项修正；执行中用 yaml 全量解析 + 精确路径 license 读�
   lock、零过期**。实测自洽模型：**232 = 182 已装 + 50 未装（全部为平台
   optional）**；「227 = 177 + 50」模型不成立。RC 分布表（MIT 190/ISC 13/
   BSD-2 10/Apache 9/MIT-0 2/BSD-3 1）同样无法逐键复现——本普查精确路径
-  读取逐键可查（inventory §7 小桶清单），抽查实证：@csstools 家族仅
+  读取逐键可查（inventory §8 小桶清单），抽查实证：@csstools 家族仅
   color-helpers 为 MIT-0（css-calc/tokenizer/parser-algorithms/color-parser
   均 MIT，首匹配式读取会把 css-calc 误读成 color-helpers 的 MIT-0）；
   undici-types@8.9.0 实读 MIT。
