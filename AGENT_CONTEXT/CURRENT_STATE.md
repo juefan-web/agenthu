@@ -1579,3 +1579,18 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   闭合 + 新 §7；任务书 `m5-p0-6-cargo-census.md` §1 执行记录（脚本不入
   仓，方法可复现）。零代码改动（docs-only）。**cargo 面无阻断；封印待
   §5-3（B）/§5-5（资助事实）**。待 B head-bound 互审。
+
+- **P0-6 清点收口 + E7 派工（2026-10-09，协调人）**：#88 cargo（main
+  `f360c21`）与 #89 npm（main `a3ff2a9`，merge-main 轮头 `be8f48d`，A
+  机械复核 head-bound APPROVE）先后合并，双 CI 双绿；license-inventory
+  **§5-1～§5-5 全闭合**（§7 cargo / §8 npm 双普查零红旗 + §9 用户裁定
+  ①②③④转录；README `a70f7e2` 源码面声明、CARDS 机制三笔同步在库）。
+  P0-5 三切片（#78/#81/#86）与活雷②（#80/#87）此前已合 → **E7 执行
+  门槛满足，开仓 PR=0**。执行轮任务书 `m5-e7-execution.md` 落字：
+  审计通道=**形态 2**（B 机自建自跑，r1=A/r2=B 同 head 双轮，升级路径
+  不降级为无 B 核账）；E7-10 三分项（机制面走双轮 / 许可门对账
+  license-inventory 终态 / 真实 key 证据位如实报未提供——发布门与
+  M5 出口门分离）；op-4 注册纪律重申。THIRD_PARTY_NOTICES 吸收派 A
+  （license-inventory §7/§8 为输入）。M5 收口归档待 E7 双轮后由协调人
+  执行（含过程台账：B v4 污染案、协调人锚定事故案、权威物计数
+  `git show origin/main:<path>` 锚定硬规）。
