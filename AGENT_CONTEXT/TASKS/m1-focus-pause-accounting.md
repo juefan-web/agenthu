@@ -1,7 +1,8 @@
 # M1 活雷②：Focus 暂停时长计入实际耗时（方案 §0 先落字）
 
 Status: **§0 已冻结（A 拟，2026-10-08；a/b 裁定同日落字——协调人
-委托 A 拟、B 复审把关）。B 复审过即开工。**病灶实测基线 main
+委托 A 拟、B 复审把关。B 复审 RC-1（completed 快照）已补，待转
+approve）。B approve 后即开工。**病灶实测基线 main
 `931324f`。
 
 ## 0. 边界（冻结候选）
@@ -39,7 +40,10 @@ Status: **§0 已冻结（A 拟，2026-10-08；a/b 裁定同日落字——协�
 - `_complete` 默认值 = elapsed −（accumulated + 未闭合暂停段），下限
   保持 `max(1, …)`；ABANDONED 同口径闭合（虽不产 actual_minutes，
   状态一致性保持）。PAUSED 直达 COMPLETED/ABANDONED 先闭合当前
-  暂停段。
+  暂停段。`focus.completed` payload 在 `actual_minutes` 旁携
+  `accumulated_pause_seconds`（完成时刻已闭合暂停总累计；直达路径
+  先闭合的段计入；与列值同事务同源，规则同上条快照）——快照族
+  paused/resumed/completed 三角一次定形。
 - `payload.actual_minutes` 客户端显式覆盖保持（=用户修正面，与
   deviation_note 同语义；schema 已有界 0..10080）。
 
@@ -50,8 +54,9 @@ Status: **§0 已冻结（A 拟，2026-10-08；a/b 裁定同日落字——协�
 暂停-恢复全计；③PAUSED 直达 COMPLETED/ABANDONED 闭合暂停段；
 ④同类型转换事件 dedupe 各自独立（两次 pause = 两条事件）；⑤
 docstring 声明补真（每次转换有事件）；⑥迁移 + fixtures + 全量
-测试 + ruff/pyright 绿；⑦paused/resumed payload 快照断言（多轮
-各段时长独立可读，单事件自解释）。
+测试 + ruff/pyright 绿；⑦paused/resumed/completed payload 快照断言
+（多轮各段时长独立可读，completed 携完成时刻暂停总累计含直达闭合
+段，单事件自解释）。
 
 **已裁定项（2026-10-08 落字：协调人委托 A 拟，B 复审）**：
 
@@ -61,6 +66,10 @@ docstring 声明补真（每次转换有事件）；⑥迁移 + fixtures + 全�
   标注又无信号可选。落法：迁移前历史值语义在 DECISIONS 记一行
   "actual_minutes＝含暂停的墙钟上界"；单行修正面沿用客户端
   actual_minutes 覆盖。零 schema 成本、不回改（与"不负责"一致）。
-- b) **payload 携带暂停快照**（规格已并入上方修法与验收⑦）。理由：
-  paused/resumed 均为本片新增事件类型，一次定形免日后 payload 版
-  本化；audit 单事件自解释、免回放列状态。
+  附归属（B 复审确认项落字）：消费侧（estimates/偏差服务）加一行
+  actual_minutes 语义注释归实现片；迁移前历史时长是否降权区别对
+  待，未来另裁、不入本片。
+- b) **payload 携带暂停快照**（规格已并入上方修法与验收⑦；B 复审
+  RC-1 补齐 `focus.completed` 快照，paused/resumed/completed 三角
+  齐全）。理由：paused/resumed 均为本片新增事件类型，一次定形免
+  日后 payload 版本化；audit 单事件自解释、免回放列状态。
