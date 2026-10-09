@@ -1081,3 +1081,16 @@ test_write_guards::test_anchored_task_with_edited_projection_still_whole_deletes
 2. **异常路径丢自定义响应头（判断④的第二次实证）**——batch 路由的
    X-Data-Generation 挂 route response 后抛 409 即被异常响应替换；
    live 值改挂 ConflictError.headers（Retry-After 同款通道）。
+
+## 2026-10-08 路径 B：info-lib 回 MIT 基座重推导（协调人裁定，B 执行）
+
+四文件从 `06dc3cf0`（MIT 最后快照）重推导，LICENSE 改三段真话
+（任务书 `m5-p0-6-path-b.md` §0 冻结框）。两条长期约束：
+1. **活面/死面二分**——桌面行使面（login/roam-id/csrf/2FA/SM2）按
+   学校协议独立实现并保契约零漂移；死面（roam default/gitlab/card/cab、
+   设备管理流）保留 06 明文语义，**启用前必须按活面流程重走验证**。
+2. **分发封印不因路径 B 解除**——post-BSL 谱系障碍拆除 ≠ 放行；
+   §5-3 npm census / §5-4 cargo census / §5-5 资助事实仍是发布硬门。
+另：执行框先落任务书 §0 再动手（新规矩首用，独立 commit 3779846）；
+finger3 按实测保留（捕获块属 OneTHU 增量、桌面信任链活用），预核的
+丢弃倾向作废。
