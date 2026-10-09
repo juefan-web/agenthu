@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from backend.api.deps import CurrentUser
 from backend.core.errors import NotFoundError, ServiceUnavailableError
-from backend.worker.queue import get_arq_pool
+from backend.worker.queue import enqueue, get_arq_pool
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -42,7 +42,7 @@ async def enqueue_ping(user: CurrentUser) -> JobAccepted:
 
     try:
         pool = await get_arq_pool()
-        job = await pool.enqueue_job("ping", "pong", _job_id=user_job_id(user.id, "ping"))
+        job = await enqueue(pool, "ping", "pong", _job_id=user_job_id(user.id, "ping"))
     except Exception as exc:  # pragma: no cover - depends on Redis availability
         raise ServiceUnavailableError("Job queue is unavailable") from exc
     return JobAccepted(job_id=job.job_id if job else "")

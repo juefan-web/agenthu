@@ -41,7 +41,7 @@ from backend.services.memory_retrieval import retrieve_memories
 
 logger = logging.getLogger(__name__)
 
-PROMPT_VERSION = "v1"
+PROMPT_VERSION = "v2"
 
 _TOP_K_PER_LANE = 8
 _FINAL_CONTEXT_CHUNKS = 6
@@ -52,12 +52,17 @@ RRF_K = 60
 # provided chunk>」[n]. Both delimiters are unambiguous full-width marks.
 _CITATION_RE = re.compile(r"「(?P<quote>[^」]{1,400})」\[(?P<ref>\d{1,3})\]")
 
+# Ellipsis forms the v2 prompt permits for shortening a quote: whole spans
+# may be elided; every retained segment must stay verbatim and in order.
+_ELLIPSIS_RE = re.compile(r"…{1,2}|\.{3}")
+
 INSTRUCTIONS = (
     "你是课程学习助教。仅依据提供的课程资料片段回答问题；资料以编号条目"
     "给出，每条注明文件与页码。每个事实性陈述后必须紧跟一个引用：从所引"
     "条目原文中逐字摘录一小段放入「」中，紧跟其来源条目的编号，形如"
-    "「……摘录……」[2]。摘录必须是资料原文的连续片段（允许省略号缩短），"
-    "不得改写。资料中没有依据时，直接说明资料未覆盖，不要编造引用。"
+    "「……摘录……」[2]。摘录必须是资料原文的逐字片段；如需缩短，只能用"
+    "省略号「……」整段略去中间内容，保留的字词不得增删或改写。资料中没有"
+    "依据时，直接说明资料未覆盖，不要编造引用。"
     "如果提供了「已确认的个人学习记忆」，可结合它组织回答，但引用仍只能"
     "指向课程资料条目。用中文回答。"
 )
@@ -214,11 +219,41 @@ def build_context(chunks: list[RetrievedChunk], memories: list, question: str) -
     return "\n\n".join(parts)
 
 
+def _locate_quote(haystack: str, quote: str) -> tuple[int, int] | None:
+    """Locate a possibly-ellipsis-shortened quote as ordered verbatim
+    segments (audit gamma, ruling 3 / 方案 B).
+
+    The v2 prompt permits shortening a quote ONLY by eliding whole spans
+    with an ellipsis; each retained segment must appear verbatim and after
+    the previous one. Returns ``(first_segment_start, last_segment_end)``
+    or ``None`` when any segment is missing or out of order. A quote
+    without ellipsis degenerates to a plain ``find`` (single segment).
+    """
+
+    segments = [segment for segment in _ELLIPSIS_RE.split(quote) if segment]
+    if not segments:
+        return None
+    offset = 0
+    first_start = -1
+    last_end = -1
+    for segment in segments:
+        found = haystack.find(segment, offset)
+        if found < 0:
+            return None
+        if first_start < 0:
+            first_start = found
+        offset = found + len(segment)
+        last_end = offset
+    return first_start, last_end
+
+
 def verify_citations(
     answer_text: str, chunks: list[RetrievedChunk]
 ) -> tuple[str, bool, list[dict]]:
     """Mechanical verification (§3.4): every 「quote」[n] must be findable
-    in the cited chunk's normalized text.
+    in the cited chunk's normalized text — verbatim, or as ordered
+    verbatim segments when the model legally elided a middle span with an
+    ellipsis.
 
     Returns (cleaned_answer, grounded, citations). Failed pairs lose their
     marker in the answer text (the excerpt stays as plain prose); with no
@@ -242,15 +277,16 @@ def verify_citations(
         chunk = chunks[ref - 1] if 1 <= ref <= len(chunks) else None
         if chunk is not None:
             normalized_quote = normalize_text(quote)
-            span_start = haystacks[ref - 1].find(normalized_quote) if normalized_quote else -1
-            if span_start >= 0:
+            located = _locate_quote(haystacks[ref - 1], normalized_quote)
+            if located is not None:
+                span_start, span_end = located
                 citations.append(
                     {
                         "file_id": str(chunk.file_id),
                         "checksum": chunk.checksum,
                         "page": chunk.page,
                         "span_start": span_start,
-                        "span_end": span_start + len(normalized_quote),
+                        "span_end": span_end,
                         "quote": normalized_quote,
                     }
                 )
