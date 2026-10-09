@@ -114,4 +114,4 @@ pause 各自事件、序号键 `:paused:0/:paused:1` 直读断言、各段时长
 
 **实测**：本地全量 492 passed + 1 skipped（S3_ENDPOINT_URL 未设；487 基线 +
 6 新）、ruff check/format 全过、pyright 0 错（--pythonpath 指共享 venv）。
-CI 实测与 compose smoke（迁移实跑）待推头后记录。
+CI 实测（run `37886908862`，Backend job `113678839298`）：**493 passed + 0 skipped**（= 487 基线 + 6 新）；12 检查全绿两轮（分支推送 + PR）。compose smoke 的 api 启动命令即 `alembic upgrade head`——迁移 `b8e4f1a26d39` 在 smoke 栈实跑通过（api healthy）。

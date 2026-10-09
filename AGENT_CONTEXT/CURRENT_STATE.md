@@ -1546,4 +1546,4 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   零段闭合（专测）。消费侧（estimates/replan_triggers）语义注释 + D-037
   历史口径行落地。测试 6 新用例（墙钟回拨模拟，无 sleep）。本地全量
   **492 passed + 1 skipped**（S3 env；487 基线 + 6 新）、ruff/format 过、
-  pyright 0。CI 实测与 compose smoke（迁移实跑）待推头后补录。
+  pyright 0。CI 实测（run `37886908862`）：**493 passed + 0 skipped**（487 基线 + 6 新）、12 检查全绿；compose smoke 的 api 启动即 `alembic upgrade head`，迁移实跑通过。
