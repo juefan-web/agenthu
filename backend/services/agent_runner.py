@@ -1035,7 +1035,9 @@ async def _execute_run(
                         continue
                     # Stage 1: schema (one repair retry), Stage 2: permission,
                     # Stage 3: display — fixed order (§6.2).
-                    args, schema_error = _validate_arguments(tool, call.arguments_json, provider)
+                    args, schema_error = await _validate_arguments(
+                        tool, call.arguments_json, provider
+                    )
                     if schema_error is not None:
                         args = schema_error.get("repaired_args")
                         if args is None:
@@ -1252,14 +1254,18 @@ def _tool_result(call_id: str, status: str, payload: dict[str, Any]) -> Any:
     )
 
 
-def _validate_arguments(
+async def _validate_arguments(
     tool: ToolDefinition, arguments_json: str, provider: Any | None
 ) -> tuple[Any, dict[str, Any] | None]:
     """Stage 1 of the fixed pipeline: strict schema validation with ONE
-    repair retry (error fed back to the provider). Returns (args, None) on
-    success or (None, error) / (args, {"repaired_args": args}) semantics
-    simplified: on success returns (args, None); on failure returns
-    (None, {"repaired": False}) after the repair attempt also failed."""
+    repair retry (error fed back to the provider).
+
+    Returns ``(args, None)`` when the arguments validate as-is;
+    ``(args, {"repaired_args": args})`` when only the provider repair made
+    them valid (call sites can distinguish a healed call from a clean one);
+    ``(None, {"repaired": False})`` when both the original parse and the
+    repair attempt failed.
+    """
 
     try:
         return tool.input_model.model_validate_json(arguments_json), None
@@ -1268,14 +1274,15 @@ def _validate_arguments(
     if provider is None:
         return None, {"repaired": False}
     try:
-        repair = provider.generate(
+        repair = await provider.generate(
             f'Return corrected JSON arguments for tool "{tool.name}" matching this'
             f" schema exactly, nothing else: {tool.input_model.model_json_schema()}"
             f"\nOriginal input: {arguments_json}",
         )
-        return tool.input_model.model_validate_json(repair), None
+        repaired = tool.input_model.model_validate_json(repair)
     except Exception:
         return None, {"repaired": False}
+    return repaired, {"repaired_args": repaired}
 
 
 # ------------------------------------------------------------- watchdogs ---
