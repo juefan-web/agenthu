@@ -1,0 +1,24 @@
+# Evidence-grade variant of the OTel Collector skeleton (P0-5 slice 3): the
+# multi-process stack mounts this instead of the alpha file so the debug
+# exporter prints span-level detail (name / trace id / parent id) — the E7-9
+# cross-process traceparent assertions read it straight from `docker logs`.
+# The alpha skeleton keeps verbosity basic; only this file is detailed.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+
+exporters:
+  debug:
+    verbosity: detailed
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]

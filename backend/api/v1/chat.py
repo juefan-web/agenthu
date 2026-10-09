@@ -46,7 +46,7 @@ from backend.services.context_assembly import PROMPT_VERSION
 from backend.services.pagination import count_total, decode_cursor, keyset_page
 from backend.services.reference_invalidation import invalidate_chat_message_references
 from backend.services.write_guards import assert_write_allowed
-from backend.worker.queue import get_arq_pool
+from backend.worker.queue import enqueue, get_arq_pool
 
 logger = logging.getLogger(__name__)
 
@@ -481,7 +481,7 @@ async def _enqueue_run(run_id: uuid.UUID) -> None:
 
     try:
         pool = await get_arq_pool()
-        await pool.enqueue_job("execute_agent_run", str(run_id))
+        await enqueue(pool, "execute_agent_run", str(run_id))
     except Exception:  # pragma: no cover - Redis down must not fail the 202
         logger.warning(
             "Run enqueue failed; cron sweep will pick it up",

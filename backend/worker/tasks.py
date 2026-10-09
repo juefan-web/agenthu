@@ -53,6 +53,7 @@ from backend.services.storage_orphans import (
     release_storage_orphan,
 )
 from backend.worker.enqueue import drain_dirty_users
+from backend.worker.queue import enqueue
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +168,7 @@ async def drain_trigger_evaluation(ctx: dict[str, Any] | None = None) -> dict[st
     if pool is not None:
         for run_id in queued_runs:
             try:
-                await pool.enqueue_job("execute_agent_run", run_id)
+                await enqueue(pool, "execute_agent_run", run_id)
             except Exception:  # pragma: no cover - sweep is the net
                 logger.warning("Proactive run enqueue failed; sweep will claim it")
     return {
@@ -364,7 +365,7 @@ async def sweep_data_operations(ctx: dict[str, Any] | None = None) -> dict[str, 
     if pool is not None:
         for operation_id in due:
             try:
-                await pool.enqueue_job("run_data_operation", str(operation_id))
+                await enqueue(pool, "run_data_operation", str(operation_id))
                 dispatched += 1
             except Exception:  # pragma: no cover - next sweep retries
                 logger.warning(

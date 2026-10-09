@@ -41,6 +41,7 @@ from functools import wraps
 from typing import Any
 
 from opentelemetry import trace
+from opentelemetry.context import Context
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.botocore import BotocoreInstrumentor
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
@@ -295,6 +296,12 @@ def stage_span(stage: str, name: str, **fields: Any) -> Iterator[trace.Span]:
     Non-allowlisted keys are dropped with a one-time warning (privacy must
     fail closed, not crash). On exception the span records a bounded error
     code (exception class name) and re-raises — messages and events stay out.
+
+    Deliberately no keyword-only ``context`` parameter for the cross-process
+    seam: every existing caller passes fields via a ``**{...}`` dict splat,
+    and a typed non-str keyword parameter makes those splats a type error.
+    ``traced_job`` (the only parent-override call site) starts its span
+    directly instead.
     """
 
     span = _tracer().start_span(name)
@@ -320,6 +327,13 @@ def traced_job(fn: Callable[..., Any]) -> Callable[..., Any]:
     and ``functools.wraps`` keeps the module-qualified name the cron
     uniqueness keys derive from, so a plain callable signature is the honest
     shape here.
+
+    Cross-process continuation (P0-5 slice 3): the enqueue seam injects the
+    producer's traceparent as an ordinary job kwarg (arq jobs carry no
+    headers), and it is extracted here as the worker span's parent so the
+    api→worker hop keeps one trace id. The kwarg is popped before the call —
+    task signatures never see it — and a malformed value degrades to a root
+    span rather than an error.
     """
 
     name = getattr(fn, "__name__", "job")
@@ -332,7 +346,28 @@ def traced_job(fn: Callable[..., Any]) -> Callable[..., Any]:
                 fields["correlation.id"] = str(ctx["job_id"])
             if ctx.get("job_try") is not None:
                 fields["job.try"] = int(ctx["job_try"])
-        with stage_span("worker", f"worker.{name}", **fields):
-            return await fn(ctx, *args, **kwargs)
+        parent_context: Context | None = None
+        traceparent = kwargs.pop("_traceparent", None)
+        if isinstance(traceparent, str):
+            parent_context = TraceContextTextMapPropagator().extract(
+                carrier={"traceparent": traceparent}
+            )
+        # Started directly rather than via stage_span: this is the one span
+        # whose parent comes from elsewhere (a remote producer), and adding
+        # a typed keyword parameter to stage_span breaks its dict-splat
+        # callers. The attribute face stays identical: "stage" plus the two
+        # fields above, both allowlisted by construction, and the same
+        # bounded error code on exception.
+        span = _tracer().start_span(f"worker.{name}", context=parent_context)
+        with trace.use_span(span, end_on_exit=True) as active:
+            active.set_attribute("stage", "worker")
+            for key, value in fields.items():
+                active.set_attribute(key, value)
+            try:
+                return await fn(ctx, *args, **kwargs)
+            except Exception as exc:
+                active.set_status(Status(StatusCode.ERROR))
+                active.set_attribute("error.code", type(exc).__name__)
+                raise
 
     return wrapper

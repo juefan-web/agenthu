@@ -17,9 +17,11 @@ import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from typing import Any, cast
 
 import httpx
 import pytest
+from arq.connections import ArqRedis
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from opentelemetry import trace
@@ -30,6 +32,7 @@ from opentelemetry.trace import Link
 from opentelemetry.trace.status import StatusCode
 
 from backend.core import telemetry
+from backend.worker.queue import enqueue
 
 SECRET_QUERY = "supersecretvalue@example.com"
 SECRET_HEADER = "topsecret-token"
@@ -345,3 +348,123 @@ def test_disabled_by_default_is_a_no_op(monkeypatch: pytest.MonkeyPatch) -> None
     with telemetry.stage_span("run", "agent.run", **{"correlation.id": "c1"}) as span:
         assert not span.is_recording()
     telemetry.shutdown_telemetry()
+
+
+class _RecordingPool:
+    """Stand-in for the arq pool: records what the enqueue seam serialized."""
+
+    def __init__(self) -> None:
+        self.function: str | None = None
+        self.args: tuple[Any, ...] = ()
+        self.job_id: str | None = None
+        self.kwargs: dict[str, Any] = {}
+
+    async def enqueue_job(
+        self, function: str, *args: Any, _job_id: str | None = None, **kwargs: Any
+    ) -> None:
+        self.function = function
+        self.args = args
+        self.job_id = _job_id
+        self.kwargs = dict(kwargs)
+
+
+async def test_enqueue_seam_carries_traceparent_into_worker_spans(
+    mem_exporter: InMemorySpanExporter,
+) -> None:
+    """P0-5 slice 3: the producer's traceparent rides the job payload, and
+    the worker span continues that exact trace — one trace id across the
+    api→worker hop, asserted by id, not by header string shape."""
+
+    telemetry.shutdown_telemetry()
+    provider = telemetry.configure_telemetry("test-api", exporter=mem_exporter, force=True)
+    assert provider is not None
+    try:
+
+        async def _probe(ctx, value):
+            return value
+
+        recorder = _RecordingPool()
+        pool = cast(ArqRedis, recorder)
+        with provider.get_tracer("test.seam").start_as_current_span("producer.request") as producer:
+            await enqueue(pool, "ping", "pong", _job_id="job-1")
+
+        parent = producer.get_span_context()
+        assert parent is not None
+        traceparent = recorder.kwargs["_traceparent"]
+        assert isinstance(traceparent, str)
+        _, trace_id, span_id, _flags = traceparent.split("-")
+        assert int(trace_id, 16) == parent.trace_id
+        assert int(span_id, 16) == parent.span_id
+
+        # The worker side: traced_job pops the kwarg (a task without
+        # **kwargs accepts the call) and parents its span on it.
+        result = await telemetry.traced_job(_probe)({"job_id": "job-1"}, "pong", **recorder.kwargs)
+        assert result == "pong"
+        assert provider.force_flush()
+
+        worker_spans = [
+            span for span in mem_exporter.get_finished_spans() if span.name == "worker._probe"
+        ]
+        assert worker_spans, "worker span must be exported"
+        worker = worker_spans[0]
+        assert worker.parent is not None
+        assert worker.parent.span_id == parent.span_id
+        worker_context = worker.get_span_context()
+        assert worker_context is not None
+        assert worker_context.trace_id == parent.trace_id
+        assert _attrs(worker).get("correlation.id") == "job-1"
+    finally:
+        telemetry.shutdown_telemetry()
+
+
+async def test_enqueue_without_active_span_omits_traceparent(
+    mem_exporter: InMemorySpanExporter,
+) -> None:
+    """No producer span → no kwarg → the worker span stays a root, exactly
+    the pre-slice-3 semantics (cron jobs and bare enqueues)."""
+
+    telemetry.shutdown_telemetry()
+    provider = telemetry.configure_telemetry("test-api", exporter=mem_exporter, force=True)
+    assert provider is not None
+    try:
+
+        async def _probe(ctx, value):
+            return value
+
+        recorder = _RecordingPool()
+        await enqueue(cast(ArqRedis, recorder), "ping", "pong")
+        assert "_traceparent" not in recorder.kwargs
+
+        await telemetry.traced_job(_probe)({}, "pong")
+        assert provider.force_flush()
+        worker_spans = [
+            span for span in mem_exporter.get_finished_spans() if span.name == "worker._probe"
+        ]
+        assert worker_spans and worker_spans[0].parent is None
+    finally:
+        telemetry.shutdown_telemetry()
+
+
+async def test_malformed_traceparent_degrades_to_a_root_span(
+    mem_exporter: InMemorySpanExporter,
+) -> None:
+    """A garbage header must degrade, never crash the job — and the strict
+    task signature doubles as the pop proof: the wrapper consumed the kwarg."""
+
+    telemetry.shutdown_telemetry()
+    provider = telemetry.configure_telemetry("test-api", exporter=mem_exporter, force=True)
+    assert provider is not None
+    try:
+
+        async def _strict(ctx, value):
+            return value
+
+        result = await telemetry.traced_job(_strict)({}, "v", _traceparent="not-a-w3c-header")
+        assert result == "v"
+        assert provider.force_flush()
+        worker_spans = [
+            span for span in mem_exporter.get_finished_spans() if span.name == "worker._strict"
+        ]
+        assert worker_spans and worker_spans[0].parent is None
+    finally:
+        telemetry.shutdown_telemetry()

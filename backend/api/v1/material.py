@@ -26,7 +26,7 @@ from backend.schemas.material import (
     GroundingConsentRead,
     GroundingConsentUpdate,
 )
-from backend.worker.queue import get_arq_pool
+from backend.worker.queue import enqueue, get_arq_pool
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +98,7 @@ async def set_consent(
     if payload.enabled:
         try:
             pool = await get_arq_pool()
-            await pool.enqueue_job("embed_course_backfill", str(user.id), payload.course_name)
+            await enqueue(pool, "embed_course_backfill", str(user.id), payload.course_name)
         except Exception:
             # The switch is on; the backfill can be retried (a future upload
             # or re-save re-enqueues) — log and let the state stand.

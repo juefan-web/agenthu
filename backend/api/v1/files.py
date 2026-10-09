@@ -19,7 +19,7 @@ from backend.schemas.common import Page
 from backend.schemas.file import FileRead, SignedUrl
 from backend.schemas.material import MaterialChunkRead
 from backend.services.storage_orphans import register_storage_orphan, release_storage_orphan
-from backend.worker.queue import get_arq_pool
+from backend.worker.queue import enqueue, get_arq_pool
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +102,7 @@ async def upload(
         # whatever is still "uploaded" after the grace window.
         try:
             pool = await get_arq_pool()
-            await pool.enqueue_job("extract_material", str(obj.id))
+            await enqueue(pool, "extract_material", str(obj.id))
         except Exception:
             logger.warning(
                 "Extraction enqueue failed; cron sweep will retry",
