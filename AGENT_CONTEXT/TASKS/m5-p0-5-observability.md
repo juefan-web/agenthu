@@ -348,7 +348,16 @@ claim 层面等价两个 worker。
 **本地验证**（独占窗口，无并发 pytest 干扰）：全量 **473 passed +
 9 skipped**（总量 = 476 基线 + 6 新测试；9 skip = S3 1 + 晚窗守卫
 8）、ruff/format/pyright 0、OpenAPI 零漂移（再生成内容一致，仅
-CRLF 假改）。**CI 数字以实跑日志为准回填**。
+CRLF 假改）。**CI 实测（修复头 `4e2545c`，run 37869406909）：
+`482 passed, 2 warnings in 159.64s`，0 skipped**——恰为 476 基线 +
+6 新测试。首头 `14b9fba` CI 两败已修：①双派发测试在生产
+`session_scope`（绑 `DATABASE_URL`）与测试 engine（绑
+`TEST_DATABASE_URL`）在 CI 指向**不同库**时静默 not_found（本地两
+URL 同库故未暴露）——测试改为把 `backend.worker.tasks.session_scope`
+monkeypatch 到绑定测试 engine 的 scope（密封，本地以 CI 同款分离
+库环境复跑实证）；②retry_after 上界：同毫秒命中时
+`floor(window−0)+1 = window+1`（CI 实测 31/窗 30）——+1 进位是语义
+一部分，断言区间改为 `window−2 ≤ ra ≤ window+1` 并注明。
 
 **multi 栈实测**（本机 compose v5.3.1，项目名 `agenthu-multi`，
 证据跑完已拆栈、dev 栈未动）：

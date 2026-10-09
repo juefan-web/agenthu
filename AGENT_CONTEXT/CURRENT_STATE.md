@@ -1534,4 +1534,4 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   429）；`worker.ping` 的 Parent ID = api server span 的 ID、Trace ID 同
   ——跨进程贯通实测。环境事实：本地 otel-collector 0.116.0 镜像损坏
   （0.117.0 覆盖实测可用）；宿主 8000 被 WSL 内 llm_gateway 长占（证据
-  区间挪 8100-8101，§9 修正已注）。CI 数字以实跑日志为准回填 §10。
+  区间挪 8100-8101，§9 修正已注）。CI 实测（修复头 `4e2545c`，run 37869406909）：**482 passed + 0 skipped**（= 476 基线 + 6 新）。首头两败已修并留痕 §10：CI 的 DATABASE_URL 与 TEST_DATABASE_URL 不同库使生产 session_scope 静默 not_found（测试改绑测试 engine）；retry_after 同毫秒进位 window+1 入断言上界。
