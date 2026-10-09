@@ -51,9 +51,12 @@ def test_allows_within_window_and_blocks_after() -> None:
     assert limiter.hit("k") is True
     assert limiter.hit("k") is False
     # The oldest hit is milliseconds old, so the wait is almost the full
-    # window — asserted as a window-derived interval (B's #81 review note),
-    # with slack for scheduler jitter on a loaded runner.
-    assert window - 2 <= limiter.retry_after("k") <= window
+    # window (B's #81 review note). The honest interval is window-derived
+    # with TWO slop seconds below for runner jitter, and +1 above: the
+    # read can land in the same Redis TIME millisecond as the hit, where
+    # floor(window - 0) + 1 = window + 1 (measured on CI: 31 for a 30s
+    # window) — the +1 ceiling is part of the documented semantics.
+    assert window - 2 <= limiter.retry_after("k") <= window + 1
 
 
 @requires_redis

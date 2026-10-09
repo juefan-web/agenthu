@@ -13,13 +13,15 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from datetime import UTC, datetime
 
 import pytest
 import redis as redis_lib
 from sqlalchemy import func, insert, select, text
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from backend.config import get_settings
 from backend.models.audit import AuditLog
@@ -448,6 +450,27 @@ class TestConcurrentDispatch:
                 dl.enqueue_cleanup_items(session, operation, [_object_spec(ref) for ref in refs])
                 operation_id = operation.id
             assert operation_id is not None
+
+            # Bind the worker entry's session_scope to THIS test engine. CI
+            # points DATABASE_URL and TEST_DATABASE_URL at different
+            # databases; the production factory would read the other one,
+            # find no operation and silently delete nothing (the first CI
+            # run failed exactly that way — empty deletes, no errors).
+            factory = sessionmaker(bind=engine, expire_on_commit=False)
+
+            @contextmanager
+            def _engine_scope() -> Iterator[Session]:
+                session = factory()
+                try:
+                    yield session
+                    session.commit()
+                except Exception:
+                    session.rollback()
+                    raise
+                finally:
+                    session.close()
+
+            monkeypatch.setattr("backend.worker.tasks.session_scope", _engine_scope)
 
             def _drive() -> None:
                 asyncio.run(run_data_operation(None, str(operation_id)))
