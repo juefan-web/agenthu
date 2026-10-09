@@ -1567,3 +1567,15 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   历史口径行落地。测试 6 新用例（墙钟回拨模拟，无 sleep）。本地全量
   **492 passed + 1 skipped**（S3 env；487 基线 + 6 新）、ruff/format 过、
   pyright 0。CI 实测（run `37886908862`）：**493 passed + 0 skipped**（487 基线 + 6 新）、12 检查全绿；compose smoke 的 api 启动即 `alembic upgrade head`，迁移实跑通过。
+
+- **P0-6 §5-4 cargo census 交审（A，2026-10-09，分支 `feature/m5-p0-6-cargo-census`，
+  §0 先落字独立 commit `ed61408`）**：src-tauri cargo 依赖全量许可普查——
+  Cargo.lock **579 包**（578 registry + 1 自有，零 git/path 源）经
+  `cargo fetch --locked` + 本地随树文件读取法全覆盖：**permissive 573 /
+  weak 5（全 MPL-2.0）/ strong 0 / special 0，GPL 族红线零触发**；
+  openssl 0 在树；ryu 的 SPDX BSL-1.0 文件级坐实为 **Boost**（非
+  Business Source License）；rusqlite bundled SQLite → Notice 义务；
+  多版本 46 crate 名按包行计。产出回填 license-inventory §5-4 条目转
+  闭合 + 新 §7；任务书 `m5-p0-6-cargo-census.md` §1 执行记录（脚本不入
+  仓，方法可复现）。零代码改动（docs-only）。**cargo 面无阻断；封印待
+  §5-3（B）/§5-5（资助事实）**。待 B head-bound 互审。
