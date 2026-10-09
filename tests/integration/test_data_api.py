@@ -688,3 +688,11 @@ class TestAccountDeletion:
                 select(AuditLog.id).where(AuditLog.user_id == user_id)
             ).all()
         )
+        # External review #5: the payload also carries the execution-time
+        # scan spec — owner predicate + the preview row's created_at as the
+        # watermark for post-closure rows.
+        scan = redact.payload["scan"]
+        assert scan["owner_user_id"] == me["id"]
+        preview_row = db_session.get(DataPreview, uuid.UUID(preview["id"]))
+        assert preview_row is not None
+        assert datetime.fromisoformat(scan["watermark"]) == preview_row.created_at

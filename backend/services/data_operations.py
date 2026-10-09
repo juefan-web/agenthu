@@ -18,7 +18,7 @@ import hmac
 import json
 import secrets
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import delete, select, update
@@ -195,28 +195,46 @@ def _impact_payload(closure: ClosureResult) -> dict:
 
 
 def _cleanup_specs(
-    session: Session, user_id: uuid.UUID, target: dict, closure: ClosureResult
+    session: Session,
+    user_id: uuid.UUID,
+    target: dict,
+    closure: ClosureResult,
+    *,
+    audit_watermark: datetime,
 ) -> list[dl.CleanupItemSpec]:
     """Registry-driven durable work for the slice-2 executor.
 
     Every relational item carries the exact closure ids — the account scope
     included: id-addressed deletes are order-independent under the FK graph
-    (the users-row CASCADE wipes dependent rows either way, and audit redact
-    must be id-addressed because audit user_id SET-NULLs away)."""
+    (the users-row CASCADE wipes dependent rows either way). The audit family
+    keeps its ids as the 90-day receipt anchor but redacts by EXECUTION-TIME
+    scan (external review #5): the closure cannot enumerate rows its own
+    deletion flow writes afterwards (the preview/confirm middleware rows),
+    and the users-row CASCADE SET-NULLs user_id mid-run, so the executor
+    scans owner-linked rows while the users row lives plus watermark-bounded
+    orphaned rows afterwards."""
 
     specs: list[dl.CleanupItemSpec] = []
     account = target["kind"] == "account"
     for impact in closure.impacts:
         if impact.redact_ids and not impact.delete_ids:
-            # Audit family: redact in place, never delete rows (90d TTL);
-            # real row ids so the executor can locate rows after the users
-            # row is gone (adjudication ②).
+            # Audit family: redact in place, never delete rows (90d TTL).
+            # ids stay the receipt anchor — they locate pre-closure rows once
+            # the CASCADE SET-NULLs user_id away (adjudication ②); the scan
+            # catches every row the frozen list cannot (external review #5).
             specs.append(
                 dl.CleanupItemSpec(
                     impact.resource_type,
                     f"{impact.resource_type}:redact",
                     CleanupItemAction.DELETE_RELATIONAL.value,
-                    {"redact": True, "ids": list(impact.redact_ids)},
+                    {
+                        "redact": True,
+                        "ids": list(impact.redact_ids),
+                        "scan": {
+                            "owner_user_id": str(user_id),
+                            "watermark": audit_watermark.isoformat(),
+                        },
+                    },
                 )
             )
         elif impact.delete_ids:
@@ -507,7 +525,9 @@ def confirm_deletion(
             session, handle=handle, target=preview.target, closure=closure, generation=generation
         )
 
-    specs = _cleanup_specs(session, user.id, preview.target, closure)
+    specs = _cleanup_specs(
+        session, user.id, preview.target, closure, audit_watermark=preview.created_at
+    )
     dl.enqueue_cleanup_items(session, operation, specs)
     operation.progress_total = len(specs)
     operation.outstanding_count = len(specs)
