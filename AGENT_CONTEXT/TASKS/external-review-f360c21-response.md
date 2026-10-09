@@ -137,3 +137,10 @@ status）转 E7 执行轮与部署演练的观察项。
   R1（隐私急修）→ R2（E7 阻断面）→ R3（控制面+余量+NOTICES 对账
   吸收）→ E7 双轮 → M5 收口；E7 派工时点后移、内容不变；#7 修复
   方向预裁为 receipt 窄路径重排入口。
+- 2026-10-09 R2-A 执行（#5，分支 `fix/audit-redact-execution-scan`）：
+  审计族 redact 改执行期扫描——冻结 ids 降级为 90d 回执锚（级联后
+  仍可定位），扫描谓词 = owner（users 行存续期、不限时）∪ 孤儿
+  （actor=user、user_id 已被级联置空、created_at ≥ preview.created_at
+  水位）；born-anonymous 行不误伤（全局取证轨迹保 IP）。VERIFY 同步
+  扩为 ids 存活+擦净 ∪ 扫描面零内容。E7-5 retained 预期与 manifest
+  已随实现修订（预登记纪律）。
