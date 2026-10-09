@@ -1,9 +1,6 @@
 # M5-P0-6 许可逐文件盘点（提前启动的清点阶段）
 
-Status: **§5-1/§5-2 已闭合（路径 B 已执行拆除 post-BSL 谱系障碍）；
-§5-4 cargo 普查已闭合无阻断（2026-10-09，§7）。分发封印维持，待 §5-3
-（npm，B）与 §5-5（资助事实）。阻断规则：未澄清 → 不发布。清点启动于
-2026-10-07（#75 合并后，协调人既有授权）。**
+Status: **§5-1～§5-5 全闭合：路径 B 拆除 post-BSL 谱系障碍；§5-3 npm（§8）与 §5-4 cargo（§7）双普查零红旗；§5-5 资助事实经用户裁定①闭合（§9）。用户裁定②③④（§9）：源码临时公开、完毕后关闭（README `a70f7e2`）——源码面事实公开 / 二进制封印维持；不加 license、finding① 关闭；路径 A 现阶段不外联、终局点再议。阻断规则：未澄清 → 不发布。清点启动于 2026-10-07（#75 合并后，协调人既有授权）。**
 
 依据：THIRD_PARTY_NOTICES.md（项目级骨架，已存在）、
 vendor/onethu/{LICENSE,VENDORED_FROM.md,LICENSES/THIRD-PARTY.md,
@@ -105,12 +102,15 @@ Change Date 前不覆盖 Agenthu 的任何分发；承重件只剩 THU Info 邮�
 
 - **源码分发**（仓库/源码包）：路径 B 已执行（四文件回到 `06dc3cf0`
   MIT 基座重推导，见 §2.2 顶部注记与 `m5-p0-6-path-b.md`），**post-BSL
-  再分发的谱系障碍已拆除**；但**分发封印不因路径 B 自动解除**——源码
-  公开化仍待 §5-3 npm 依赖普查与 §5-5 资助事实澄清放行。当前私库
-  协作态维持。OneTHU 附加限制（非商业/禁滥用）继续适用且现状一致 ✓。
-- **二进制分发**（Tauri 安装包）：维持封印。放行前置 = §5-3/5-4 依赖
-  机械普查 + §5-5 资助事实。§5-2 摇树实测已闭合（红线全过；路径 B 后
-  复测 zhjwxk 5→0，见 path-b §1）。
+  再分发的谱系障碍已拆除**；§5-3 npm（§8）与 §5-4 cargo（§7）双普查
+  零红旗、§5-5 资助事实经用户裁定闭合（§9 裁定①）。**用户裁定②（§9）：
+  源码临时公开、开发完毕后关闭**——源码面封印语义调整为事实公开态
+  （README 声明 `a70f7e2`：temporarily public / No license is granted /
+  all rights reserved / 完毕后关闭）。OneTHU 附加限制（非商业/禁滥用）
+  继续适用且现状一致 ✓。
+- **二进制分发**（Tauri 安装包）：**封印维持**（用户裁定②的语义调整仅涉
+  源码面）。§5-3/§5-4 双普查与 §5-5 已全闭合，事实面无阻断；§5-2 摇树
+  实测已闭合（红线全过；路径 B 后复测 zhjwxk 5→0，见 path-b §1）。
 
 ## 4. 与冻结规则的对齐检查
 
@@ -121,7 +121,7 @@ Change Date 前不覆盖 Agenthu 的任何分发；承重件只剩 THU Info 邮�
   列入澄清问题（§5-5）。
 - OneTHU 附加限制①的"资助"子句同样依赖项目资助事实（§5-5 同问）。
 
-## 5. 未澄清清单（§5-1/§5-2 已实测闭合；其余为发布硬门）
+## 5. 未澄清清单（§5-1～§5-5 全闭合，2026-10-09；用户裁定转录见 §9）
 
 1. **[已闭合，结论不利] info-lib 基线归属**：上游两基线三方逐文件
    diff（thu-info-app @ `06dc3cf0` vs tag `v3.17.0`，工作副本
@@ -153,29 +153,37 @@ Change Date 前不覆盖 Agenthu 的任何分发；承重件只剩 THU Info 邮�
      `xkAction` 路径 0 命中——**无害解释成立，无需收窄**；§2.1 引用
      结论已修正（直接 import 0 ≠ 传递引用 0）；
    - learn/auth/info 等被引用模块在场 = 预期行为。
-3. **npm 依赖全量普查**（desktop + contracts 的 package.json 树）：
-   `pnpm dlx license-checker` 出 JSON 归档；非许可（GPL 族等）若出现
-   即升级为阻断项。
+3. **[已闭合，零红旗] npm 依赖全量普查**（§8 实测，2026-10-09，B）：
+   lockfile 全量 232 项全宽松（199 MIT / 11 BSD-2 / 9 ISC / 8 Apache-2.0 /
+   2 BSD-3 / 1 MIT-0 / 1 Apache-2.0 OR MIT / 1 CC-BY-4.0）；copyleft/BSL/
+   未解析零项。方法与交叉对账见 §8；license-checker 因 pnpm 符号链接布局
+   只能见 23 项（已知局限），可见面与本普查一致。附带 finding：仓库自有
+   5 个 workspace package.json 均无 license 字段、仓库根无 LICENSE 文件
+   （与分发封印自洽；许可选择属协调人/用户层决策）。
 4. **[已闭合，无阻断] cargo crate 普查**（2026-10-09，A 执行，方法与
    全量数字见 §7）：579 包全覆盖（578 registry + 1 自有），permissive 573 /
    weak 5（全 MPL-2.0）/ strong **0** / special 0；openssl 系 0 在树；
    初筛结论（直接依赖全宽松）经全量机械普查证实；rusqlite bundled SQLite
    走 Notice 条款（§7 特例）。
-5. **项目资助事实确认**（协调人层面）：Agenthu 是否接受/计划接受任何
-   清华关联机构资助——同时决定 OneTHU 附加限制①子句与 LearnX 例外
-   条款的风险评估输入。
+5. **[已闭合，用户裁定①] 项目资助事实确认**（2026-10-09 用户裁定：
+   **不受资助**，见 §9）——OneTHU 附加限制①「资助」子句与 LearnX 例外
+   条款（清华信息化技术中心任职/清华关联资助）的风险评估输入随之闭合。
 6. **授权邮件延伸**（§5-1 后升级为**发布总门**）：THU Info 授权点名
    OneTHU；实测已证 post-BSL 派生文件存在 → 路径 A 的书面确认或
    路径 B 的回退重推导，二者必居其一才能解除源码+二进制分发封印。
+   **路径 B 已执行（谱系障碍拆除）；用户裁定④（§9）：路径 A 现阶段
+   不外联、终局点再议**——本条降为终局点复核项。
 
 ## 6. 下一步（正式 P0-6 切片内）
 
 §5-1/§5-2 两实测动作**已执行并回填**；**路径 B 执行片已完成实现与本地
-验收**（`m5-p0-6-path-b.md`，待 PR 互审）。剩余序列：路径 B PR 走
-head-bound 互审合并 → §5-3/5-4 依赖机械普查 → §5-5 资助事实澄清 →
-更新根 THIRD_PARTY_NOTICES.md（吸收逐文件表与分发结论）。清点阶段
-总结论修订：**post-BSL 谱系障碍已由路径 B 拆除；分发封印待
-§5-3/5-4/§5-5；venue 红线与摇树面实测过关且路径 B 后复测更好。**
+验收**（`m5-p0-6-path-b.md`，待 PR 互审）。剩余序列：更新根
+THIRD_PARTY_NOTICES.md（吸收逐文件表与分发结论；npm 侧清单按 §8、
+cargo 面义务清单按 §7 吸收）。清点阶段
+总结论修订：**post-BSL 谱系障碍已由路径 B 拆除；§5-3/§5-4/§5-5 已
+全闭合（§5-5 经用户裁定①，§9）；封印语义按用户裁定②（§9）：源码面
+事实公开 / 二进制封印维持；venue 红线与摇树面实测过关且路径 B 后
+复测更好。**
 
 ## 7. §5-4 cargo 依赖机械普查实测（2026-10-09，A 执行，B 复审）
 
@@ -230,3 +238,136 @@ windows_{i686,x86_64}_{msvc,gnu} 各 ×4 等）——按包行计数含在 579 �
 permissive 声明保留（MIT/Apache 系惯例文本）+ MPL-2.0 五包的文件级声明
 与源可得说明 + SQLite Notice。**分发封印不因本普查解除**——仍待 §5-3
 （npm 面，B 执行）与 §5-5（资助事实，协调人层面）。
+
+## 8. §5-3 npm 依赖普查实测（B，2026-10-09；任务书 m5-p0-6-npm-census.md §0 冻结后执行；RC 修正轮后改号 §7→§8，cargo 普查先并占 §7）
+
+### 方法（三面谱系）
+
+- **权威清单** = `pnpm-lock.yaml`（分发携带物本体）：`packages:` 段 232 个
+  name@spec 锁定项 = `snapshots:` 段 232 条依赖图（peer 后缀全剥离后
+  集合相等；RC 修正轮 yaml 全量解析复核，脚本 v10）。五 importer：root、
+  apps/desktop、packages/contracts、vendor/onethu/core、vendor/onethu/info-lib。
+  注：单层剥离 snapshots 多重 peer 后缀会残留 7 个伪基键，232+7=239 即
+  任务书 §0 冻结数的来源（见 m5-p0-6-npm-census.md §2 漂移链）。
+- **许可事实** = 本地 store（`node_modules/.pnpm`，`pnpm install
+  --frozen-lockfile` 对齐后）：ls 共 184 项 = 182 个版本目录 + 1 个
+  `node_modules` 目录 + `lock.yaml` 文件；182 个版本目录身份全部在
+  lock（零过期目录；含 5 个 Windows 长路径截断名目录，身份由目录内
+  package.json 反查），各按精确路径
+  `.pnpm/<dir>/node_modules/<name>/package.json` 读取 license 字段；
+  其余 50 项为**平台 optional 二进制本机未装**——未装侧 = @esbuild/*
+  25（家族总 26，win32-x64 本机已装）+ @rollup/* 23（家族总 25，
+  win32-x64-gnu 与 win32-x64-msvc 本机已装）+ @napi-rs/lzma-linux-x64-gnu
+  1 + fsevents 1——许可取 npm registry 元数据（`npm view`，50/50 全部
+  MIT，v10 重跑复核）。
+- **交叉工具** = `pnpm dlx license-checker`（§5-3 原文点名）：pnpm 符号
+  链接布局下仅能见 23 项（已知局限，非树不全）——可见面上与本普查结论
+  一致（其 3 个 UNLICENSED = workspace link 无 license 字段，见 finding）。
+
+### 结果（232/232 全量分级）
+
+| 分级 | 数量 | 明细 |
+|---|---|---|
+| 宽松 | **232** | MIT 199 · BSD-2-Clause 11 · ISC 9 · Apache-2.0 8 · BSD-3-Clause 2 · MIT-0 1（@csstools/color-helpers）· Apache-2.0 OR MIT 1（@tauri-apps/api）· CC-BY-4.0 1（caniuse-lite） |
+| Copyleft | **0** | — |
+| BUSL/BSL | **0** | — |
+| 未解析/无许可 | **0**（第三方内） | — |
+
+特殊项点名（均宽松）：`MIT-0`（SPDX 零署名 MIT 变体）、`CC-BY-4.0`
+（caniuse-lite 数据面，署名要求随 Notice 满足）、`Apache-2.0 OR MIT`
+（双许可任选）。
+
+小桶逐键清单（RC 修正轮补，供 head-bound 复核；MIT 199 项过长不列，
+逐键表在任务书 §2 所指脚本输出中）：
+
+- **MIT-0 (1)**：@csstools/color-helpers@5.1.0
+- **Apache-2.0 (8)**：@playwright/test@1.63.0、playwright@1.63.0、
+  playwright-core@1.63.0、typescript@5.9.3、aria-query@5.3.0、
+  baseline-browser-mapping@2.11.26、expect-type@1.4.0、xml-name-validator@5.0.0
+- **ISC (9)**：boolbase、electron-to-chromium、lru-cache@10.4.3、
+  lru-cache@5.1.1、picocolors、saxes、semver@6.3.1、siginfo、yallist
+- **BSD-3-Clause (2)**：source-map-js@1.2.1、tough-cookie@5.1.2
+- **BSD-2-Clause (11)**：cheerio-select、css-select、css-what、
+  domelementtype、domhandler、domutils、entities@4.5.0、entities@6.0.1、
+  entities@7.0.1、nth-check、webidl-conversions
+- **Apache-2.0 OR MIT (1)**：@tauri-apps/api@2.11.1
+- **CC-BY-4.0 (1)**：caniuse-lite@1.0.30001812
+
+### vendored 传递闭包（27 项，全宽松；RC 修正轮由 25 上修）
+
+`vendor/onethu/core`（aes-js、sm-crypto + typescript devDep）与
+`vendor/onethu/info-lib`（cheerio、sm-crypto）经 snapshots 图 BFS：
+aes-js@3.1.2 (MIT)、sm-crypto@0.5.7 (MIT)、cheerio@1.2.0 (MIT) 及其
+全子树（parse5 族 / htmlparser2 族 / domutils 族 / undici / iconv-lite
+/ jsbn / entities 三版本 4.5.0+6.0.1+7.0.1 等，BSD-2/MIT/ISC），
+**闭包内零非宽松项**——路径 B 后 vendored 树自身干净。v4 原报 25 系
+正则依赖解析漏 entities@6.0.1/@7.0.1 两个版本键（yaml 图 BFS 修正）。
+apps/desktop 全闭包（含 dev）**212** 项（原报 209，同因正则解析欠计；
+v4 未留逐键清单，无法逐键归因差异）同样零
+非宽松；五 importer 闭包并集 = 232 = lock 全量（完整性复核闭合）。
+
+### 事实面抽查（license 字段 vs 包内 LICENSE 文件）
+
+九个生产直依赖（react/react-dom/zod/zustand/@tanstack/react-query/
+@tauri-apps/api/aes-js/sm-crypto/cheerio）：**字段与 LICENSE 文件全部
+在场一致**，无字段说谎项。
+
+### Findings（红旗为零，两项事实上报）
+
+1. **仓库自有包无 license 字段**（**已按用户裁定③关闭，2026-10-09，见
+   §9**）：root、apps/desktop、packages/contracts、vendor/onethu/core、
+   vendor/onethu/info-lib 五个 package.json 均无 license 字段，仓库根无
+   LICENSE 文件。**与 README 声明 `a70f7e2` 逐点对账**（锚定
+   `git show origin/main:README.md`）："This is a development repository
+   that is temporarily public. **No license is granted** - all rights
+   reserved - and the repository will be closed once development completes.
+   Third-party and vendored materials (including `vendor/onethu/`) remain
+   under their own in-tree LICENSE files."——① 不加 license（裁定③）与
+   五包无字段一致 ✓；② all-rights-reserved 声明替代 LICENSE 文件 ✓；
+   ③ vendored 例外与 `vendor/onethu/LICENSE` 在场现状一致 ✓。原「源码
+   公开化前必须先定许可」以用户显式裁定（不加 license + 声明）方式
+   解除，finding 关闭。
+2. **caniuse-lite (CC-BY-4.0)**：数据集署名条款，THIRD_PARTY_NOTICES
+   吸收时需保留署名链（browserslist 数据来源标注）。
+
+### RC 修正轮（2026-10-09；全账见 m5-p0-6-npm-census.md §2）
+
+- **修正执行**：optional 明细 24+22 → 未装侧 **25+23+1+1**（家族总
+  esbuild 26 / rollup 25 / lzma 1 / fsevents 1 = 53，win32 本机实装 3）；
+  vendored 闭包 25 → **27**、desktop 闭包 209 → **212**、五 importer
+  并集 = 232 完整复核；小桶逐键清单上墙；5 个截断目录名披露。
+- **数字漂移链**：§0 冻结 239 = 232 + 7 个单层剥离伪基键（机制已复现）；
+  v4 终报 232 宇宙数正确、错在闭包/optional 明细/截断目录披露。
+- **与 RC 锚点的未决分歧（提请协调人复核）**：RC 称 lock 227/227、
+  「3 个 playwright 目录过期不在 lock」、227 = 177 + 50、分布
+  MIT 190/ISC 13/BSD-2 10/Apache 9/MIT-0 2/BSD-3 1——以上均无法
+  复现：yaml 全量解析 232/232/5（一行复现命令在任务书 §2）；
+  playwright 三键 @1.63.0 即锁定版本（lock 行号在案）且 store 三目录
+  皆活；store 实测 182 版本目录全部在 lock 零过期；实测自洽模型
+  **232 = 182 已装 + 50 未装**；分布逐键可查（上方小桶清单）。
+  **本节所有数字以实测 232 为锚，待协调人以同命令复核裁定。**
+- **新规生效**（RC 裁定⑤ + 实测收紧）：普查分母永远取 lock（yaml
+  全量解析）；store 只作 license 事实源且须精确路径读取（禁止目录内
+  首匹配枚举）；截断目录名反查身份；冻结时点数字必须与终测同脚本
+  同保存命令产出。
+
+### 边界重申
+
+本普查自身不解除任何封印；封印状态以 §3 与 §9 用户裁定为准（源码面
+事实公开 / 二进制封印维持）。普查为事实产出，红旗为零 ≠ 自动放行；
+bundle 实际打包面另见 §5-2（已闭合）。
+
+## 9. 用户裁定转录（2026-10-09，协调人转达；原样转录）
+
+1. **裁定①（资助事实 → §5-5）**：**不受资助**——OneTHU 附加限制①
+   「资助」子句与 LearnX 例外条款（清华信息化技术中心任职/清华关联
+   资助）的风险评估输入闭合；§5 条目 5 转「已闭合」。
+2. **裁定②（源码分发封印语义）**：**源码临时公开、开发完毕后关闭**——
+   封印语义调整为「源码面事实公开 / 二进制封印维持」；README 声明已落
+   （`a70f7e2`）。
+3. **裁定③（自有包许可 → finding①）**：**不加 license**——README 声明
+   即裁定载体（No license is granted / all rights reserved / 临时公开
+   完毕后关闭）；finding① 关闭（对账见 §8）；vendored 材料继续走各自
+   in-tree LICENSE。
+4. **裁定④（路径 A 外联）**：**现阶段不外联，终局点再议**——§5 条目 6
+   降为终局点复核项。
