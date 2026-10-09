@@ -242,8 +242,14 @@ async def test_continue_with_tool_results_replays_the_full_request_body() -> Non
     # The tools array travels again: Turn 2+ can still issue tool calls.
     assert [tool["name"] for tool in body["tools"]] == ["state.read", "memory.retrieve"]
     assert body["instructions"] == "be concise"
-    # The context rides along for Turn 3+ (no re-derivation needed).
-    assert final.context == turn.context
+    # The context rides along for Turn 3+; under the ruling-2 revision it
+    # also accumulates this round's items into history (request bytes above
+    # are the unchanged Turn-2 acceptance face).
+    assert final.context is not None and turn.context is not None
+    assert final.context.input_text == turn.context.input_text
+    assert final.context.instructions == turn.context.instructions
+    assert final.context.tool_schemas == turn.context.tool_schemas
+    assert final.context.history[-2:] == body["input"][-2:]
 
 
 async def test_continue_without_context_keeps_the_legacy_shape() -> None:
@@ -264,3 +270,52 @@ async def test_continue_without_context_keeps_the_legacy_shape() -> None:
         "function_call_output",
     ]
     assert "tools" not in body and "instructions" not in body
+
+
+async def test_two_tool_rounds_accumulate_history_into_turn_three() -> None:
+    # Ruling-2 revision: Turn N replays the prompt plus EVERY function_call
+    # and function_call_output item of rounds 1..N-1 — with a fresh pair of
+    # ids per round, in round order. Turn 2 stays byte-shaped as before.
+    transport = _handler(
+        [
+            _function_call_response({"call_id": "r1", "name": "state.read", "arguments": "{}"}),
+            _function_call_response(
+                {"call_id": "r2", "name": "memory.retrieve", "arguments": "{}"}
+            ),
+            _text_response(),
+        ]
+    )
+    provider = OpenAIProvider(api_key="k", transport=transport)
+    provider._max_retries = 0
+    turn = await provider.generate_with_tools("两轮工具交互", "be precise", _tool_schemas())
+    turn2 = await provider.continue_with_tool_results(
+        turn, [ToolResult(call_id="r1", status="succeeded", safe_result_json='{"a": 1}')]
+    )
+    await provider.continue_with_tool_results(
+        turn2, [ToolResult(call_id="r2", status="succeeded", safe_result_json='{"b": 2}')]
+    )
+    turn2_body = transport.calls[1]["body"]
+    turn3_body = transport.calls[2]["body"]
+    # Turn 2: prompt + round 1 only (unchanged shape from the beta tests).
+    assert [item.get("call_id") or "prompt" for item in turn2_body["input"]] == [
+        "prompt",
+        "r1",
+        "r1",
+    ]
+    # Turn 3: prompt + round 1 pair + round 2 pair, in round order.
+    assert [item.get("call_id") or "prompt" for item in turn3_body["input"]] == [
+        "prompt",
+        "r1",
+        "r1",
+        "r2",
+        "r2",
+    ]
+    assert [item["type"] for item in turn3_body["input"][1:]] == [
+        "function_call",
+        "function_call_output",
+        "function_call",
+        "function_call_output",
+    ]
+    assert turn3_body["store"] is False
+    assert [tool["name"] for tool in turn3_body["tools"]] == ["state.read", "memory.retrieve"]
+    assert turn3_body["instructions"] == "be precise"

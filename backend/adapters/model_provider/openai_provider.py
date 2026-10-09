@@ -245,6 +245,23 @@ class OpenAIProvider:
             ),
         )
 
+    @staticmethod
+    def _call_item(call: ToolCall) -> dict[str, object]:
+        return {
+            "type": "function_call",
+            "call_id": call.call_id,
+            "name": call.name,
+            "arguments": call.arguments_json,
+        }
+
+    @staticmethod
+    def _output_item(result: ToolResult) -> dict[str, object]:
+        return {
+            "type": "function_call_output",
+            "call_id": result.call_id,
+            "output": result.safe_result_json,
+        }
+
     async def continue_with_tool_results(
         self, turn: ModelTurn, results: list[ToolResult]
     ) -> ModelTurn:
@@ -255,36 +272,28 @@ class OpenAIProvider:
         original prompt (as the first input item), the instructions and the
         tool schemas are replayed from the turn's in-process context —
         without them Turn 2+ would be a beheaded request that can never
-        issue another tool call (audit beta). The context rides the
-        ModelTurn only and never reaches logs or spans.
+        issue another tool call (audit beta). Per the ruling-2 revision the
+        replay accumulates across rounds: Turn N carries the prompt plus
+        every function_call / function_call_output item of rounds 1..N-1.
+        The context rides the ModelTurn only and never reaches logs or
+        spans.
         """
 
         context = turn.context
+        round_items: list[dict[str, object]] = [
+            self._call_item(call) for call in turn.tool_calls
+        ] + [self._output_item(result) for result in results]
         input_items: list[dict[str, object]] = []
-        if context is not None and context.input_text:
-            input_items.append(
-                {
-                    "role": "user",
-                    "content": [{"type": "input_text", "text": context.input_text}],
-                }
-            )
-        input_items.extend(
-            {
-                "type": "function_call",
-                "call_id": call.call_id,
-                "name": call.name,
-                "arguments": call.arguments_json,
-            }
-            for call in turn.tool_calls
-        )
-        input_items.extend(
-            {
-                "type": "function_call_output",
-                "call_id": result.call_id,
-                "output": result.safe_result_json,
-            }
-            for result in results
-        )
+        if context is not None:
+            if context.input_text:
+                input_items.append(
+                    {
+                        "role": "user",
+                        "content": [{"type": "input_text", "text": context.input_text}],
+                    }
+                )
+            input_items.extend(context.history)
+        input_items.extend(round_items)
         body: dict[str, object] = {
             "model": get_settings().responses_model,
             "store": False,
@@ -296,7 +305,12 @@ class OpenAIProvider:
             if context.tool_schemas:
                 body["tools"] = self._tool_wire(context.tool_schemas)
         next_turn = self._parse_turn(await self._post_responses(body))
-        return replace(next_turn, context=context)
+        if context is None:
+            return next_turn
+        # The original turn's context stays untouched (frozen); the next
+        # turn carries the extended history for the following replay.
+        extended = replace(context, history=[*context.history, *round_items])
+        return replace(next_turn, context=extended)
 
     async def embed_texts(self, texts: list[str]) -> EmbeddingResult:
         if not texts:
