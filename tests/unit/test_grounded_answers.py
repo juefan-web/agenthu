@@ -142,3 +142,51 @@ def test_cleaned_marker_order_matches_citations_order() -> None:
         "傅里叶变换将时域信号分解为频率分量",
         "频谱展示了各频率的幅度",
     ]
+
+
+# --------------------------------------------- audit gamma (ruling 3) ---
+
+
+def test_ellipsis_shortened_quote_survives_with_wrapping_span() -> None:
+    # The v2 prompt allows eliding a middle span; the surviving segments
+    # are verbatim and in order, so the citation must survive and its span
+    # must reach from the first segment's start to the last segment's end.
+    answer = "分解思想与频谱展示「傅里叶变换将时域信号分解为频率分量……频谱展示了各频率的幅度」[1]。"
+    cleaned, grounded, citations = verify_citations(answer, [CHUNK_1])
+    assert grounded is True
+    assert len(citations) == 1
+    assert CHUNK_1.content[citations[0]["span_start"] : citations[0]["span_end"]] == (
+        "傅里叶变换将时域信号分解为频率分量。频谱展示了各频率的幅度"
+    )
+    assert cleaned == answer
+
+
+def test_ellipsis_quote_with_reordered_segments_is_dropped() -> None:
+    # Segments exist in the chunk but appear in reverse order: not a
+    # legal elision, must be stripped like a fabrication.
+    answer = "乱序引用「频谱展示了各频率的幅度……傅里叶变换将时域信号分解为频率分量」[1]。"
+    cleaned, grounded, citations = verify_citations(answer, [CHUNK_1])
+    assert grounded is False
+    assert citations == []
+    assert "[1]" not in cleaned
+    assert "频谱展示了各频率的幅度……傅里叶变换将时域信号分解为频率分量" in cleaned
+
+
+def test_ellipsis_quote_with_missing_segment_is_dropped() -> None:
+    # One segment exists, the other does not: the citation fails whole.
+    answer = "半真半假「傅里叶变换将时域信号分解为频率分量……这段话不存在于资料中」[1]。"
+    cleaned, grounded, citations = verify_citations(answer, [CHUNK_1])
+    assert grounded is False
+    assert citations == []
+    assert "[1]" not in cleaned
+
+
+def test_prompt_v2_states_whole_span_elision_only() -> None:
+    # Contract pin: the prompt permits ellipsis shortening ONLY as whole-
+    # span elision, and the version marker moved to v2.
+    from backend.services.grounded_answers import INSTRUCTIONS, PROMPT_VERSION
+
+    assert PROMPT_VERSION == "v2"
+    assert "整段略去中间内容" in INSTRUCTIONS
+    assert "不得增删或改写" in INSTRUCTIONS
+    assert "允许省略号缩短" not in INSTRUCTIONS

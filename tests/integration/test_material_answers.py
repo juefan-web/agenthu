@@ -166,7 +166,7 @@ def test_full_pipeline_grounded_answer(
     assert body["grounded"] is True
     assert len(body["citations"]) == 2
     assert body["model_version"] == "fake-model"
-    assert body["prompt_version"] == "v1"
+    assert body["prompt_version"] == "v2"
     assert str(memory.id) in body["memory_ids"]
     assert body["chunk_ids"]
     pages = sorted(c["page"] for c in body["citations"])
