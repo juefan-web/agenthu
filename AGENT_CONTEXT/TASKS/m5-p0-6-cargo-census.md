@@ -46,7 +46,7 @@ Status: **已执行完毕（A，2026-10-09）：§0 先落字 @`ed61408`（独�
   special **0**；自有 1。
 - 随树许可文件在场 528/578；仅表达式无文件 50（含 r-efi ×2，README
   License 节与表达式同文、AUTHORS 在场）。
-- 多版本并存 46 crate 名（windows-* 族为主），按包行计入 579。
+- 多版本并存 45 crate 名（windows-* 族为主），按包行计入 579。
 
 **文件级实证（承重特例）**：ryu 随树 `LICENSE-BOOST` 开篇即 Boost
 Software License 1.0 全文（SPDX BSL-1.0 = Boost，非 Business Source

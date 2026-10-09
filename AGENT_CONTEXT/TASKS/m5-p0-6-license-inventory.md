@@ -202,7 +202,7 @@ git/path 源；579/579 逐一读取，零缺缓存、零无表达（50/578 仅�
 | strong copyleft | **0** | 红线判定：GPL/AGPL/LGPL 族零出现 |
 | special / 未澄清 | **0** | — |
 
-多版本并存 46 crate 名（windows-* 目标族为主：windows-sys ×5、
+多版本并存 45 crate 名（windows-* 目标族为主：windows-sys ×5、
 windows_{i686,x86_64}_{msvc,gnu} 各 ×4 等）——按包行计数含在 579 内。
 
 **特例（文件级实证）**：
