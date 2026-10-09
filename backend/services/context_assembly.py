@@ -126,6 +126,10 @@ def _history_messages(
 def _state_digest(state: Any) -> dict[str, Any]:
     context = state.current_context if isinstance(state.current_context, dict) else {}
     return {
+        # state_version rides the digest itself (audit 四-1): _render_state
+        # reads it unconditionally, so a caller that forgets the old
+        # out-of-band patch would KeyError.
+        "state_version": state.version,
         "context_label": context.get("label"),
         "available_minutes": state.available_minutes,
         "current_task_id": str(state.current_task_id) if state.current_task_id else None,
@@ -186,7 +190,6 @@ def assemble_context(
     consent_version = active_consent_version(session, user_id)
     state = get_or_create_state(session, user_id)
     digest = _state_digest(state)
-    digest["state_version"] = state.version
 
     goals = list(
         session.scalars(

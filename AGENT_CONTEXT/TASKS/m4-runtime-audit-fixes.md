@@ -42,3 +42,17 @@ quote 按省略号（`……`/`…`/`...`）分段，各段在 haystack 内**按
 
 - α/β/γ 与 #80（活雷② 文档）不冲突：`agent_runner.py` 在 #80 是文档引用，审计批次动 `:1038/:1255-1276` 实码——任一先合并无影响。
 - 不混入无关重构；每片交付面最小化。
+
+### 裁定 2 修订（2026-10-08，协调人裁定，β RC-1；原样转录）
+
+*"input items 跨轮累计：Turn N 请求 = 原 prompt 首项 + 第 1..N−1 轮全部
+function_call 与 function_call_output items + tools 数组 + instructions；
+Turn 2 请求保持逐字节不变（β 既有三测零改动即验收）；补一个两轮工具交互
+的 Turn 3 契约测试。"*
+
+归属说明（协调人原话）：原裁定 2 的组合行只写了「function_call items +
+outputs」，没写跨轮累计——歧义在裁定方，B 按字面实现无可指摘（A 的判断
+正确）。修订理由：病灶类是「store=false 下的断头请求」，`agent_max_model_turns=4`
+让 Turn 3+ 是真实生产路径——只修 Turn 2 等于同病灶退一层复发。隐私面不变：
+history 里是同一类已 provider-bound 的 `safe_result_json`，runner 仍零引用
+turn.context，token 增长被 4 轮上限兜住。

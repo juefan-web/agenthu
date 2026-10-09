@@ -59,12 +59,32 @@ class ToolResult:
 
 
 @dataclass(frozen=True)
+class TurnContext:
+    """Replay context for multi-turn tool loops (audit beta, ruling 2a).
+
+    ``store=False`` means the server keeps no conversation state, so the
+    provider needs the original prompt, instructions and tool schemas to
+    rebuild each follow-up request. ``history`` accumulates the wire items
+    of every completed round so Turn N replays rounds 1..N-1 in full
+    (ruling-2 revision). This payload is in-process only — it rides the
+    ModelTurn between calls and must never be logged or attached to
+    traces/spans (AllowlistSpanExporter discipline, #78).
+    """
+
+    input_text: str
+    instructions: str | None = None
+    tool_schemas: list[dict[str, Any]] = field(default_factory=list)
+    history: list[dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
 class ModelTurn:
     text: str | None = None
     tool_calls: list[ToolCall] = field(default_factory=list)
     usage: dict[str, int] = field(default_factory=dict)
     provider_request_id: str | None = None
     finish_reason: str | None = None
+    context: TurnContext | None = None
 
 
 class ModelProvider(Protocol):
