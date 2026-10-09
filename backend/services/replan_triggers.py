@@ -131,7 +131,9 @@ def _detect_trigger(
     planned_task_ids = {item.task_id for item in plan.items}
 
     # 1. Focus overrun / early finish on a confirmed item (the E4 trigger:
-    # the reason must cite the actual minutes).
+    # the reason must cite the actual minutes). actual_minutes semantics:
+    # pre-pause-accounting rows are wall-clock upper bounds including
+    # pauses (live-mine-2 §0 / D-037); new rows are net of closed pauses.
     match: dict | None = None
     for item in plan.items:
         if item.status == PlanItemStatus.COMPLETED and item.actual_minutes and item.planned_minutes:

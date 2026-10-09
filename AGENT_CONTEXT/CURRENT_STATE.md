@@ -1555,3 +1555,15 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   venue/coursex/zhjwxk/xkAction 全 0（zhjwxk 5→0）。LICENSE 改为
   三段真话（基座事实/自有工作清单/边界声明）。分发封印不因本片解除
   （§5-3/5-4/5-5 仍待）。待 PR 互审。
+
+- **活雷②实现片交审（A，2026-10-09，分支 `feature/m1-focus-pause-accounting`，
+  基 main `6a13b08`）**：Focus 暂停记账——迁移 `b8e4f1a26d39` 两列
+  （`paused_at` + `accumulated_pause_seconds`，server_default 0）；dedupe 键
+  改转换序号 `focus-session:{id}:{verb}:{n}`（多轮 pause 各存其键）；
+  paused/resumed/completed 三角 payload 快照（completed 携完成时刻累计含
+  PAUSED 直达闭合段）；`_complete` 默认 = 墙钟 − 已闭合暂停（下限 1），
+  显式覆盖面不变；PAUSED→ABANDONED 同口径闭段；遗留 NULL `paused_at` 行
+  零段闭合（专测）。消费侧（estimates/replan_triggers）语义注释 + D-037
+  历史口径行落地。测试 6 新用例（墙钟回拨模拟，无 sleep）。本地全量
+  **492 passed + 1 skipped**（S3 env；487 基线 + 6 新）、ruff/format 过、
+  pyright 0。CI 实测（run `37886908862`）：**493 passed + 0 skipped**（487 基线 + 6 新）、12 检查全绿；compose smoke 的 api 启动即 `alembic upgrade head`，迁移实跑通过。

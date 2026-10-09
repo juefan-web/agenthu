@@ -1,8 +1,9 @@
 # M1 活雷②：Focus 暂停时长计入实际耗时（方案 §0 先落字）
 
-Status: **§0 已冻结（A 拟，2026-10-08；a/b 裁定同日落字——协调人
-委托 A 拟、B 复审把关。B 复审 RC-1（completed 快照）已补，待转
-approve）。B approve 后即开工。**病灶实测基线 main
+Status: **实现片已落（A，2026-10-09，分支 `feature/m1-focus-pause-accounting`，
+基 main `6a13b08`）。§0 冻结版已随 #80 合并（`23ece59`，B approve
+@`77037ec`）。本地全量 492 passed + 1 skipped（S3 env；487 基线 + 6 新）、
+ruff check/format 过、pyright 0 错。待 CI 实测与 B 互审。**病灶实测基线 main
 `931324f`。
 
 ## 0. 边界（冻结候选）
@@ -73,3 +74,44 @@ docstring 声明补真（每次转换有事件）；⑥迁移 + fixtures + 全�
   RC-1 补齐 `focus.completed` 快照，paused/resumed/completed 三角
   齐全）。理由：paused/resumed 均为本片新增事件类型，一次定形免
   日后 payload 版本化；audit 单事件自解释、免回放列状态。
+
+## 1. 实现记录（A，2026-10-09）
+
+**落点**：迁移 `b8e4f1a26d39`（挂 `c7a3f02d9e51` 后）——`paused_at
+timestamptz null` + `accumulated_pause_seconds int not null server_default 0`；
+存量行回填 NULL/0。模型同两列（`server_default="0"` 与迁移同源）。内部列，
+ClientFocusSession 与 OpenAPI 零改动。
+
+**服务（`backend/services/focus.py`）**：
+
+- dedupe 键改转换序号 `focus-session:{id}:{verb}:{n}`，n = emit 时该会话该
+  类型已发生事件数（`Event.data["session_id"].as_string()` 计数，JSONB）；
+  全部 focus 事件统一此式（started/completed 恒为 0 序）。
+- RUNNING→PAUSED：`paused_at=now` + `focus.paused`，payload 携暂停时刻
+  `accumulated_pause_seconds`（仅已闭合累计）。
+- PAUSED→RUNNING：`_close_open_pause` 闭段入累计、`paused_at=null` +
+  `focus.resumed`，payload 携 `pause_seconds`（刚闭合段）与新累计。
+- PAUSED→COMPLETED/ABANDONED：先闭段（`_close_open_pause`）再终态；completed
+  payload 在 `actual_minutes` 旁携完成时刻累计（含直达闭合段）；abandoned
+  同口径闭段、payload 保持冻结字面原样（快照族只定 paused/resumed/completed
+  三角）。
+- `_complete` 默认值 = `_net_minutes`（墙钟 − 已闭合累计，下限 1）；显式
+  `payload.actual_minutes` 覆盖面不变。
+- 遗留面：迁移前 PAUSED 行 `paused_at` 为 NULL——resume/完成/放弃时零段闭合
+  （无开口可闭），有专测。
+- 模块 docstring 按新事实改真（每次转换有事件 + 序号键 + 净口径）。
+
+**消费侧与决策**：`estimates.plan_item_ratios` 与 `replan_triggers` E4 触发
+点各加 actual_minutes 语义注释（裁定 a 附归属）；`AGENT_CONTEXT/DECISIONS.md`
+D-037 落"actual_minutes＝含暂停的墙钟上界"历史口径行。
+
+**测试（`tests/integration/test_focus_pause_accounting.py`，6 用例）**：①
+过夜暂停 540min 不计入（60min 实作）+ 三角快照；②+④+⑦ 多轮两段全计、两次
+pause 各自事件、序号键 `:paused:0/:paused:1` 直读断言、各段时长独立可读；
+③ PAUSED 直达 completed/abandoned 闭段（行值+payload）；显式覆盖优先；
+遗留 NULL 行零段闭合。墙钟用共享 `db_session` 回拨行时间戳模拟（client 夹具
+同会话可见），无 sleep。
+
+**实测**：本地全量 492 passed + 1 skipped（S3_ENDPOINT_URL 未设；487 基线 +
+6 新）、ruff check/format 全过、pyright 0 错（--pythonpath 指共享 venv）。
+CI 实测（run `37886908862`，Backend job `113678839298`）：**493 passed + 0 skipped**（= 487 基线 + 6 新）；12 检查全绿两轮（分支推送 + PR）。compose smoke 的 api 启动命令即 `alembic upgrade head`——迁移 `b8e4f1a26d39` 在 smoke 栈实跑通过（api healthy）。

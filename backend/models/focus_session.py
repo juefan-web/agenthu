@@ -36,3 +36,11 @@ class FocusSession(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     actual_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     deviation_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Pause accounting (live-mine-2 §0) — internal columns, not part of the
+    # client contract. paused_at marks the open segment's start; the
+    # accumulated total only ever holds closed segments. Pre-migration rows
+    # backfill NULL/0: their actual_minutes stay wall-clock upper bounds.
+    paused_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    accumulated_pause_seconds: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )

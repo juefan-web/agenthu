@@ -1094,3 +1094,13 @@ test_write_guards::test_anchored_task_with_edited_projection_still_whole_deletes
 另：执行框先落任务书 §0 再动手（新规矩首用，独立 commit 3779846）；
 finger3 按实测保留（捕获块属 OneTHU 增量、桌面信任链活用），预核的
 丢弃倾向作废。
+
+## D-037 — actual_minutes 历史口径：含暂停的墙钟上界（活雷② §0 裁定 a；2026-10-09，A 实现，B 复审）
+
+暂停记账列（`focus_sessions.paused_at` / `accumulated_pause_seconds`）落地前的
+历史行：**actual_minutes＝含暂停的墙钟上界**——暂停转换历史上从未落事件/时间戳
+（活雷②病灶 1），哪些行被污染不可判定，故不回改、不标注可疑；单行修正面沿用
+客户端 `actual_minutes` 显式覆盖。新行为净口径：墙钟 − 已闭合暂停段（含 PAUSED
+直达 COMPLETED/ABANDONED 时先闭合的段），下限 1 分钟。消费侧（estimates /
+replan_triggers）语义注释随实现片落地；迁移前历史时长是否降权区别对待，未来
+另裁、不入本片。
