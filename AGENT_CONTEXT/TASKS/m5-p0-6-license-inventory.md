@@ -1,9 +1,9 @@
 # M5-P0-6 许可逐文件盘点（提前启动的清点阶段）
 
-Status: **两实测动作已执行（2026-10-08）：§5-1 闭合结论不利——info-lib
-四文件实测为 post-BSL（v3.17.0）派生，源码+二进制分发双双封印待
-§5-6 路径裁决；§5-2 闭合红线全过。清点启动于 2026-10-07（#75 合并后，
-协调人既有授权）；阻断规则：未澄清 → 不发布。**
+Status: **§5-1/§5-2 已闭合（路径 B 已执行拆除 post-BSL 谱系障碍）；
+§5-4 cargo 普查已闭合无阻断（2026-10-09，§7）。分发封印维持，待 §5-3
+（npm，B）与 §5-5（资助事实）。阻断规则：未澄清 → 不发布。清点启动于
+2026-10-07（#75 合并后，协调人既有授权）。**
 
 依据：THIRD_PARTY_NOTICES.md（项目级骨架，已存在）、
 vendor/onethu/{LICENSE,VENDORED_FROM.md,LICENSES/THIRD-PARTY.md,
@@ -156,10 +156,11 @@ Change Date 前不覆盖 Agenthu 的任何分发；承重件只剩 THU Info 邮�
 3. **npm 依赖全量普查**（desktop + contracts 的 package.json 树）：
    `pnpm dlx license-checker` 出 JSON 归档；非许可（GPL 族等）若出现
    即升级为阻断项。
-4. **cargo crate 普查**：`cargo deny check licenses`（或 cargo about）；
-   现有直接依赖人工初筛全部宽松（tauri/reqwest/tokio/rusqlite/
-   stronghold/keyring 等 MIT/Apache 系；rusqlite bundled SQLite 走
-   Notice 条款）。
+4. **[已闭合，无阻断] cargo crate 普查**（2026-10-09，A 执行，方法与
+   全量数字见 §7）：579 包全覆盖（578 registry + 1 自有），permissive 573 /
+   weak 5（全 MPL-2.0）/ strong **0** / special 0；openssl 系 0 在树；
+   初筛结论（直接依赖全宽松）经全量机械普查证实；rusqlite bundled SQLite
+   走 Notice 条款（§7 特例）。
 5. **项目资助事实确认**（协调人层面）：Agenthu 是否接受/计划接受任何
    清华关联机构资助——同时决定 OneTHU 附加限制①子句与 LearnX 例外
    条款的风险评估输入。
@@ -175,3 +176,57 @@ head-bound 互审合并 → §5-3/5-4 依赖机械普查 → §5-5 资助事实�
 更新根 THIRD_PARTY_NOTICES.md（吸收逐文件表与分发结论）。清点阶段
 总结论修订：**post-BSL 谱系障碍已由路径 B 拆除；分发封印待
 §5-3/5-4/§5-5；venue 红线与摇树面实测过关且路径 B 后复测更好。**
+
+## 7. §5-4 cargo 依赖机械普查实测（2026-10-09，A 执行，B 复审）
+
+**方法**（§0 冻结 @`ed61408`，任务书 `m5-p0-6-cargo-census.md`）：工具形态
+裁定为**本地随树文件读取法**（cargo deny / cargo-license 未作承重）——
+`cd apps/desktop/src-tauri && cargo fetch --locked` 将注册表缓存补齐至 lock
+全集（实测可行），随后逐包读缓存 crate 目录的随树 `Cargo.toml`
+`license`/`license-file` 字段 + `LICENSE*`/`COPYING*` 文件在场核验；条款以
+随树许可材料为权威（沿用 §0 方法条款）；多重许可按可满足的最宽面归类并
+全文记录原始表达式；斜杠方言（`MIT/Apache-2.0`）按 OR 归一（Rust 生态
+双许可惯例）。
+
+**覆盖**：Cargo.lock **579 包 = 578 registry + 1 自有 `agenthu`**，零
+git/path 源；579/579 逐一读取，零缺缓存、零无表达（50/578 仅有表达式无
+随树许可文件，如实记录、非阻断——含 r-efi 两版本，其 README License 节
+与表达式同文）。
+
+**归类分布（578 registry 包）**：
+
+| 归类 | 数量 | 明细 |
+| --- | --- | --- |
+| permissive | **573** | `MIT OR Apache-2.0` 278、`MIT` 112、`Apache-2.0 OR MIT` 54、斜杠双许可方言 26、`Unicode-3.0` 18、`Zlib OR Apache-2.0 OR MIT` 17、`Apache-2.0` 10、`Unlicense OR MIT` 9，其余散布（CDLA-Permissive-2.0、ISC、BSD 系、`CC0 OR MIT-0 OR Apache-2.0` 链、Boost 等） |
+| weak copyleft | **5** | cssparser 0.37.0 / cssparser-macros 0.7.1 / dtoa-short 0.3.5 / option-ext 0.2.0 / selectors 0.38.0——全 **MPL-2.0**（文件级弱 copyleft：义务=保留文件级声明 + 该五包源可得（crates.io 公开即满足），无链接面传染） |
+| strong copyleft | **0** | 红线判定：GPL/AGPL/LGPL 族零出现 |
+| special / 未澄清 | **0** | — |
+
+多版本并存 46 crate 名（windows-* 目标族为主：windows-sys ×5、
+windows_{i686,x86_64}_{msvc,gnu} 各 ×4 等）——按包行计数含在 579 内。
+
+**特例（文件级实证）**：
+
+- **ryu 1.0.23 `Apache-2.0 OR BSL-1.0`**：SPDX `BSL-1.0` = **Boost
+  Software License 1.0**，随树 `LICENSE-BOOST` 开篇全文坐实——与
+  Business Source License 无关（后者无 `BSL-1.0` SPDX id，本案语境特此
+  注明）。Boost 归 permissive。
+- **rusqlite 0.32（MIT）+ libsqlite3-sys 0.30（MIT，`sqlite3/` 目录内嵌
+  SQLite amalgamation `sqlite3.c/h`）**：上游 SQLite 公共领域，分发义务 =
+  随附 Notice（根 THIRD_PARTY_NOTICES 吸收时列入）。
+- **openssl 系 0 在树**：reqwest 仅 rustls-tls 特性，锁文件面无
+  openssl-sys。
+- r-efi 5.3.0/6.0.0 表达式含 `LGPL-2.1-or-later` 但为**三选一 OR**
+  （MIT/Apache 分支承重，README License 节同文）——按最宽可满足面归
+  permissive，全表达式如实记录在此。
+- ring `Apache-2.0 AND ISC`、rustls `Apache-2.0 OR ISC OR MIT`、
+  webpki-roots `CDLA-Permissive-2.0`；直接依赖（tauri / tauri-build /
+  tauri-plugin-stronghold / stronghold_engine / reqwest / tokio /
+  rusqlite / keyring / serde 系 / rand / zeroize / cookie 系 / url /
+  http / tempfile / tokio-util）全 MIT/Apache 系——#79 §5-4 条目的
+  人工初筛经全量机械普查证实。
+
+**对分发结论的输入**：cargo 面**无阻断项**。二进制分发的随附义务面 =
+permissive 声明保留（MIT/Apache 系惯例文本）+ MPL-2.0 五包的文件级声明
+与源可得说明 + SQLite Notice。**分发封印不因本普查解除**——仍待 §5-3
+（npm 面，B 执行）与 §5-5（资助事实，协调人层面）。
