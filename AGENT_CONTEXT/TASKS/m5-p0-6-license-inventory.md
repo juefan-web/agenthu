@@ -106,8 +106,8 @@ Change Date 前不覆盖 Agenthu 的任何分发；承重件只剩 THU Info 邮�
 - **源码分发**（仓库/源码包）：路径 B 已执行（四文件回到 `06dc3cf0`
   MIT 基座重推导，见 §2.2 顶部注记与 `m5-p0-6-path-b.md`），**post-BSL
   再分发的谱系障碍已拆除**；但**分发封印不因路径 B 自动解除**——源码
-  公开化仍待 §5-3 npm 依赖普查与 §5-5 资助事实澄清放行。当前私库
-  协作态维持。OneTHU 附加限制（非商业/禁滥用）继续适用且现状一致 ✓。
+  公开化仍待 §5-4 cargo 普查与 §5-5 资助事实澄清放行（§5-3 npm 普查
+  已于 2026-10-09 闭合，零红旗，见 §7）。当前私库协作态维持。OneTHU 附加限制（非商业/禁滥用）继续适用且现状一致 ✓。
 - **二进制分发**（Tauri 安装包）：维持封印。放行前置 = §5-3/5-4 依赖
   机械普查 + §5-5 资助事实。§5-2 摇树实测已闭合（红线全过；路径 B 后
   复测 zhjwxk 5→0，见 path-b §1）。
@@ -153,9 +153,13 @@ Change Date 前不覆盖 Agenthu 的任何分发；承重件只剩 THU Info 邮�
      `xkAction` 路径 0 命中——**无害解释成立，无需收窄**；§2.1 引用
      结论已修正（直接 import 0 ≠ 传递引用 0）；
    - learn/auth/info 等被引用模块在场 = 预期行为。
-3. **npm 依赖全量普查**（desktop + contracts 的 package.json 树）：
-   `pnpm dlx license-checker` 出 JSON 归档；非许可（GPL 族等）若出现
-   即升级为阻断项。
+3. **[已闭合，零红旗] npm 依赖全量普查**（§7 实测，2026-10-09，B）：
+   lockfile 全量 232 项全宽松（199 MIT / 11 BSD-2 / 9 ISC / 8 Apache-2.0 /
+   2 BSD-3 / 1 MIT-0 / 1 Apache-2.0 OR MIT / 1 CC-BY-4.0）；copyleft/BSL/
+   未解析零项。方法与交叉对账见 §7；license-checker 因 pnpm 符号链接布局
+   只能见 23 项（已知局限），可见面与本普查一致。附带 finding：仓库自有
+   5 个 workspace package.json 均无 license 字段、仓库根无 LICENSE 文件
+   （与分发封印自洽；许可选择属协调人/用户层决策）。
 4. **cargo crate 普查**：`cargo deny check licenses`（或 cargo about）；
    现有直接依赖人工初筛全部宽松（tauri/reqwest/tokio/rusqlite/
    stronghold/keyring 等 MIT/Apache 系；rusqlite bundled SQLite 走
@@ -170,8 +174,69 @@ Change Date 前不覆盖 Agenthu 的任何分发；承重件只剩 THU Info 邮�
 ## 6. 下一步（正式 P0-6 切片内）
 
 §5-1/§5-2 两实测动作**已执行并回填**；**路径 B 执行片已完成实现与本地
-验收**（`m5-p0-6-path-b.md`，待 PR 互审）。剩余序列：路径 B PR 走
-head-bound 互审合并 → §5-3/5-4 依赖机械普查 → §5-5 资助事实澄清 →
-更新根 THIRD_PARTY_NOTICES.md（吸收逐文件表与分发结论）。清点阶段
+验收**（`m5-p0-6-path-b.md`，待 PR 互审）。剩余序列：§5-4 cargo 普查（A）→ §5-5 资助事实澄清 →
+更新根 THIRD_PARTY_NOTICES.md（吸收逐文件表与分发结论；npm 侧清单可先
+按 §7 吸收）。清点阶段
 总结论修订：**post-BSL 谱系障碍已由路径 B 拆除；分发封印待
 §5-3/5-4/§5-5；venue 红线与摇树面实测过关且路径 B 后复测更好。**
+
+## 7. §5-3 npm 依赖普查实测（B，2026-10-09；任务书 m5-p0-6-npm-census.md §0 冻结后执行）
+
+### 方法（三面谱系）
+
+- **权威清单** = `pnpm-lock.yaml`（分发携带物本体）：`packages:` 段 232 个
+  name@spec 锁定项 + `snapshots:` 段 232 条依赖图（解析覆盖 232/232）。
+  五 importer：root、apps/desktop、packages/contracts、vendor/onethu/core、
+  vendor/onethu/info-lib。
+- **许可事实** = 本地 store（`node_modules/.pnpm`，`pnpm install
+  --frozen-lockfile` 对齐后）各包 package.json license 字段，182 项；
+  其余 50 项为**平台 optional 二进制**（@esbuild/* 非 win32-x64 的 24、
+  @rollup/* 非 win32-x64-msvc 的 22、@napi-rs/lzma-linux-x64-gnu、
+  fsevents）本机未装——许可取 npm registry 元数据（`npm view`，50/50
+  全部 MIT）。
+- **交叉工具** = `pnpm dlx license-checker`（§5-3 原文点名）：pnpm 符号
+  链接布局下仅能见 23 项（已知局限，非树不全）——可见面上与本普查结论
+  一致（其 3 个 UNLICENSED = workspace link 无 license 字段，见 finding）。
+
+### 结果（232/232 全量分级）
+
+| 分级 | 数量 | 明细 |
+|---|---|---|
+| 宽松 | **232** | MIT 199 · BSD-2-Clause 11 · ISC 9 · Apache-2.0 8 · BSD-3-Clause 2 · MIT-0 1（@csstools/color-helpers）· Apache-2.0 OR MIT 1（@tauri-apps/api）· CC-BY-4.0 1（caniuse-lite） |
+| Copyleft | **0** | — |
+| BUSL/BSL | **0** | — |
+| 未解析/无许可 | **0**（第三方内） | — |
+
+特殊项点名（均宽松）：`MIT-0`（SPDX 零署名 MIT 变体）、`CC-BY-4.0`
+（caniuse-lite 数据面，署名要求随 Notice 满足）、`Apache-2.0 OR MIT`
+（双许可任选）。
+
+### vendored 传递闭包（25 项，全宽松）
+
+`vendor/onethu/core`（aes-js、sm-crypto + typescript devDep）与
+`vendor/onethu/info-lib`（cheerio、sm-crypto）经 snapshots 图 BFS：
+aes-js@3.1.2 (MIT)、sm-crypto@0.5.7 (MIT)、cheerio@1.2.0 (MIT) 及其
+全子树（parse5 族 / htmlparser2 族 / domutils 族 / undici / iconv-lite
+/ jsbn 等，BSD-2/MIT/ISC），**闭包内零非宽松项**——路径 B 后 vendored
+树自身干净。apps/desktop 全闭包（含 dev）209 项同样零非宽松。
+
+### 事实面抽查（license 字段 vs 包内 LICENSE 文件）
+
+九个生产直依赖（react/react-dom/zod/zustand/@tanstack/react-query/
+@tauri-apps/api/aes-js/sm-crypto/cheerio）：**字段与 LICENSE 文件全部
+在场一致**，无字段说谎项。
+
+### Findings（红旗为零，两项事实上报）
+
+1. **仓库自有包无 license 字段**：root、apps/desktop、packages/contracts、
+   vendor/onethu/core、vendor/onethu/info-lib 五个 package.json 均
+   `NO-LICENSE-FIELD`，且仓库根无 LICENSE 文件——与「分发封印维持」
+   自洽（未公开即未授权任何人），但**源码公开化前必须先定许可**（选择
+   属协调人/用户层决策，非本普查职权）。
+2. **caniuse-lite (CC-BY-4.0)**：数据集署名条款，THIRD_PARTY_NOTICES
+   吸收时需保留署名链（browserslist 数据来源标注）。
+
+### 边界重申
+
+本普查不解除任何封印（§5-4 cargo 普查、§5-5 资助事实仍待）；普查为
+事实产出，红旗为零 ≠ 放行；bundle 实际打包面另见 §5-2（已闭合）。

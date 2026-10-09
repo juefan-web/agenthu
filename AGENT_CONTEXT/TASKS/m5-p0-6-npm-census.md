@@ -1,6 +1,6 @@
 # M5 P0-6 §5-3：npm 依赖树许可普查（B）
 
-- 状态：进行中（§0 已冻结，实测中）
+- 状态：已完成实测（结果落 m5-p0-6-license-inventory.md §7，2026-10-09）
 - 负责人：B（juefan-web）
 - 分支：`docs/m5-p0-6-npm-census`（基 main `bf8f243`）
 - 依据：P0-6 发布门序列（m5-p0-6-license-inventory.md §6：路径 B 合并后 → §5-3/§5-4 依赖机械普查 → §5-5 资助事实）；方法沿用 #79 三面逐文件谱系法；产出直接进 `m5-p0-6-license-inventory.md` 新节
@@ -40,3 +40,17 @@
 ### 边界与不负责
 
 - 不负责 cargo 面（A 的 §5-4）；不做法务定性（红旗=需协调人/用户裁决的事实，不是结论）；不改动依赖或锁文件；bundle 内实际打包面已在 §5-2 摇树实测闭合（本普查是树级普查，与 §5-2 面互补）。
+
+## §1 实测记录（2026-10-09）
+
+全部数字见 `m5-p0-6-license-inventory.md` §7。要点：232/232 全量分级
+**零红旗**；平台 optional 50 项经 npm registry 全 MIT；vendored 闭包 25
+项全宽松；desktop 全闭包 209 项零非宽松；交叉工具 license-checker 受
+pnpm 布局限制仅见 23 项、可见面一致。Findings：自有 5 包无 license
+字段 + 根无 LICENSE（封印自洽、公开化前须定许可，属协调人/用户层）；
+caniuse-lite CC-BY-4.0 署名链随 Notice 吸收。
+
+过程账（透明）：普查脚本经四轮修正——CRLF 尾断正则、scoped 包双层
+glob、snapshots 单行 `key: {}` 锚、registry 查询须走 bash（npm 是
+.cmd）；每轮修正后全量重跑，最终 232/232 解析覆盖自洽（packages 与
+snapshots 双段计数相等）。
