@@ -7,6 +7,8 @@ with the frozen error envelope and a `WWW-Authenticate: Bearer` header.
 
 from __future__ import annotations
 
+import uuid
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -141,7 +143,9 @@ def test_login_is_rate_limited_per_client_ip(client: TestClient, register_user) 
     from backend.core.rate_limit import RateLimiter
 
     original = auth_module._auth_limiter
-    auth_module._auth_limiter = RateLimiter(max_requests=3, window_seconds=60)
+    auth_module._auth_limiter = RateLimiter(
+        max_requests=3, window_seconds=60, namespace=f"test:{uuid.uuid4().hex}"
+    )
     try:
         payload = {"email": "rl@example.com", "password": "password123"}
         codes = [client.post("/v1/auth/login", json=payload).status_code for _ in range(5)]
@@ -162,7 +166,9 @@ def test_register_is_rate_limited(client: TestClient) -> None:
     from backend.core.rate_limit import RateLimiter
 
     original = auth_module._auth_limiter
-    auth_module._auth_limiter = RateLimiter(max_requests=2, window_seconds=60)
+    auth_module._auth_limiter = RateLimiter(
+        max_requests=2, window_seconds=60, namespace=f"test:{uuid.uuid4().hex}"
+    )
     try:
         codes = [
             client.post(
@@ -176,6 +182,73 @@ def test_register_is_rate_limited(client: TestClient) -> None:
             for i in range(3)
         ]
         assert codes == [201, 201, 429]
+    finally:
+        auth_module._auth_limiter = original
+
+
+def test_limiter_outage_is_a_503_facet_not_a_silent_allow(client: TestClient) -> None:
+    """Redis unreachable: fail closed with the distinct rate_limit_unavailable facet."""
+
+    import redis
+
+    import backend.api.v1.auth as auth_module
+    from backend.core.rate_limit import RateLimiter
+
+    original = auth_module._auth_limiter
+    auth_module._auth_limiter = RateLimiter(
+        max_requests=3,
+        window_seconds=60,
+        namespace=f"test:{uuid.uuid4().hex}",
+        client=redis.Redis.from_url(
+            "redis://127.0.0.1:1/0", socket_connect_timeout=0.2, socket_timeout=0.2
+        ),
+    )
+    try:
+        response = client.post(
+            "/v1/auth/login", json={"email": "outage@example.com", "password": "password123"}
+        )
+        assert response.status_code == 503
+        assert response.json()["error"]["code"] == "rate_limit_unavailable"
+        # Retry-After belongs to 429 "you are over budget"; an unavailable
+        # limiter promises no retry timing.
+        assert "Retry-After" not in response.headers
+    finally:
+        auth_module._auth_limiter = original
+
+
+def test_rate_limit_keys_follow_client_ip(monkeypatch, client: TestClient) -> None:
+    """The throttle keys on the zero-trust client_ip (P0-5 §7 regression):
+    with a trusted proxy chain, distinct forwarded clients draw separate
+    budgets; one client exhausts only its own."""
+
+    import backend.api.v1.auth as auth_module
+    from backend.config import Settings
+    from backend.core import proxy
+    from backend.core.rate_limit import RateLimiter
+
+    monkeypatch.setattr(
+        proxy, "get_settings", lambda: Settings(environment="local", trusted_proxies=["testclient"])
+    )
+    original = auth_module._auth_limiter
+    auth_module._auth_limiter = RateLimiter(
+        max_requests=1, window_seconds=60, namespace=f"test:{uuid.uuid4().hex}"
+    )
+    try:
+        payload = {"email": "xff@example.com", "password": "password123"}
+        first = client.post(
+            "/v1/auth/login", json=payload, headers={"X-Forwarded-For": "198.51.100.10"}
+        )
+        other = client.post(
+            "/v1/auth/login", json=payload, headers={"X-Forwarded-For": "198.51.100.11"}
+        )
+        repeat = client.post(
+            "/v1/auth/login", json=payload, headers={"X-Forwarded-For": "198.51.100.10"}
+        )
+        # Bad credentials but allowed by the limiter (distinct clients).
+        assert first.status_code == 401
+        assert other.status_code == 401
+        # Same forwarded client again: its single-request budget is spent.
+        assert repeat.status_code == 429
     finally:
         auth_module._auth_limiter = original
 

@@ -55,6 +55,9 @@ class Settings(BaseSettings):
     # --- Redis / Arq -------------------------------------------------------
     redis_url: str = "redis://127.0.0.1:6379/0"
     arq_queue_name: str = "arq:queue"
+    # Bounds both connect and socket timeouts on the rate-limit ledger: a
+    # request must fail closed quickly, not hang on a dead Redis.
+    rate_limit_redis_timeout_seconds: float = Field(default=0.5, gt=0.0)
 
     # --- Auth --------------------------------------------------------------
     auth_rate_limit_max: int = 10

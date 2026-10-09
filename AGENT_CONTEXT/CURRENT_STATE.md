@@ -1507,6 +1507,15 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   ＝白天窗本地全量 469 passed + 1 skipped（S3 环境跳过）。修复头
   CI 以实跑日志为准（见 PR）。
 
+- **P0-5 切片 2 交审（A，2026-10-08，分支 `feature/m5-p0-5-rate-limit-redis`）**：
+  Redis 共享限流按 §7 冻结边界落地——`core/rate_limit.py` 换 Redis 滑动
+  窗（ZSET+Lua 双脚本、服务器钟、`rl:` 前缀、进程内实现删除），缝
+  （`hit`/`retry_after`）与调用面（auth 单桶/recover 双桶）全保持；
+  断供 fail-closed 503 分面（`rate_limit_unavailable`，调用点零
+  try/except）；测试：双实例共账本钉跨进程单事实源、503 分面集成、
+  client_ip 键回归、namespace 隔离。全量 475+1（白天窗实测）、
+  ruff/pyright 0、drift 无漂移。活雷② §0 草案并行落 **PR #80** 待
+  协调人裁定（两待裁项：历史脏数据标注、事件时长快照）。
 - **P0-6 路径 B 执行片（B，2026-10-08）**：协调人裁定路径 B（回退
   `06dc3cf0` MIT 基座重推导）后即刻执行。新规矩首用：执行框先落
   `AGENT_CONTEXT/TASKS/m5-p0-6-path-b.md` §0 并独立 commit（3779846）
@@ -1519,9 +1528,10 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   （sm-crypto 已声明依赖）；getRedirectLocation/forgetDevice/设备
   管理 URL/cr 分支整体剔除。回差实测：core-vs-p06 242→145、
   strings 136→7、error 4→0；vs-p317 48→233、7→136、0→4；残留
-  grep 12 模式全零；finger 面同口径实测（A 互审修正口径）：core
-  敏感行 12/18、不敏感行 18/12、出现次数 27/17（ours/p06）——增量
-  = OneTHU finger3 信任链净 6 行/10 次，无设备管理流残留；
+  grep 12 模式全零；finger 面同形对比实测（A 互审修正口径，ours/p06）：
+  core 敏感行 12/7、不敏感行 18/12、出现次数 27/17——增量
+  = OneTHU finger3 信任链净 6 行/10 次（p06 不敏感 12 行基面 + 6），
+  无设备管理流残留；
   typecheck 三包绿、
   vitest 33/244 全绿、build 1005.79 kB 与基线等值；红线复测
   venue/coursex/zhjwxk/xkAction 全 0（zhjwxk 5→0）。LICENSE 改为

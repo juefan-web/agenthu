@@ -18,8 +18,10 @@ from backend.schemas.user import LoginRequest, Token, UserCreate, UserRead
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-# One limiter instance per process, shared by register/login/token: they all
-# accept arbitrary credentials, so they share the same brute-force budget.
+# Shared by register and login: both accept arbitrary credentials, so they
+# draw from one brute-force budget. The ledger lives in Redis — every API
+# process counts against it (P0-5 ruling 4); if Redis is down the endpoints
+# fail closed with a 503 rate_limit_unavailable facet instead of allowing.
 _auth_limiter = RateLimiter(
     max_requests=get_settings().auth_rate_limit_max,
     window_seconds=get_settings().auth_rate_limit_window_seconds,

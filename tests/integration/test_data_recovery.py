@@ -36,16 +36,22 @@ _FIXTURE = Path(__file__).parents[1] / "fixtures" / "deletion-recover-digest.jso
 @pytest.fixture(autouse=True)
 def _fresh_recover_limiters():
     """The route limiters are module-level; keep tests independent by
-    clearing their sliding windows (the limits themselves stay covered by
-    the dedicated 429 test)."""
+    swapping in a pair bound to a fresh Redis namespace per test (the limits
+    themselves stay covered by the dedicated 429 test)."""
+
+    import uuid as _uuid
 
     from backend.api.v1 import data as data_api
+    from backend.core.rate_limit import RateLimiter
 
-    for limiter in data_api._RECOVER_LIMITS:
-        limiter._hits.clear()
+    original = data_api._RECOVER_LIMITS
+    namespace = f"test:{_uuid.uuid4().hex}"
+    data_api._RECOVER_LIMITS = (
+        RateLimiter(max_requests=3, window_seconds=600.0, namespace=namespace),
+        RateLimiter(max_requests=10, window_seconds=600.0, namespace=namespace),
+    )
     yield
-    for limiter in data_api._RECOVER_LIMITS:
-        limiter._hits.clear()
+    data_api._RECOVER_LIMITS = original
 
 
 class TestDigestAlgorithm:

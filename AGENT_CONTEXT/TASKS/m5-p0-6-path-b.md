@@ -70,7 +70,7 @@
 | A2 strings-vs-p317 | 7 | **136**（19×） | ✓ |
 | A2 error-vs-p317 | 0 | **4** | ✓ |
 | B 残留 grep（12 模式） | — | 全零（CR_LOGIN_HOME_URL 命中为 06 基座常量定义、零使用） | ✓ |
-| B finger 形状 | — | 同口径实测（A 互审修正）：core 敏感行 12/18、不敏感行 18/12、出现次数 27/17（ours/p06），任一同口径不相等；增量 = OneTHU finger3 信任链净 6 行/10 次（捕获块 + roam-id 复灌位点 + SAVE_FINGER 行改写）；strings 两侧同口径 0 敏感/1 不敏感/2 次，1=1 成立 | ✓（口径修正） |
+| B finger 形状 | — | 同形对比（A 互审修正，ours/p06）：core 敏感行 **12/7**、不敏感行 **18/12**、出现次数 **27/17**，任一同形不相等；增量 = OneTHU finger3 信任链净 6 行/10 次（捕获块 + roam-id 复灌位点 + SAVE_FINGER 行改写；p06 不敏感 12 行基面 + 6 = 18）；strings 两侧同形 0 敏感/1 不敏感/2 次，1=1 成立 | ✓（口径修正） |
 | C 契约零漂移 | — | 5 文件；index/vendor.d.ts/package.json/网关/测试零改动 | ✓ |
 | C typecheck | — | `pnpm typecheck` 三包绿 | ✓ |
 | C vitest | — | 33 文件 / 244 测试全绿（含 tauriAuthGateway 11） | ✓ |
