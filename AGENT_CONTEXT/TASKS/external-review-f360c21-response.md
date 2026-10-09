@@ -141,3 +141,8 @@ status）转 E7 执行轮与部署演练的观察项。
   R1（隐私急修）→ R2（E7 阻断面）→ R3（控制面+余量+NOTICES 对账
   吸收）→ E7 双轮 → M5 收口；E7 派工时点后移、内容不变；#7 修复
   方向预裁为 receipt 窄路径重排入口。
+- 2026-10-09 R1-A 执行（#1，PR #91，分支 `fix/grounded-consent-gate`）：
+  grounded_answers 取记忆前判 `active_consent_version`（与 agent_tools
+  同源）；同意关 ⇒ 请求体无 memory.content、回执 `memory_ids=[]`；钉子
+  测试双向断言（关⇒不含/开⇒原语义恢复），两处既有记忆断言测试补全局
+  同意前置。E7-8 同意面语义不变（门只加不撤）。

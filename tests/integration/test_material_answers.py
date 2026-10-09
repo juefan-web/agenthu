@@ -27,6 +27,7 @@ from backend.models.material import GroundingConsent
 from backend.models.memory import Memory
 from backend.schemas.material import CONSENT_TEXT_VERSION
 from backend.services.material_ingestion import embed_pending_chunks, run_extraction
+from backend.services.model_consent import set_consent
 from tests.integration.test_materials import _upload
 from tests.unit.test_material_extraction import make_pptx
 
@@ -97,6 +98,11 @@ def _enable_consent(db_session, user_id: uuid.UUID, course: str = COURSE) -> Non
     db_session.flush()
 
 
+def _enable_model_consent(db_session, user_id: uuid.UUID) -> None:
+    set_consent(db_session, user_id, enabled=True, consent_text_version="v1")
+    db_session.flush()
+
+
 def _seed_course_material(db_session, client, headers, storage) -> tuple[uuid.UUID, uuid.UUID]:
     body = _upload(
         client,
@@ -149,6 +155,7 @@ def test_full_pipeline_grounded_answer(
 
     _file_id, user_id = _seed_course_material(db_session, client, auth_headers, storage)
     _enable_consent(db_session, user_id)
+    _enable_model_consent(db_session, user_id)
     asyncio.run(embed_pending_chunks(db_session, provider, user_id, COURSE))
     memory = _add_episode(db_session, user_id, "该生在滤波器作业平均用时 40 分钟")
 
@@ -243,6 +250,45 @@ def test_consent_gate_is_fail_closed_with_zero_provider_calls(
     assert provider.calls == []  # not even an embed call
 
 
+def test_memory_content_requires_global_model_consent(
+    db_session, client, auth_headers, storage, no_arq, provider
+) -> None:
+    """钉子（外审 #1 / R1-A）：课程 grounding 同意只授权 chunk 检索；L1/L2
+    记忆正文仅在全局模型上下文同意激活时进入 provider 请求体。同意关 ⇒
+    请求体不含 memory.content、回执 memory_ids 为空（chunk 路径不受影响）；
+    同意开 ⇒ 原语义恢复——门只加不撤。"""
+    import asyncio
+
+    _file_id, user_id = _seed_course_material(db_session, client, auth_headers, storage)
+    _enable_consent(db_session, user_id)
+    asyncio.run(embed_pending_chunks(db_session, provider, user_id, COURSE))
+    memory = _add_episode(db_session, user_id, "该生在滤波器作业平均用时 40 分钟")
+    provider.scripted_fn = lambda context: f"定义：「{_context_clause(context, 1)}」[1]。"
+
+    # 全局模型上下文同意缺失（默认）——记忆不得进入请求体与回执。
+    off = client.post(
+        "/v1/material/answers",
+        json={"course_name": COURSE, "question": "什么是采样定理"},
+        headers=auth_headers,
+    )
+    assert off.status_code == 201, off.text
+    assert off.json()["memory_ids"] == []
+    assert "该生在滤波器作业平均用时 40 分钟" not in provider.generate_inputs[0]
+    assert PAGE_1[:8] in provider.generate_inputs[0]  # chunk 检索不受门影响
+
+    # 开启后同一问恢复原语义（正对照，防门假绿）。
+    _enable_model_consent(db_session, user_id)
+    provider.calls.clear()
+    on = client.post(
+        "/v1/material/answers",
+        json={"course_name": COURSE, "question": "什么是采样定理"},
+        headers=auth_headers,
+    )
+    assert on.status_code == 201, on.text
+    assert str(memory.id) in on.json()["memory_ids"]
+    assert "该生在滤波器作业平均用时 40 分钟" in provider.generate_inputs[0]
+
+
 def test_provider_failure_is_503_not_smooth_answer(
     db_session, client, auth_headers, storage, no_arq, provider
 ) -> None:
@@ -262,6 +308,7 @@ def test_deleted_memory_no_longer_reflected(
 ) -> None:
     _file_id, user_id = _seed_course_material(db_session, client, auth_headers, storage)
     _enable_consent(db_session, user_id)
+    _enable_model_consent(db_session, user_id)
     memory = _add_episode(db_session, user_id, "该生偏好晚间复习并做错题本")
     provider.scripted = "依据资料：「采样率至少为信号最高频率的两倍」[1]。结合记忆补充。"
 

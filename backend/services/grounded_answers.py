@@ -7,7 +7,8 @@ consistent snapshot (§5: citation anchors cannot drift mid-check):
 consent re-check (same ``consent_enabled`` as the embedding path — one gate,
 never a second copy) -> hybrid retrieval (pgvector cosine + keyword, RRF
 fusion; clean chunks only) -> confirmed-memory context via the shared
-``retrieve_memories`` floor -> provider generate (``store=False`` pinned in
+``retrieve_memories`` floor — memory content only under an active global
+model-context consent -> provider generate (``store=False`` pinned in
 the adapter) -> MECHANICAL citation verification (each quote must be found
 in the cited chunk's normalized text — the very ``normalize_text`` the
 scanner applied, so "scanned" and "verified" are one text universe) ->
@@ -38,6 +39,7 @@ from backend.models.material import MaterialAnswer, MaterialChunk
 from backend.services.content_scanner import normalize_text
 from backend.services.material_ingestion import consent_enabled
 from backend.services.memory_retrieval import retrieve_memories
+from backend.services.model_consent import active_consent_version
 
 logger = logging.getLogger(__name__)
 
@@ -327,11 +329,15 @@ async def answer_question(
         session, provider, user_id=user_id, course_name=course_name, question=question
     )
     # Confirmed L1/L2 via the shared floor (§3.6): two explicit level calls,
-    # no parallel retrieval semantics invented here.
-    memories = [
-        *retrieve_memories(session, user_id=user_id, level=1, limit=_MEMORY_PER_LEVEL),
-        *retrieve_memories(session, user_id=user_id, level=2, limit=_MEMORY_PER_LEVEL),
-    ]
+    # no parallel retrieval semantics invented here. The course consent above
+    # covers chunks only — memory content additionally requires an active
+    # global model-context consent (same gate as agent_tools).
+    memories: list = []
+    if active_consent_version(session, user_id) is not None:
+        memories = [
+            *retrieve_memories(session, user_id=user_id, level=1, limit=_MEMORY_PER_LEVEL),
+            *retrieve_memories(session, user_id=user_id, level=2, limit=_MEMORY_PER_LEVEL),
+        ]
     context = build_context(chunks, memories, question)
     answer_text = await provider.generate(context, INSTRUCTIONS)
     cleaned, grounded, citations = verify_citations(answer_text, chunks)
