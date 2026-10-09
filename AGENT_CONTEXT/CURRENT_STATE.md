@@ -1594,3 +1594,19 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   （license-inventory §7/§8 为输入）。M5 收口归档待 E7 双轮后由协调人
   执行（含过程台账：B v4 污染案、协调人锚定事故案、权威物计数
   `git show origin/main:<path>` 锚定硬规）。
+
+- **外部审查回应 + 队列重排（2026-10-09 深夜，协调人）**：外部模型对
+  main `f360c21` 的审查报告经协调人逐项独立复核——**14 项 P1 + 7 项
+  队列敏感 P2 共 21 项全部坐实、零误报**（结论与派工见
+  `external-review-f360c21-response.md`；报告本体含敏感事实描述不入仓）。
+  队列重排：**R1 隐私急修**（A=grounded 同意门 #1；B=fixtures PII 合成
+  重生成 #2【最急，仓已 public 六天】+ 密码 settle 即清 #3）→ **R2 E7
+  阻断面**（A=#5 审计 redact 执行期扫描/#6 闭包并入 evidence 血缘/#7
+  FAILED 重排 receipt 窄路径【预裁】/#13 心跳接线/#9 键长拒绝链/#12
+  sha256 键/写守卫 events 入口对账；B=#10 回执 fetcher + Rust owner
+  校验/self 守卫/迁移原子性三连）→ **R3 控制面余量**（A=#18 漂移
+  security 字段/#22 CI 闸门/#4 生产 compose/#8 拆块计账/#11 通配
+  授权校验；B=#14 partial 透出/#26/#27 跨账号残留与缓存 + #17 NOTICES
+  口径对账）→ A 吸收 THIRD_PARTY_NOTICES → **E7 双轮（顺延，通道与
+  协议不变，manifest 预期随各修复 PR 同步修订）** → M5 收口。P2 待核
+  余项与 P3 转 M5 后 backlog（复核过才修）。
