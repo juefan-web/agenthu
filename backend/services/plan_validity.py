@@ -1,11 +1,15 @@
 """Client-validity invariant for plans.
 
-The desktop client validates every plan response with the frozen Zod contract
-(``packages/contracts``), whose ``PlanItemSchema`` requires non-null
-``task_id``, ``start_at`` and ``end_at``. A plan violating that shape cannot be
-rendered by the client at all, so the Backend must never serve one on a
-client-facing path (DECISIONS.md D-023). This module is the single home for the
-rule, in both its Python and SQL forms; keep them in sync.
+The Zod contract (``packages/contracts``) mirrors the backend's nullable
+serialization: since #75, ``PlanItemSchema`` accepts explicit ``null``
+``task_id`` / ``start_at`` / ``end_at`` (placement may leave a windowless or
+taskless item), so the client can structurally render such items. The stricter
+non-null invariant kept here is a deliberate server-side design choice, not a
+contract constraint: the Backend commits to serving only fully-formed plan
+items on client-facing paths. This module is the single home for the rule, in
+both its Python and SQL forms; keep them in sync. (DECISIONS.md D-023 records
+the rule under its original, pre-#75 contract wording — historical context,
+kept as-is.)
 """
 
 from __future__ import annotations
