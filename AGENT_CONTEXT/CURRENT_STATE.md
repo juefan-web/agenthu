@@ -1516,7 +1516,6 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   client_ip 键回归、namespace 隔离。全量 475+1（白天窗实测）、
   ruff/pyright 0、drift 无漂移。活雷② §0 草案并行落 **PR #80** 待
   协调人裁定（两待裁项：历史脏数据标注、事件时长快照）。
-
 - **P0-5 切片 3 交审（A，2026-10-08，分支 `feature/m5-p0-5-multiprocess-stack`，
   §9 边界先行独立 commit）**：多进程竞态验证片——①跨进程 traceparent 缝
   （`worker/queue.py` 新 `enqueue` 注入 producer traceparent 为 job kwarg，
@@ -1535,6 +1534,27 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   ——跨进程贯通实测。环境事实：本地 otel-collector 0.116.0 镜像损坏
   （0.117.0 覆盖实测可用）；宿主 8000 被 WSL 内 llm_gateway 长占（证据
   区间挪 8100-8101，§9 修正已注）。CI 实测（修复头 `4e2545c`，run 37869406909）：**482 passed + 0 skipped**（= 476 基线 + 6 新）。首头两败已修并留痕 §10：CI 的 DATABASE_URL 与 TEST_DATABASE_URL 不同库使生产 session_scope 静默 not_found（测试改绑测试 engine）；retry_after 同毫秒进位 window+1 入断言上界。
+- **P0-6 路径 B 执行片（B，2026-10-08）**：协调人裁定路径 B（回退
+  `06dc3cf0` MIT 基座重推导）后即刻执行。新规矩首用：执行框先落
+  `AGENT_CONTEXT/TASKS/m5-p0-6-path-b.md` §0 并独立 commit（3779846）
+  后才动四文件。交付面恰好 5 文件（info-lib 四源文件 + LICENSE），
+  契约面（index.ts/vendor.d.ts/package.json/桌面网关与测试）零改动。
+  关键落法：hunk 二分（ours-vs-p317 的 48/7/0 行 OneTHU 增量平移；
+  其余按活面独立重推导/死面回 06 二分）；finger3 裁定修正为保留
+  （捕获块在 48 行增量内且桌面信任链活用，预核的"丢弃"倾向被实测
+  推翻——桌面测试零改动即达成）；SM2/OAuth/totp 按学校协议独立实现
+  （sm-crypto 已声明依赖）；getRedirectLocation/forgetDevice/设备
+  管理 URL/cr 分支整体剔除。回差实测：core-vs-p06 242→145、
+  strings 136→7、error 4→0；vs-p317 48→233、7→136、0→4；残留
+  grep 12 模式全零；finger 面同形对比实测（A 互审修正口径，ours/p06）：
+  core 敏感行 12/7、不敏感行 18/12、出现次数 27/17——增量
+  = OneTHU finger3 信任链净 6 行/10 次（p06 不敏感 12 行基面 + 6），
+  无设备管理流残留；
+  typecheck 三包绿、
+  vitest 33/244 全绿、build 1005.79 kB 与基线等值；红线复测
+  venue/coursex/zhjwxk/xkAction 全 0（zhjwxk 5→0）。LICENSE 改为
+  三段真话（基座事实/自有工作清单/边界声明）。分发封印不因本片解除
+  （§5-3/5-4/5-5 仍待）。待 PR 互审。
 
 - **活雷②实现片交审（A，2026-10-09，分支 `feature/m1-focus-pause-accounting`，
   基 main `6a13b08`）**：Focus 暂停记账——迁移 `b8e4f1a26d39` 两列

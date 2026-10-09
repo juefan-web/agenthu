@@ -1,19 +1,44 @@
 MIT License
 
 Copyright (c) 2023-2024 UNIDY2002 & thu-info-community contributors
+Copyright (c) 2026 OneTHU & Agenthu contributors
 
-This vendored copy is derived from the thu-info-app monorepo
-(packages/thu-info-lib) at commit 06dc3cf0 (2024-07-10 14:53 +0800),
-the last snapshot under the MIT license before the upstream project
-switched to the Business Source License 1.1 (33fd0a86, 2024-07-10
-15:07 +0800). All code added in this repository on top of that
-snapshot (platform transport injection, SM2 password port, etc.) is
-OneTHU-authored and published under the same MIT license.
+Provenance of this vendored copy (measurement record:
+AGENT_CONTEXT/TASKS/m5-p0-6-path-b.md in the Agenthu repository):
 
-Post-BSL upstream commits are NOT incorporated by copy; missing
-capabilities discovered after the boundary are implemented
-independently in this repository or sourced from OneTHU's own
-pre-existing modules.
+1. Base. The files in this package were re-derived in October 2026 from
+   the thu-info-app monorepo (packages/thu-info-lib,
+   https://github.com/thu-info-community/thu-info-app) at commit
+   06dc3cf0 (2024-07-10 14:53 +0800), the last snapshot under the MIT
+   license before the upstream project switched to the Business Source
+   License 1.1 (33fd0a86, 2024-07-10 15:07 +0800; Change Date
+   2030-09-15). utils/error.ts, the constants in constants/strings.ts,
+   and the structural base of lib/core.ts come from that snapshot.
+
+2. Repository-authored work on top of the base, published under the same
+   MIT license:
+   - utils/network.ts is rewritten for this repository: the request path
+     is an injectable platformFetch transport (Tauri / Rust reqwest),
+     cookie handling is delegated to the platform cookie jar, and the
+     charset policy is UTF-8 only.
+   - lib/core.ts carries this repository's authentication adaptation:
+     SM2 password encryption (the school login pages now publish an
+     #sm2publicKey and accept only encrypted submissions; implemented
+     with the sm-crypto package), the OAuth landing flow, the
+     oauth lbredirect wrapper for roaming redirects, TOTP as a third
+     two-factor option, the device-trust finger3 capture, the
+     login-chain reset hook (clearOutstandingLogin), and the
+     direct-connect secondary-timetable URL.
+   - The package is deliberately narrowed to authentication
+     (login / roam / csrf); data clients are not vendored here.
+
+3. Boundary statement. Code from post-BSL upstream commits is NOT
+   incorporated by copy. Capabilities the school introduced after the
+   MIT boundary (SM2-encrypted submissions, the oauth lbredirect
+   entry, TOTP verification) are implemented independently from the
+   observable school protocol; residual resemblance is limited to
+   protocol facts (element ids, action names, the "04" SM2 prefix)
+   that admit no alternative expression.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

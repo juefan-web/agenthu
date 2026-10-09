@@ -1,24 +1,19 @@
 import {
-    CHECK_CURRENT_DEVICE_URL,
-    CR_LOGIN_HOME_URL,
-    DELETE_DEVICE_URL,
     DOUBLE_AUTH_URL,
     GET_COOKIE_URL,
-    GET_DEVICE_LIST_URL,
     GITLAB_AUTH_URL,
     GITLAB_LOGIN_URL,
     ID_BASE_URL,
     ID_HOST_URL,
     ID_LOGIN_URL,
-    ID_WEBSITE_BASE_URL,
-    ID_WEBSITE_LOGIN_URL,
     INVOICE_LOGIN_URL,
     LOGIN_URL,
     LOGOUT_URL,
-    MADMODEL_AUTH_LOGIN_URL,
     ROAMING_URL,
     SAVE_FINGER_URL,
     USER_DATA_URL,
+    WEB_VPN_ID_BASE_URL,
+    WEB_VPN_ID_LOGIN_URL,
     WEB_VPN_OAUTH_LOGIN_URL,
 } from "../constants/strings";
 import * as cheerio from "cheerio";
@@ -27,17 +22,11 @@ import {clearCookies, getRedirectUrl, uFetch} from "../utils/network";
 import {IdAuthError, LibError, LoginError, UrlError} from "../utils/error";
 import {sm2} from "sm-crypto";
 
-// OneTHU 适配：OpenHarmony rtn-network-utils require 块已剔除（vite 静态解析会失败）
-// Optional native redirect resolver. The desktop transport follows redirects
-// itself, while OpenHarmony integrations may assign this hook at runtime.
-let getRedirectLocation: ((url: string) => Promise<string | null | undefined>) | undefined;
-
-type RoamingPolicy = "default" | "id" | "id_website" | "card" | "cab" | "gitlab" | "cr";
+type RoamingPolicy = "default" | "card" | "cab" | "gitlab" | "id";
 
 const HOST_MAP: { [key: string]: string } = {
     "zhjw.cic": "77726476706e69737468656265737421eaff4b8b69336153301c9aa596522b20bc86e6e559a9b290",
     "jxgl.cic": "77726476706e69737468656265737421faef469069336153301c9aa596522b20e33c1eb39606919f",
-    "zhjwxk.cic": "77726476706e69737468656265737421faef469069336153301c9aa596522b20e33c1eb39606919f",
     "ecard": "77726476706e69737468656265737421f5f4408e237e7c4377068ea48d546d303341e9882a",
     "learn": "77726476706e69737468656265737421fcf2408e297e7c4377068ea48d546d30ca8cc97bcc",
     "mails": "77726476706e69737468656265737421fdf64890347e7c4377068ea48d546d3011ff591d40",
@@ -49,10 +38,9 @@ const HOST_MAP: { [key: string]: string } = {
     "yhdf": "77726476706e69737468656265737421e9ff459a69247b59700f81b9991b26317dbd36ae",
     "usereg": "77726476706e69737468656265737421e5e4448e223726446d0187ab9040227b54b6c80fcd73",
     "thos": "77726476706e69737468656265737421e4ff4e8f69247b59700f81b9991b2631ca359dd4",
-    "zzjl.graduate": "77726476706e69737468656265737421eaed4b9069377a517a1d88b89d1b37269c624d2b1c6925f37faea82b8d",
-    "madmodel.cs": "77726476706e69737468656265737421fdf6459128346d5c300b9ae28c462a3b27469fc32211fa26a3e464",
 };
 
+// 学校 id 登录口令的 SM2 非压缩公钥点前缀（表单协议事实，见 #sm2publicKey 页面脚本）。
 const SM2_MAGIC_NUMBER = "04";
 
 const parseUrl = (urlIn: string) => {
@@ -71,6 +59,8 @@ const parseUrl = (urlIn: string) => {
     return `https://webvpn.tsinghua.edu.cn/${protocolFull}/${HOST_MAP[host]}/${path}`;
 };
 
+// 把裸 id 域锚点换算成新 LB 入口（oauth lbredirect），平台传输跟随铸票；
+// learn 会话即走此链（表单→check→锚点→包装跟随）。
 const getWebVPNUrl = (urlIn: string): string => {
     if (urlIn.search("oauth.tsinghua.edu.cn") !== -1) {
         return urlIn;
@@ -96,16 +86,20 @@ export const getCsrfToken = async () => {
 let outstandingLoginPromise: Promise<void> | undefined = undefined;
 
 const twoFactorAuth = async (helper: InfoHelper): Promise<string> => {
-    const { result: r1, msg: m1, object: o1 } = JSON.parse(await uFetch(DOUBLE_AUTH_URL, {
+    const approaches = JSON.parse(await uFetch(DOUBLE_AUTH_URL, {
         action: "FIND_APPROACHES",
     }));
-    if (r1 != "success") {
-        throw new LoginError(m1);
+    if (approaches.result != "success") {
+        throw new LoginError(approaches.msg);
     }
     if (!helper.twoFactorMethodHook) {
         throw new LoginError("Required to select 2FA method");
     }
-    const method = await helper.twoFactorMethodHook(o1.hasWeChatBool, o1.phone, o1.hasTotp);
+    const method = await helper.twoFactorMethodHook(
+        approaches.object.hasWeChatBool,
+        approaches.object.phone,
+        approaches.object.hasTotp,
+    );
     if (method === undefined) {
         throw new LoginError("2FA required");
     }
@@ -123,12 +117,12 @@ const twoFactorAuth = async (helper: InfoHelper): Promise<string> => {
     if (code === undefined) {
         throw new LoginError("2FA required");
     }
-    const { result: r3, msg: m3, object: o3 } = JSON.parse(await uFetch(DOUBLE_AUTH_URL, {
+    const verified = JSON.parse(await uFetch(DOUBLE_AUTH_URL, {
         action: method === "totp" ? "VERITY_TOTP_CODE" : "VERITY_CODE",
         vericode: code,
     }));
-    if (r3 != "success") {
-        throw new LoginError(m3);
+    if (verified.result != "success") {
+        throw new LoginError(verified.msg);
     }
     if (helper.trustFingerprintHook) {
         const trustFingerprint = await helper.trustFingerprintHook();
@@ -155,7 +149,7 @@ const twoFactorAuth = async (helper: InfoHelper): Promise<string> => {
             }
         }
     }
-    return await uFetch(ID_HOST_URL + o3.redirectUrl);
+    return await uFetch(ID_HOST_URL + verified.object.redirectUrl);
 };
 
 export const login = async (
@@ -185,28 +179,13 @@ export const login = async (
                 }, 3 * 60 * 1000);
                 (async () => {
                     await uFetch(WEB_VPN_OAUTH_LOGIN_URL);
-                    let sm2PublicKey = "";
-                    if (getRedirectLocation) {
-                        // Patch for OpenHarmony
-                        const oauthUrl = await getRedirectLocation(WEB_VPN_OAUTH_LOGIN_URL);
-                        if (!oauthUrl) {
-                            throw new LoginError("Failed to get oauth url.");
-                        }
-                        await uFetch(oauthUrl);
-                        const idUrl = await getRedirectLocation(oauthUrl);
-                        if (!idUrl) {
-                            throw new LoginError("Failed to get id url.");
-                        }
-                        sm2PublicKey = cheerio.load(await uFetch(idUrl))("#sm2publicKey").text();
-                    } else {
-                        // OneTHU 适配（2026-09-17 定案）：库外层（infoLib.libLogin）
-                        // 已在登录前清空原生 cookie 仓——干净客户端总是走完整
-                        // OAuth 舞（表单带 sig → check → 302 webvpn/login?code=
-                        // → 铸真票）。带陈旧匿名票才会被 IP 续会拦成门户页
-                        // （无 key），此处保持「无 key 即报错」，由外层自愈重试。
-                        const landingPage = await uFetch(WEB_VPN_OAUTH_LOGIN_URL);
-                        sm2PublicKey = cheerio.load(landingPage)("#sm2publicKey").text();
-                    }
+                    // OneTHU 适配（2026-09-17 定案）：库外层（infoLib.libLogin）
+                    // 已在登录前清空原生 cookie 仓——干净客户端总是走完整
+                    // OAuth 舞（表单带 sig → check → 302 webvpn/login?code=
+                    // → 铸真票）。带陈旧匿名票才会被 IP 续会拦成门户页
+                    // （无 key），此处保持「无 key 即报错」，由外层自愈重试。
+                    const landingPage = await uFetch(WEB_VPN_OAUTH_LOGIN_URL);
+                    const sm2PublicKey = cheerio.load(landingPage)("#sm2publicKey").text();
                     if (sm2PublicKey === "") {
                         throw new LoginError("Failed to get public key.");
                     }
@@ -226,12 +205,9 @@ export const login = async (
                         throw new LoginError(message);
                     }
                     const callbackUrl = cheerio.load(response)("a").attr()!.href;
-                    const redirectUrl = await (getRedirectLocation ?? getRedirectUrl)(callbackUrl);
+                    const redirectUrl = await getRedirectUrl(callbackUrl);
                     if (redirectUrl === LOGIN_URL || redirectUrl == null) {
                         throw new LoginError("登录失败，请稍后重试。");
-                    }
-                    if (getRedirectLocation) {
-                        await uFetch(redirectUrl);
                     }
                     await roam(helper, "id", "10000ea055dd8d81d09d5a1ba55d39ad");
                     outstandingLoginPromise = undefined;
@@ -270,95 +246,88 @@ export const roam = async (helper: InfoHelper, policy: RoamingPolicy, payload: s
     switch (policy) {
     case "default": {
         const csrf = await getCsrfToken();
-        const {object} = await uFetch(`${ROAMING_URL}?yyfwid=${payload}&_csrf=${csrf}&machine=p`).then(JSON.parse);
+        const {object} = await uFetch(`${ROAMING_URL}?yyfwid=${payload}&_csrf=${csrf}&machine=p`, {}).then(JSON.parse);
         const url = parseUrl(object.roamingurl.replace(/&amp;/g, "&"));
         if (url.includes(HOST_MAP["dzpj"])) {
             const roamHtml = await uFetch(url);
-            const ticket = /\("ticket"\).value = '(.+?)';/.exec(roamHtml);
-            if (ticket === null || ticket[1] === undefined) {
-                throw new LibError("Failed to get ticket when roaming to fa-online");
+            const username = /\("username"\).value = '(.+?)';/.exec(roamHtml);
+            if (username === null || username[1] === undefined) {
+                throw new LibError("Failed to get username when roaming to fa-online");
             }
-            return await uFetch(INVOICE_LOGIN_URL, {ticket: ticket[1]});
-        }
-        if (url.includes(HOST_MAP["madmodel.cs"])) {
-            const ticket = /ticket=(.+)/.exec(url);
-            if (ticket === null || ticket[1] === undefined) {
-                throw new LibError("Failed to get ticket of madmodel.cs");
+            const password = /\("password"\).value = '(.+?)';/.exec(roamHtml);
+            if (password === null || password[1] === undefined) {
+                throw new LibError("Failed to get password when roaming to fa-online");
             }
-            await uFetch(url);
-            return await uFetch(`${MADMODEL_AUTH_LOGIN_URL}/check?ticket=${ticket[1]}`);
+            return await uFetch(INVOICE_LOGIN_URL, {username: username[1], password: password[1]});
         }
         return await uFetch(url);
     }
-    case "card":
-    case "cab":
-    case "cr":
-    case "id_website":
     case "id": {
-        const idBaseUrl = policy === "card" ? ID_BASE_URL : policy === "id_website" ? ID_WEBSITE_BASE_URL : ID_BASE_URL;
-        const idLoginUrl = policy === "card" ? ID_LOGIN_URL : policy === "id_website" ? ID_WEBSITE_LOGIN_URL : ID_LOGIN_URL;
         let response = "";
-        const target = policy === "id_website" ? "账号设置" : "登录成功。正在重定向到";
         for (let i = 0; i < 2; i++) {
-            const sm2PublicKey = cheerio.load(await uFetch(policy === "cr" ? CR_LOGIN_HOME_URL : (idBaseUrl + payload)))("#sm2publicKey").text();
+            // id 表单页携带 SM2 公钥（#sm2publicKey），口令必须加密上传
+            // （sm-crypto 独立实现，见任务书 §0-3）。
+            const formPage = await uFetch(ID_BASE_URL + payload);
+            const sm2PublicKey = cheerio.load(formPage)("#sm2publicKey").text();
             if (sm2PublicKey === "") {
                 throw new LoginError("Failed to get public key.");
             }
-            if (policy === "id_website") {
-                response = await uFetch(idLoginUrl, {
-                    username: helper.userId,
-                    password:  SM2_MAGIC_NUMBER + sm2.doEncrypt(helper.password, sm2PublicKey),
-                    fingerPrint: helper.fingerprint,
-                    fingerGenPrint: helper.fingerGenPrint ?? "",
-                    i_captcha: "",
-                });
-            } else {
-                response = await uFetch(idLoginUrl, {
-                    i_user: helper.userId,
-                    i_pass:  SM2_MAGIC_NUMBER + sm2.doEncrypt(helper.password, sm2PublicKey),
-                    fingerPrint: helper.fingerprint,
-                    fingerGenPrint: helper.fingerGenPrint ?? "",
-                    i_captcha: "",
-                });
-            }
+            response = await uFetch(ID_LOGIN_URL, {
+                i_user: helper.userId,
+                i_pass: SM2_MAGIC_NUMBER + sm2.doEncrypt(helper.password, sm2PublicKey),
+                fingerPrint: helper.fingerprint,
+                fingerGenPrint: helper.fingerGenPrint ?? "",
+                i_captcha: "",
+            });
             if (response.includes("二次认证")) {
                 response = await twoFactorAuth(helper);
             }
-            if (response.includes(target)) {
+            if (response.includes("登录成功。正在重定向到")) {
                 break;
             }
         }
-        if (!response.includes(target)) {
+        if (!response.includes("登录成功。正在重定向到")) {
             throw new IdAuthError();
         }
-        if (policy === "id_website") {
-            return response;
-        }
-        let redirectUrl = cheerio.load(response)("a").attr()!.href;
-        if (policy !== "card") {
-            redirectUrl = getWebVPNUrl(redirectUrl);
-            if (getRedirectLocation) {
-                // Patch for OpenHarmony
-                const idUrl = await getRedirectLocation(redirectUrl);
-                if (!idUrl) {
-                    throw new LoginError("Failed to get id url.");
-                }
-                redirectUrl = idUrl;
+        const redirectUrl = getWebVPNUrl(cheerio.load(response)("a").attr()!.href);
+        return await uFetch(redirectUrl);
+    }
+    case "card":
+    case "cab": {
+        const idBaseUrl = policy === "card" ? ID_BASE_URL : WEB_VPN_ID_BASE_URL;
+        const idLoginUrl = policy === "card" ? ID_LOGIN_URL : WEB_VPN_ID_LOGIN_URL;
+        let response = "";
+        for (let i = 0; i < 2; i++) {
+            await uFetch(idBaseUrl + payload);
+            response = await uFetch(idLoginUrl, {
+                i_user: helper.userId,
+                i_pass: helper.password,
+                fingerPrint: helper.fingerprint,
+                fingerGenPrint: "",
+                i_captcha: "",
+            });
+            if (response.includes("二次认证")) {
+                response = await twoFactorAuth(helper);
+            }
+            if (response.includes("登录成功。正在重定向到")) {
+                break;
             }
         }
+        if (!response.includes("登录成功。正在重定向到")) {
+            throw new IdAuthError();
+        }
+        const redirectUrl = cheerio.load(response)("a").attr()!.href;
+
         return await uFetch(redirectUrl);
     }
     case "gitlab": {
         const data = await uFetch(GITLAB_LOGIN_URL);
         if (data.includes("sign_out")) return data;
         const authenticity_token = cheerio.load(data)("[name=authenticity_token]").attr()!.value;
-        const sm2PublicKey = cheerio.load(await uFetch(GITLAB_AUTH_URL, {authenticity_token}))("#sm2publicKey").text();
-        if (sm2PublicKey === "") {
-            throw new LoginError("Failed to get public key.");
-        }
+        await uFetch(GITLAB_AUTH_URL, {authenticity_token});
         let response = await uFetch(ID_LOGIN_URL, {
             i_user: helper.userId,
-            i_pass: SM2_MAGIC_NUMBER + sm2.doEncrypt(helper.password, sm2PublicKey),
+            i_pass: helper.password,
             fingerPrint: helper.fingerprint,
             fingerGenPrint: "",
             i_captcha: "",
@@ -444,29 +413,3 @@ export const roamingWrapperWithMocks = async <R>(
     helper.mocked()
         ? Promise.resolve(fallback)
         : roamingWrapper(helper, policy, payload, operation);
-
-export const forgetDevice = async (helper: InfoHelper): Promise<void> => {
-    await roam(helper, "id_website", "");
-    for (let i = 0; i < 10; i++) {
-        const {result: r1, msg: m1, object: o1} = JSON.parse(await uFetch(CHECK_CURRENT_DEVICE_URL.replace("{fingerprint}", helper.fingerprint), {}));
-        if (r1 != "success") {
-            throw new LibError(m1);
-        }
-        if (o1 === false) {
-            break;
-        }
-        const {result: r2, msg: m2, object: o2} = JSON.parse(await uFetch(GET_DEVICE_LIST_URL, {}));
-        if (r2 != "success") {
-            throw new LibError(m2);
-        }
-        const ourDeviceList = o2.filter(({name}: any) => name.startsWith("THU Info APP"));
-        if (ourDeviceList.length > 0) {
-            const {result: r3, msg: m3} = JSON.parse(await uFetch(DELETE_DEVICE_URL, {uuid: ourDeviceList[ourDeviceList.length - 1].id}));
-            if (r3 != "success") {
-                throw new LibError(m3);
-            }
-        } else {
-            throw new LibError("No matching device.");
-        }
-    }
-};
