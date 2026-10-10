@@ -161,3 +161,10 @@ status）转 E7 执行轮与部署演练的观察项。
   修订（原「行数不变」与实现相悖；D-036 §1 样本不足→整链清理：e5 删
   除 ⇒ m2b+m2a 整链 -2）+ seed 的 evidence 键名 kind→type 归一（生产
   写入方均为 type，模型注释同）。
+- 2026-10-10 R2-A 执行（#9+#12，分支 `fix/idempotency-key-robustness`）：
+  #12 = agent_tools 两处 idempotency_key 的 `hash()`（PYTHONHASHSEED 进程
+  随机）换 sha256 前 16 hex（64bit，强于原 48bit 掩码；等参跨进程稳定，
+  钉子断言精确公式）；#9 = dedupe 键长检查入 ingest_event_batch 逐
+  envelope 拒绝链（与 suppression 同级——provenance.upstream_id/
+  semantic_version 无上限，超 255 溢出曾炸整批 500），create_event 直连
+  路径同款 ValidationError。
