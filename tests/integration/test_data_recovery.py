@@ -237,9 +237,7 @@ def _force_failed(db_session, operation_id: uuid.UUID) -> DataOperation:
     """Park a confirmed account deletion the way an exhausted ladder would:
     operation FAILED with error state, one item FAILED mid-ladder."""
 
-    operation = db_session.scalar(
-        select(DataOperation).where(DataOperation.id == operation_id)
-    )
+    operation = db_session.scalar(select(DataOperation).where(DataOperation.id == operation_id))
     operation.status = DataOperationStatus.FAILED
     operation.error_code = "ladder_exhausted"
     operation.error_message = "chaos injection"
@@ -262,9 +260,7 @@ class TestAccountRequeue:
     confirm-time deactivation, and it drives the same ladder reset as the
     source/memory manual retry."""
 
-    def test_requeue_revives_a_failed_account_deletion(
-        self, client, auth_headers, db_session
-    ):
+    def test_requeue_revives_a_failed_account_deletion(self, client, auth_headers, db_session):
         confirmed = _account_confirm(client, auth_headers, key="requeue-key-01")
         operation = confirmed["operation"]
         row = _force_failed(db_session, uuid.UUID(operation["id"]))
@@ -347,9 +343,7 @@ class TestAccountRequeue:
         assert response.status_code == 409, response.text
         assert response.json()["error"]["code"] == "version_conflict"
 
-    def test_receipt_exposes_operation_status_and_version(
-        self, client, auth_headers, db_session
-    ):
+    def test_receipt_exposes_operation_status_and_version(self, client, auth_headers, db_session):
         confirmed = _account_confirm(client, auth_headers, key="requeue-key-05")
         operation = confirmed["operation"]
         row = _force_failed(db_session, uuid.UUID(operation["id"]))
