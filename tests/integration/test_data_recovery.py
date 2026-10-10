@@ -19,7 +19,8 @@ from pathlib import Path
 import pytest
 from sqlalchemy import select
 
-from backend.models.data_lifecycle import DataReceipt
+from backend.models.data_lifecycle import DataCleanupItem, DataOperation, DataReceipt
+from backend.models.enums import CleanupItemState, DataOperationStatus
 from backend.services.data_recovery import (
     deletion_request_digest,
     seal_capability,
@@ -230,3 +231,134 @@ class TestReceipts:
             headers={"Authorization": f"Bearer {operation['receipt_capability']}"},
         )
         assert expired.status_code == 404
+
+
+def _force_failed(db_session, operation_id: uuid.UUID) -> DataOperation:
+    """Park a confirmed account deletion the way an exhausted ladder would:
+    operation FAILED with error state, one item FAILED mid-ladder."""
+
+    operation = db_session.scalar(
+        select(DataOperation).where(DataOperation.id == operation_id)
+    )
+    operation.status = DataOperationStatus.FAILED
+    operation.error_code = "ladder_exhausted"
+    operation.error_message = "chaos injection"
+    operation.error_retryable = True
+    item = db_session.scalars(
+        select(DataCleanupItem)
+        .where(DataCleanupItem.operation_id == operation_id)
+        .order_by(DataCleanupItem.id)
+    ).first()
+    item.state = CleanupItemState.FAILED
+    item.attempts = 5
+    item.last_error = "S3 403"
+    db_session.flush()
+    return operation
+
+
+class TestAccountRequeue:
+    """Capability-driven requeue for FAILED account deletions (external
+    review #7): the receipt narrow path is the only key after the
+    confirm-time deactivation, and it drives the same ladder reset as the
+    source/memory manual retry."""
+
+    def test_requeue_revives_a_failed_account_deletion(
+        self, client, auth_headers, db_session
+    ):
+        confirmed = _account_confirm(client, auth_headers, key="requeue-key-01")
+        operation = confirmed["operation"]
+        row = _force_failed(db_session, uuid.UUID(operation["id"]))
+        failed_ids = {
+            item.id
+            for item in db_session.scalars(
+                select(DataCleanupItem).where(DataCleanupItem.operation_id == row.id)
+            ).all()
+            if item.state == CleanupItemState.FAILED
+        }
+        assert failed_ids  # the forced-failure precondition held
+
+        # Precondition: business auth is closed, the authed retry route is
+        # unreachable for this owner — the capability is the only way in.
+        assert client.get("/v1/auth/me", headers=auth_headers).status_code == 401
+
+        requeued = client.post(
+            f"/v1/data/receipts/{operation['receipt_id']}/requeue",
+            json={"expected_version": operation["version"]},
+            headers={"Authorization": f"Bearer {operation['receipt_capability']}"},
+        )
+        assert requeued.status_code == 200, requeued.text
+        body = requeued.json()
+        assert body["id"] == operation["id"]
+        assert body["status"] == "QUEUED"
+        assert body["version"] == operation["version"] + 1
+
+        db_session.refresh(row)
+        assert row.status == DataOperationStatus.QUEUED
+        assert row.error_code is None and row.error_message is None
+        items = db_session.scalars(
+            select(DataCleanupItem).where(DataCleanupItem.operation_id == row.id)
+        ).all()
+        assert all(item.state == CleanupItemState.PENDING for item in items)
+        assert all(item.attempts == 0 and item.last_error is None for item in items)
+
+    def test_wrong_or_missing_capability_is_the_uniform_404(self, client, auth_headers):
+        confirmed = _account_confirm(client, auth_headers, key="requeue-key-02")
+        operation = confirmed["operation"]
+        url = f"/v1/data/receipts/{operation['receipt_id']}/requeue"
+
+        wrong = client.post(
+            url, json={"expected_version": 1}, headers={"Authorization": "Bearer nope"}
+        )
+        missing = client.post(url, json={"expected_version": 1})
+        unknown = client.post(
+            f"/v1/data/receipts/{uuid.uuid4()}/requeue",
+            json={"expected_version": 1},
+            headers={"Authorization": f"Bearer {operation['receipt_capability']}"},
+        )
+        assert {wrong.status_code, missing.status_code, unknown.status_code} == {404}
+
+    def test_completed_termination_never_requeues(self, client, auth_headers, db_session):
+        confirmed = _account_confirm(client, auth_headers, key="requeue-key-03")
+        operation = confirmed["operation"]
+        row = db_session.scalar(
+            select(DataOperation).where(DataOperation.id == uuid.UUID(operation["id"]))
+        )
+        row.status = DataOperationStatus.COMPLETED
+        db_session.flush()
+
+        response = client.post(
+            f"/v1/data/receipts/{operation['receipt_id']}/requeue",
+            json={"expected_version": operation["version"]},
+            headers={"Authorization": f"Bearer {operation['receipt_capability']}"},
+        )
+        assert response.status_code == 409, response.text
+        assert response.json()["error"]["code"] == "not_retryable"
+
+    def test_version_conflict_on_a_stale_holder(self, client, auth_headers, db_session):
+        confirmed = _account_confirm(client, auth_headers, key="requeue-key-04")
+        operation = confirmed["operation"]
+        _force_failed(db_session, uuid.UUID(operation["id"]))
+
+        response = client.post(
+            f"/v1/data/receipts/{operation['receipt_id']}/requeue",
+            json={"expected_version": operation["version"] + 3},
+            headers={"Authorization": f"Bearer {operation['receipt_capability']}"},
+        )
+        assert response.status_code == 409, response.text
+        assert response.json()["error"]["code"] == "version_conflict"
+
+    def test_receipt_exposes_operation_status_and_version(
+        self, client, auth_headers, db_session
+    ):
+        confirmed = _account_confirm(client, auth_headers, key="requeue-key-05")
+        operation = confirmed["operation"]
+        row = _force_failed(db_session, uuid.UUID(operation["id"]))
+
+        response = client.get(
+            f"/v1/data/receipts/{operation['receipt_id']}",
+            headers={"Authorization": f"Bearer {operation['receipt_capability']}"},
+        )
+        assert response.status_code == 200, response.text
+        receipt = response.json()
+        assert receipt["operation_status"] == "FAILED"
+        assert receipt["operation_version"] == row.version
