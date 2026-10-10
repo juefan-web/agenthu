@@ -8,7 +8,9 @@ use one graph).
 
 Slice-1 scope: the direct families and the derivation edges that exist
 today — events→tasks via ``task_events``, events→memories via
-``source_event_ids``, files→chunks/answers via ``file_id``/``citations``,
+``source_event_ids`` UNION canonical ``evidence`` containment plus
+memory→memory evidence edges to a fixpoint (keyed-L2 lineage, external
+review #6), files→chunks/answers via ``file_id``/``citations``,
 sessions→messages via ``session_id``, memory ``supersedes`` chains. The
 projection families the slice-2 executor recomputes appear as recompute
 effects; plan-item basis closure lands with that executor wiring.
@@ -105,6 +107,33 @@ def _uuids(values) -> list[uuid.UUID]:
     """Target dicts round-trip through JSONB, so ids may arrive as strings."""
 
     return [uuid.UUID(value) if isinstance(value, str) else value for value in values]
+
+
+def _evidence_citing_ids(
+    session: Session,
+    user_id: uuid.UUID,
+    *,
+    event_ids: set[str] | frozenset[str] = frozenset(),
+    memory_ids: set[str] | frozenset[str] = frozenset(),
+) -> set[str]:
+    """Memories whose canonical evidence cites any of the given events or
+    memories (external review #6): keyed L2s are written with empty
+    ``source_event_ids`` — their lineage lives only in ``evidence``. The
+    jsonb containment (@>) below is what the ix_memories_evidence GIN
+    index (jsonb_path_ops) serves; per-id disjuncts bitmap-OR into one
+    index scan."""
+
+    clauses = [
+        Memory.evidence.contains([{"type": evidence_type, "id": value}])
+        for evidence_type, id_set in (("event", event_ids), ("memory", memory_ids))
+        for value in id_set
+    ]
+    if not clauses:
+        return set()
+    return {
+        str(row[0])
+        for row in _rows(session, select(Memory.id).where(Memory.user_id == user_id, or_(*clauses)))
+    }
 
 
 def _impact_with_versions(
@@ -342,30 +371,39 @@ def _event_closure(session: Session, user_id: uuid.UUID, ids: list[uuid.UUID]) -
         )
 
     event_id_strings = {str(value) for value in ids}
-    citing = [
-        row
+    # Citing memories: the denormalized source_event_ids subset (the L1
+    # write path) UNION canonical evidence containment (the keyed-L2 path —
+    # empty source_event_ids, lineage only in evidence; external review #6),
+    # then memory→memory evidence edges extend the set to a fixpoint.
+    citing_ids = {
+        str(row[0])
         for row in _rows(
             session,
-            select(Memory.id, Memory.updated_at, Memory.source_event_ids).where(
-                Memory.user_id == user_id
+            select(Memory.id, Memory.source_event_ids).where(Memory.user_id == user_id),
+        )
+        if row[1] and set(row[1]) & event_id_strings
+    } | _evidence_citing_ids(session, user_id, event_ids=event_id_strings)
+    while True:
+        grown = citing_ids | _evidence_citing_ids(session, user_id, memory_ids=citing_ids)
+        if grown == citing_ids:
+            break
+        citing_ids = grown
+    if citing_ids:
+        impact, stamps = _impact_with_versions(
+            "memories",
+            _rows(
+                session,
+                select(Memory.id, Memory.updated_at)
+                .where(Memory.id.in_(_uuids(citing_ids)))
+                .order_by(Memory.id),
             ),
+            reason_code=DERIVED_CLOSURE,
         )
-        if row[2] and set(row[2]) & event_id_strings
-    ]
-    if citing:
-        impacts.append(
-            FamilyImpact(
-                "memories",
-                delete_ids=tuple(str(row[0]) for row in citing),
-                reason_code=DERIVED_CLOSURE,
-            )
-        )
-        versions.extend(
-            f"memories:{row[0]}:{row[1].isoformat()}" for row in citing if row[1] is not None
-        )
+        impacts.append(impact)
+        versions.extend(stamps)
 
     projection = session.scalar(select(CurrentState.id).where(CurrentState.user_id == user_id))
-    if projection is not None and (anchored_task_rows or citing):
+    if projection is not None and (anchored_task_rows or citing_ids):
         impacts.append(
             FamilyImpact("current_states", recompute_ids=(str(projection),), reason_code=RECOMPUTE)
         )
@@ -488,7 +526,9 @@ def _memory_closure(session: Session, user_id: uuid.UUID, ids: list[uuid.UUID]) 
     _owned_ids_or_404(session, Memory, user_id, ids, "memory")
     # include_history is enforced at the schema layer (Literal[True]); here
     # the closure IS the whole chain: successors via supersedes_id, older
-    # rows via "who points into the closure", iterated to a fixpoint.
+    # rows via "who points into the closure", plus memories whose canonical
+    # EVIDENCE cites a closure member (keyed L2 lineage — external review
+    # #6), all iterated to a fixpoint.
     reachable = {str(value) for value in ids}
     while True:
         successors = _rows(
@@ -506,13 +546,20 @@ def _memory_closure(session: Session, user_id: uuid.UUID, ids: list[uuid.UUID]) 
                 Memory.supersedes_id.in_(_uuids(reachable)),
             ),
         )
-        grown = reachable | {str(row[0]) for row in successors} | {str(row[0]) for row in older}
+        grown = (
+            reachable
+            | {str(row[0]) for row in successors}
+            | {str(row[0]) for row in older}
+            | _evidence_citing_ids(session, user_id, memory_ids=reachable)
+        )
         if grown == reachable:
             break
         reachable = grown
     version_rows = _rows(
         session,
-        select(Memory.id, Memory.updated_at).where(Memory.id.in_(_uuids(reachable))),
+        select(Memory.id, Memory.updated_at)
+        .where(Memory.id.in_(_uuids(reachable)))
+        .order_by(Memory.id),
     )
     impact, stamps = _impact_with_versions("memories", version_rows, reason_code=CHAIN_CLOSURE)
     return ClosureResult(impacts=(impact,), content_versions=stamps)

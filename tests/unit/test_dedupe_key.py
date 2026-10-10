@@ -42,3 +42,27 @@ def test_compute_dedupe_key_has_no_field_boundary_collision() -> None:
 def test_compute_dedupe_key_requires_upstream_and_semantic_version() -> None:
     assert compute_dedupe_key("onethu", {"upstream_id": "u"}) is None
     assert compute_dedupe_key("onethu", None) is None
+
+
+def test_dedupe_key_length_rejection_passes_normal_keys() -> None:
+    from backend.schemas.event import EventCreate
+    from backend.services.events import dedupe_key_length_rejection
+
+    payload = EventCreate(
+        type="study.assignment.completed",
+        source="onethu",
+        provenance={"upstream_id": "assignment:hw-1", "semantic_version": "abc123"},
+    )
+    assert dedupe_key_length_rejection(payload) is None
+
+
+def test_dedupe_key_length_rejection_flags_overlong_key() -> None:
+    from backend.schemas.event import EventCreate
+    from backend.services.events import DEDUPE_TOO_LONG_REASON, dedupe_key_length_rejection
+
+    payload = EventCreate(
+        type="study.assignment.completed",
+        source="onethu",
+        provenance={"upstream_id": "u" * 300, "semantic_version": "v1"},
+    )
+    assert dedupe_key_length_rejection(payload) == DEDUPE_TOO_LONG_REASON
