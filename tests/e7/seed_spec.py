@@ -1057,6 +1057,8 @@ EXPECTATIONS: dict[str, CaseExpectation] = {
             "（owner_handle 键保留原值）；previews 随账号级联清空"
             "（FK CASCADE，瞬态非账本）",
             "data_suppressions 随账号终删（data_closure ACCOUNT_TERMINATION）",
+            "长 run 心跳续租 + claim_token 条件结算（外审 #13）：双 worker 竞态下"
+            "晚到结算只留 settle_superseded 审计、不覆写胜者终态",
             "V 全部不变",
         ),
         invariants=(

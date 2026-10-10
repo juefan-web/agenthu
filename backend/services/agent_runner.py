@@ -96,6 +96,15 @@ def _lease_expired(lease: dict[str, Any] | None) -> bool:
 
 
 def heartbeat_run(session: Session, run: AgentRun) -> None:
+    """Extend the claiming worker's lease (external review #13).
+
+    Called once per execution-loop turn: a worker that keeps making
+    progress keeps its lease fresh, so the watchdog reclaims only genuinely
+    dead workers instead of double-executing long runs. The refreshed lease
+    becomes visible to other sessions at the next mid-run commit — the
+    hard guarantee against a stale worker overwriting a reclaimed run is
+    the conditional claim_token settlement in ``_settle_run``."""
+
     lease = run.lease or {}
     lease["heartbeat_at"] = utcnow().isoformat()
     lease["lease_expires_at"] = (
@@ -195,6 +204,9 @@ def queue_proactive_run(
 
 
 async def _execute_proactive_run(session: Session, *, run: AgentRun) -> AgentRun:
+    # Owner-side settlement rides the claim token like every other path
+    # (external review #13); the run object carries the lease we just won.
+    proactive_claim_token = (run.lease or {}).get("claim_token")
     """Proactive trigger settlement (A3): deterministic BY DESIGN — no
     provider call is ever made, so the global model-context consent gate is
     never engaged. The trigger engine already created the DRAFT suggestion;
@@ -285,6 +297,7 @@ async def _execute_proactive_run(session: Session, *, run: AgentRun) -> AgentRun
         run,
         status="WAITING_CONFIRMATION",
         result={"summary": title[:1000], "degraded": False},
+        claim_token=proactive_claim_token,
     )
     run.budget = {
         "reserved_total": settings.agent_context_reserved_tokens,
@@ -511,10 +524,67 @@ def _settle_run(
     status: str,
     result: dict[str, Any] | None = None,
     failure: dict[str, Any] | None = None,
-) -> None:
+    claim_token: str | None = None,
+) -> bool:
+    """Settle a run; returns whether THIS call landed the write.
+
+    With ``claim_token`` (external review #13) settlement is a CONDITIONAL
+    update under the caller's lease: a worker whose lease expired and whose
+    run the watchdog already reclaimed (FAILED + a fresh retry minted under
+    the same operation key) must never overwrite the winner's terminal
+    state — a zero rowcount means ownership was lost, and the loser leaves
+    only a superseded audit trace. Callers that legitimately settle rows
+    they do not own (the watchdog's own reclaim, user cancellation after
+    the terminal-state guard) omit the token and take the unconditional
+    path."""
+
+    now = utcnow()
+    if claim_token is not None:
+        values: dict[str, Any] = {"status": status, "finished_at": now, "updated_at": now}
+        if result is not None:
+            values["result"] = result
+        if failure is not None:
+            values["failure"] = failure
+        updated = session.execute(
+            update(AgentRun)
+            .where(
+                AgentRun.id == run.id,
+                AgentRun.status == "RUNNING",
+                AgentRun.lease.op("->>")("claim_token") == claim_token,
+            )
+            .values(**values)
+        )
+        if int(getattr(updated, "rowcount", 0)) != 1:
+            record_audit(
+                session,
+                action="agent.run.settle_superseded",
+                actor=AuditActor.SYSTEM.value,
+                user_id=run.user_id,
+                resource_type="agent_run",
+                resource_id=str(run.id),
+                details=redact_allowlist(
+                    {"intended_status": status, "claim_lost": True}, _AGENT_AUDIT_ALLOWED
+                ),
+            )
+            session.expire(run)
+            session.flush()
+            return False
+        record_audit(
+            session,
+            action=f"agent.run.{status.lower()}",
+            actor=AuditActor.SYSTEM.value,
+            user_id=run.user_id,
+            resource_type="agent_run",
+            resource_id=str(run.id),
+            details=redact_allowlist({"status": status}, _AGENT_AUDIT_ALLOWED),
+        )
+        session.expire(run)
+        session.flush()
+        return True
+
     run.status = status
-    run.finished_at = utcnow()
-    run.updated_at = utcnow()
+    run.finished_at = now
+    run.updated_at = now
     if result is not None:
         run.result = result
     if failure is not None:
@@ -529,6 +599,7 @@ def _settle_run(
         details=redact_allowlist({"status": status}, _AGENT_AUDIT_ALLOWED),
     )
     session.flush()
+    return True
 
 
 async def dispatch_confirmed_action(
@@ -814,6 +885,10 @@ async def _execute_run(
     if run is None:
         return None
     assert run is not None  # claim_run already returned for the miss case
+    # External review #13: this worker's lease identity. Every settlement
+    # below rides the conditional claim_token update, so a run reclaimed by
+    # the watchdog while we were executing can never be overwritten here.
+    claim_token = (run.lease or {}).get("claim_token")
 
     # §2.4 entry guard (A-draft §2.3 dispatch): a run under an ACTIVE
     # deletion barrier — the owner's account, or a source deletion covering
@@ -829,7 +904,13 @@ async def _execute_run(
             target_ids=entry_barrier_ids,
         )
     except WriteBlocked as exc:
-        _settle_run(session, run, status="CANCELLED", failure=_lifecycle_failure(exc))
+        _settle_run(
+            session,
+            run,
+            status="CANCELLED",
+            failure=_lifecycle_failure(exc),
+            claim_token=claim_token,
+        )
         session.commit()
         return session.get(AgentRun, run_id)
 
@@ -851,7 +932,13 @@ async def _execute_run(
         except WriteBlocked as exc:
             settled = session.get(AgentRun, run_id)
             assert settled is not None
-            _settle_run(session, settled, status="CANCELLED", failure=_lifecycle_failure(exc))
+            _settle_run(
+                session,
+                settled,
+                status="CANCELLED",
+                failure=_lifecycle_failure(exc),
+                claim_token=claim_token,
+            )
             session.commit()
             return True
         return False
@@ -966,6 +1053,7 @@ async def _execute_run(
                     "degraded": True,
                     "degrade_code": degrade_code,
                 },
+                claim_token=claim_token,
             )
         else:
             provider_info = {
@@ -1003,6 +1091,10 @@ async def _execute_run(
             usage_total["output_tokens"] += turn.usage.get("output_tokens", 0)
 
             while True:
+                # In-loop heartbeat (external review #13): each turn extends
+                # the lease while this worker keeps making progress, so the
+                # watchdog only reclaims genuinely dead workers.
+                heartbeat_run(session, run)
                 if not turn.tool_calls:
                     if turn.text:
                         summary_parts.append(turn.text[:500])
@@ -1172,6 +1264,7 @@ async def _execute_run(
                         "degraded": degrade_code is not None,
                         **({"degrade_code": degrade_code} if degrade_code else {}),
                     },
+                    claim_token=claim_token,
                 )
             else:
                 _settle_run(
@@ -1183,6 +1276,7 @@ async def _execute_run(
                         "degraded": degrade_code is not None,
                         **({"degrade_code": degrade_code} if degrade_code else {}),
                     },
+                    claim_token=claim_token,
                 )
         run.provider = provider_info
         run.usage = usage_total
@@ -1205,6 +1299,7 @@ async def _execute_run(
                     "retryable": True,
                     "safe_message": f"Run failed: {type(exc).__name__}",
                 },
+                claim_token=claim_token,
             )
             session.commit()
         raise

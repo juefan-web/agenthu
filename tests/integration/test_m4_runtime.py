@@ -15,10 +15,10 @@ import asyncio
 import hashlib
 import json
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from backend.adapters.model_provider.base import ModelTurn, ProviderCapabilities, ToolCall
 from backend.db.base import utcnow
@@ -29,9 +29,11 @@ from backend.models.memory import Memory
 from backend.models.task import Task
 from backend.services import agent_tools
 from backend.services.agent_runner import (
+    _settle_run,
     create_pending_action,
     dispatch_confirmed_action,
     execute_run,
+    heartbeat_run,
     reclaim_expired_runs,
     sweep_pending_actions,
 )
@@ -714,6 +716,152 @@ def test_run_watchdog_settles_and_mints_next_attempt(db_session, client, auth_he
         )
     ).one()
     assert retry.status == "QUEUED"
+
+
+# -------------------------------------------- external review #13: leases --
+
+
+def _lease_run(db_session, user_id, *, token: str, expired: bool) -> AgentRun:
+    run = AgentRun(
+        user_id=user_id,
+        status="RUNNING",
+        invocation_kind="chat",
+        trigger_ref={"kind": "chat"},
+        operation_key=f"test:{uuid.uuid4().hex}",
+        attempt_no=1,
+        client_request_id=f"chat:{uuid.uuid4()}:{uuid.uuid4()}",
+        runner_version="t",
+        tool_registry_version="t",
+        prompt_version="v1",
+        lease={
+            "claim_token": token,
+            "claimed_by": "worker",
+            "lease_expires_at": (
+                (utcnow() - timedelta(minutes=5)) if expired else (utcnow() + timedelta(minutes=5))
+            ).isoformat(),
+            "heartbeat_at": utcnow().isoformat(),
+        },
+        started_at=utcnow() - timedelta(minutes=6),
+    )
+    db_session.add(run)
+    db_session.flush()
+    return run
+
+
+def test_stale_worker_settlement_cannot_overwrite_reclaimed_run(
+    db_session, client, auth_headers
+) -> None:
+    """External review #13 pin: settlement rides the conditional claim_token
+    update — a worker whose run the watchdog already settled (FAILED with a
+    fresh retry minted) loses its late SUCCEEDED write instead of corrupting
+    the winner's terminal state."""
+
+    user_id = _me(client, auth_headers)
+    stale = _lease_run(db_session, user_id, token="owner-a", expired=True)
+
+    summary = reclaim_expired_runs(db_session)
+    assert summary["reclaimed"] >= 1
+    db_session.refresh(stale)
+    assert stale.status == "FAILED"
+
+    landed = _settle_run(
+        db_session, stale, status="SUCCEEDED", result={"summary": "late"}, claim_token="owner-a"
+    )
+    assert landed is False
+    db_session.refresh(stale)
+    assert stale.status == "FAILED", "the loser must not overwrite the watchdog's settlement"
+    assert stale.result is None
+    superseded = db_session.scalars(
+        select(AuditLog).where(
+            AuditLog.action == "agent.run.settle_superseded",
+            AuditLog.resource_id == str(stale.id),
+        )
+    ).all()
+    assert superseded, "ownership loss stays auditable"
+
+
+def test_settlement_with_mismatched_token_loses_even_while_running(
+    db_session, client, auth_headers
+) -> None:
+    """Defense-in-depth face of the same guard: a RUNNING row whose lease
+    was replaced rejects a settlement carrying the old token."""
+
+    user_id = _me(client, auth_headers)
+    run = _lease_run(db_session, user_id, token="owner-a", expired=False)
+    db_session.execute(
+        update(AgentRun)
+        .where(AgentRun.id == run.id)
+        .values(lease={"claim_token": "owner-b", "claimed_by": "other"})
+    )
+    db_session.expire(run)
+
+    landed = _settle_run(
+        db_session, run, status="SUCCEEDED", result={"summary": "late"}, claim_token="owner-a"
+    )
+    assert landed is False
+    db_session.refresh(run)
+    assert run.status == "RUNNING"
+
+
+def test_settlement_with_live_token_lands(db_session, client, auth_headers) -> None:
+    user_id = _me(client, auth_headers)
+    run = _lease_run(db_session, user_id, token="owner-a", expired=False)
+
+    landed = _settle_run(
+        db_session, run, status="SUCCEEDED", result={"summary": "ok"}, claim_token="owner-a"
+    )
+    assert landed is True
+    db_session.refresh(run)
+    assert run.status == "SUCCEEDED"
+    result = run.result
+    assert result is not None
+    assert result["summary"] == "ok"
+
+
+def test_heartbeat_extends_the_lease(db_session, client, auth_headers) -> None:
+    user_id = _me(client, auth_headers)
+    run = _lease_run(db_session, user_id, token="owner-a", expired=True)
+    lease = run.lease
+    assert lease is not None
+    before = datetime.fromisoformat(lease["lease_expires_at"])
+    assert before <= utcnow()
+
+    heartbeat_run(db_session, run)
+
+    refreshed = run.lease
+    assert refreshed is not None
+    after = datetime.fromisoformat(refreshed["lease_expires_at"])
+    assert after > utcnow(), "a progressing worker keeps its lease fresh"
+    assert datetime.fromisoformat(refreshed["heartbeat_at"]) >= before
+
+
+def test_execution_loop_heartbeats_each_turn(db_session, client, auth_headers, monkeypatch) -> None:
+    """The loop wiring pin: every provider turn refreshes the lease — a long
+    multi-turn run no longer reads as a dead worker between turns."""
+
+    user_id = _me(client, auth_headers)
+    set_consent(db_session, user_id, enabled=True, consent_text_version="v1")
+    sent = _send_chat_message(client, auth_headers)
+    beats: list[uuid.UUID] = []
+    monkeypatch.setattr(
+        "backend.services.agent_runner.heartbeat_run",
+        lambda session, run: beats.append(run.id),
+    )
+    call_json = json.dumps({"title": "复习线代", "estimated_duration_minutes": 45})
+    provider = FakeToolProvider(
+        [
+            ModelTurn(
+                tool_calls=[ToolCall(call_id="c1", name="task.create", arguments_json=call_json)]
+            ),
+            ModelTurn(text="已为你创建待确认任务。"),
+        ]
+    )
+
+    run = asyncio.run(execute_run(db_session, run_id=uuid.UUID(sent["run_id"]), provider=provider))
+
+    assert run is not None and run.status == "WAITING_CONFIRMATION"
+    assert len(beats) >= 2, "one heartbeat per loop turn"
+    assert set(beats) == {run.id}
 
 
 # --------------------------------------------------------------- redact ----

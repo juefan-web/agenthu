@@ -168,3 +168,12 @@ status）转 E7 执行轮与部署演练的观察项。
   envelope 拒绝链（与 suppression 同级——provenance.upstream_id/
   semantic_version 无上限，超 255 溢出曾炸整批 500），create_event 直连
   路径同款 ValidationError。
+- 2026-10-10 R2-A 执行（#13，分支 `fix/lease-heartbeat-settlement`）：
+  AgentRun 结算改 claim_token 条件更新——`_settle_run` 带 token 时走
+  `WHERE status='RUNNING' AND lease->>'claim_token'=:token`，败者仅落
+  `agent.run.settle_superseded` 审计、不覆写胜者终态；执行循环每 turn
+  顶部 `heartbeat_run` 续租（run 单事务，租约仅对中点提交后的会话可
+  见，循环内续租即活性信号，硬保证仍由条件结算承担）；watchdog 回收
+  与用户取消保留无条件结算路径。钉子 ×5（回收后迟结算让位 / token
+  不匹配让位 / 活 token 落地 / heartbeat 续租 / 循环每 turn 心跳）；
+  E7-5 retained 增双 worker 竞态语义行。
