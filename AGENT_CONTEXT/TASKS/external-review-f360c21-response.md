@@ -177,3 +177,12 @@ status）转 E7 执行轮与部署演练的观察项。
   与用户取消保留无条件结算路径。钉子 ×5（回收后迟结算让位 / token
   不匹配让位 / 活 token 落地 / heartbeat 续租 / 循环每 turn 心跳）；
   E7-5 retained 增双 worker 竞态语义行。
+- 2026-10-10 R2-A 执行（写守卫 events 入口对账，分支
+  `fix/write-guard-events-entry`）：修码 arm——`create_event` 汇点接
+  `assert_write_allowed(SOURCE, target_ids=set())`（精确空集：account
+  barrier 冻结入口，scoped barrier 不挡新事件行——其 target ids 是
+  既有行 UUID；同锚重导入仍归 suppression 网）；batch 循环
+  WriteBlocked 与 suppression 同级逐 envelope 拒绝。钉子 ×3：account
+  barrier 单发 409 / batch 全拒零写入 / source barrier 下无关新事件
+  201。CURRENT_STATE P0-3 切片 3「events 入口」口径失实由 **D-038**
+  对账修正（该切片实落 suppression + batch generation 头两件）。

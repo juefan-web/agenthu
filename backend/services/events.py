@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from backend.core.errors import ValidationError
 from backend.core.sensitive import validate_json_payload
+from backend.models.enums import DataBarrierScope
 from backend.models.event import Event
 from backend.models.task import Task
 from backend.schemas.client_contract import EventEnvelope
@@ -20,7 +21,13 @@ from backend.schemas.event import EventCreate
 from backend.services.current_state import defer_state_recompute, flush_state_recompute
 from backend.services.event_handlers import process_event
 from backend.services.pagination import count_total, decode_cursor, keyset_page
-from backend.services.write_guards import SUPPRESSED_REASON, SuppressedSource, is_suppressed
+from backend.services.write_guards import (
+    SUPPRESSED_REASON,
+    SuppressedSource,
+    WriteBlocked,
+    assert_write_allowed,
+    is_suppressed,
+)
 from backend.worker.enqueue import mark_user_dirty
 
 _ASSIGNMENT_PREFIX = "study.assignment."
@@ -131,6 +138,15 @@ def create_event(
     Deduplication is enforced by a unique constraint, so concurrent replays are
     safe.
     """
+
+    # Entry barrier (A-draft §2.3 "events 入口"; the external review found
+    # this leg unwired while CURRENT_STATE claimed it). A brand-new row
+    # names no id any SOURCE/MEMORY barrier holds (source barriers carry
+    # event/file/chat row ids), so with the exact empty id set this trips
+    # only on the account barrier — the same discipline as the focus entry
+    # guard. Re-importing a deleted anchor stays the suppression net's job
+    # right below.
+    assert_write_allowed(session, user_id=user_id, scope=DataBarrierScope.SOURCE, target_ids=set())
 
     # Suppression first (A-draft §2.6): a deleted upstream anchor must not
     # resurrect even under a fresh client_event_id — this check sits before
@@ -334,6 +350,14 @@ def ingest_event_batch(
                 )
             except SuppressedSource:
                 outcome.rejected.append((envelope.client_event_id, SUPPRESSED_REASON))
+                continue
+            except WriteBlocked as blocked:
+                # A barrier fencing the entry is owner-level state, not an
+                # envelope defect — but like suppression nothing was written
+                # yet, so the envelope rejects without poisoning the rest of
+                # the queue (for events this fires only under the account
+                # barrier; see the guard in create_event).
+                outcome.rejected.append((envelope.client_event_id, blocked.message))
                 continue
             if created:
                 outcome.accepted.append(envelope.client_event_id)
