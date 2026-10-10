@@ -1,11 +1,15 @@
 """OpenAPI <-> shared client contract drift check.
 
-Two independent checks run here:
+Three independent checks run here:
 
 1. **Artifact freshness**: the committed ``openapi.json`` must equal the schema
    generated from the running FastAPI app, so a forgotten regeneration is a hard
    failure instead of a silent contract drift.
-2. **Client alignment**: every field declared by the desktop client's Zod
+2. **Security floor**: every operation outside an explicit public allowlist
+   must keep an OpenAPI security requirement, so losing a ``CurrentUser``
+   dependency goes red even when ``openapi.json`` is faithfully regenerated in
+   the same change (external review #18).
+3. **Client alignment**: every field declared by the desktop client's Zod
    contract (``packages/contracts/src/index.ts``) must be present in the matching
    OpenAPI component with a JSON type the client accepts (see DECISIONS.md
    D-009: the client is authoritative for these shapes). A frozen snapshot of
@@ -150,12 +154,13 @@ class ZType:
 @dataclass
 class DriftReport:
     artifact: list[str] = field(default_factory=list)
+    floor: list[str] = field(default_factory=list)
     client: list[str] = field(default_factory=list)
     zod_sources: list[str] = field(default_factory=list)
 
     @property
     def has_drift(self) -> bool:
-        return bool(self.artifact or self.client)
+        return bool(self.artifact or self.floor or self.client)
 
 
 # --------------------------------------------------------------------------- #
@@ -693,6 +698,35 @@ def _media_signature(content: Any, schemas: dict[str, Any]) -> Any:
     }
 
 
+def _security_requirement_signature(security: Any) -> Any:
+    """Deterministic signature of an operation's ``security`` requirements.
+
+    Each requirement maps a scheme name to its required scopes; canonical
+    JSON sorting keeps the signature independent of dict/list ordering
+    (external review #18: security used to be absent from the signature
+    entirely, so a hand-edited or stale ``openapi.json`` could not drift on
+    the auth surface).
+    """
+    if not isinstance(security, list):
+        return None
+    normalized: list[Any] = []
+    for requirement in security:
+        if isinstance(requirement, dict):
+            normalized.append(
+                {
+                    str(scheme): (
+                        sorted(str(scope) for scope in scopes)
+                        if isinstance(scopes, list)
+                        else scopes
+                    )
+                    for scheme, scopes in requirement.items()
+                }
+            )
+        else:
+            normalized.append(requirement)
+    return sorted(normalized, key=lambda item: json.dumps(item, sort_keys=True, default=str))
+
+
 def _operation_signature(operation: Any, schemas: dict[str, Any]) -> Any:
     if not isinstance(operation, dict):
         return None
@@ -719,6 +753,12 @@ def _operation_signature(operation: Any, schemas: dict[str, Any]) -> Any:
             )
             for code, response in sorted(responses.items())
         }
+    # An explicitly public operation carries ``security: []`` while a
+    # never-secured one omits the key; keeping both states distinct lets the
+    # artifact comparison see an auth surface change in either direction.
+    security = operation.get("security")
+    if security is not None:
+        signatures["security"] = _security_requirement_signature(security)
     return {
         "parameters": parameters,
         "requestBody": (
@@ -743,7 +783,17 @@ def openapi_signature(schema: dict[str, Any]) -> dict[str, Any]:
                     continue
                 operations[f"{method.upper()} {path}"] = _operation_signature(operation, schemas)
     components = {name: _schema_signature(node, schemas) for name, node in sorted(schemas.items())}
-    return {"operations": operations, "components": components}
+    result: dict[str, Any] = {"operations": operations, "components": components}
+    security_schemes = schema.get("components", {}).get("securitySchemes")
+    if isinstance(security_schemes, dict) and security_schemes:
+        result["securitySchemes"] = {
+            name: json.loads(json.dumps(node, sort_keys=True, default=str))
+            for name, node in sorted(security_schemes.items())
+        }
+    root_security = schema.get("security")
+    if root_security is not None:
+        result["security"] = _security_requirement_signature(root_security)
+    return result
 
 
 def compare_artifact(committed: dict[str, Any], generated: dict[str, Any]) -> list[str]:
@@ -774,6 +824,66 @@ def compare_artifact(committed: dict[str, Any], generated: dict[str, Any]) -> li
         if committed_schemas[name] != generated_schemas[name]:
             messages.append(f"  schema changed: {name}")
     return messages
+
+
+# Operations that are intentionally reachable without the OAuth2 scheme:
+# the app root and health probes, the auth bootstrap (no token exists yet),
+# and the receipt narrow paths, whose only key is the capability token in
+# the Authorization header (D-036 §6) — not an OAuth2 credential. Anything
+# outside this set must carry a security requirement; losing the
+# CurrentUser/CurrentIdentity dependency on an endpoint removes the
+# operation's ``security`` entry, and the artifact-freshness comparison
+# cannot catch that when openapi.json is regenerated in the same change.
+PUBLIC_OPERATIONS: frozenset[str] = frozenset(
+    {
+        "GET /",
+        "GET /health",
+        "GET /health/ready",
+        "POST /v1/auth/login",
+        "POST /v1/auth/register",
+        "POST /v1/auth/token",
+        "GET /v1/data/receipts/{receipt_id}",
+        "POST /v1/data/receipts/{receipt_id}/requeue",
+    }
+)
+
+
+def check_security_floor(openapi: dict[str, Any]) -> list[str]:
+    """Every non-public operation must keep a security requirement.
+
+    External review #18: the drift signature used to ignore ``security``
+    entirely, so dropping an endpoint's auth dependency stayed green as long
+    as ``openapi.json`` was refreshed. This floor pins the authenticated
+    surface itself against the generated spec (code truth): an operation
+    outside ``PUBLIC_OPERATIONS`` without a non-empty security requirement is
+    drift, and a stale allowlist entry that no longer matches a real
+    operation is drift too.
+    """
+    errors: list[str] = []
+    seen: set[str] = set()
+    paths = openapi.get("paths", {})
+    if isinstance(paths, dict):
+        for path, item in paths.items():
+            if not isinstance(item, dict):
+                continue
+            for method, operation in item.items():
+                if method.lower() not in _HTTP_METHODS or not isinstance(operation, dict):
+                    continue
+                operation_id = f"{method.upper()} {path}"
+                seen.add(operation_id)
+                security = operation.get("security")
+                has_requirement = (
+                    isinstance(security, list)
+                    and bool(security)
+                    and all(isinstance(entry, dict) and entry for entry in security)
+                )
+                if operation_id not in PUBLIC_OPERATIONS and not has_requirement:
+                    errors.append(
+                        f"{operation_id}: no security requirement (lost its auth dependency?)"
+                    )
+    for operation_id in sorted(PUBLIC_OPERATIONS - seen):
+        errors.append(f"{operation_id}: public allowlist entry no longer exists")
+    return errors
 
 
 def check_client_alignment(zod_source: str, openapi: dict[str, Any]) -> list[str]:
@@ -901,6 +1011,11 @@ def run(
     report = DriftReport()
     generated = generate_openapi()
 
+    # The floor runs against the generated spec, not the committed artifact:
+    # code that drops an auth dependency and regenerates openapi.json in the
+    # same change keeps the artifact comparison green by construction.
+    report.floor = check_security_floor(generated)
+
     if write:
         openapi_path.write_text(
             json.dumps(generated, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
@@ -962,6 +1077,7 @@ def main(argv: list[str] | None = None) -> int:
 
     for label, messages in (
         ("OpenAPI artifact drift", report.artifact),
+        ("Security floor", report.floor),
         ("OpenAPI/Zod drift", report.client),
     ):
         for message in messages:
