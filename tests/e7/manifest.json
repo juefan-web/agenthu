@@ -542,13 +542,14 @@
     },
     "E7-4b": {
       "case_id": "E7-4b",
-      "title": "删除 L2 源事件 e5：样本不足失效而非删除，向量零召回",
+      "title": "删除 L2 源事件 e5：证据链整链清理，向量零召回",
       "operations": [
         "U preview+confirm source event e5"
       ],
       "count_deltas": {
         "U": {
-          "events": -1
+          "events": -1,
+          "memories": -2
         }
       },
       "count_minimums": {
@@ -561,7 +562,9 @@
         }
       },
       "marker_absence": [
-        "e5.note"
+        "e5.note",
+        "m2a.content",
+        "m2b.content"
       ],
       "all_markers_absent_for": [],
       "vector_absence": [
@@ -573,8 +576,7 @@
       "object_expectations": [],
       "redis_absence": [],
       "retained": [
-        "memories 行数不变（失效保留），m2a 历史版本不复活",
-        "e6 仍在 m2b source_event_ids 中（id 引用非原文）"
+        "m1（e3 锚）/m3/m4 存活；e6 事件行存活（引用随链断开）"
       ],
       "invariants": [
         "invalid_basis_no_original_text"
