@@ -146,3 +146,12 @@ status）转 E7 执行轮与部署演练的观察项。
   同源）；同意关 ⇒ 请求体无 memory.content、回执 `memory_ids=[]`；钉子
   测试双向断言（关⇒不含/开⇒原语义恢复），两处既有记忆断言测试补全局
   同意前置。E7-8 同意面语义不变（门只加不撤）。
+- 2026-10-10 R2-A 执行（#13，分支 `fix/lease-heartbeat-settlement`）：
+  AgentRun 结算改 claim_token 条件更新——`_settle_run` 带 token 时走
+  `WHERE status='RUNNING' AND lease->>'claim_token'=:token`，败者仅落
+  `agent.run.settle_superseded` 审计、不覆写胜者终态；执行循环每 turn
+  顶部 `heartbeat_run` 续租（run 单事务，租约仅对中点提交后的会话可
+  见，循环内续租即活性信号，硬保证仍由条件结算承担）；watchdog 回收
+  与用户取消保留无条件结算路径。钉子 ×5（回收后迟结算让位 / token
+  不匹配让位 / 活 token 落地 / heartbeat 续租 / 循环每 turn 心跳）；
+  E7-5 retained 增双 worker 竞态语义行。
