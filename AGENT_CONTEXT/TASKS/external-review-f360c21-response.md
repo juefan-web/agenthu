@@ -198,3 +198,12 @@ status）转 E7 执行轮与部署演练的观察项。
   来源；openapi 再生成 71 路径）。钉子 ×5：FAILED 复活全断言 / 错键
   统一 404 / COMPLETED 永不复活 / 版本冲突 / 回执暴露状态与版本。
   E7 预期无变动（重排为新增能力，未触任何既有断言；预裁未推翻）。
+- 2026-10-10 R3-A 执行（#8，分支 `fix/chunked-completion-nearest-session`）：
+  拆块完成计账改最近槽位归属——`_mark_confirmed_plan_items` 由「全项
+  COMPLETED + 每项累加整场时长」改为单项目标：pending 优先（连续会话沿
+  拆块走而非堆首块）、|slot - 会话时刻| 最近者胜、无槽位项（手排）排后
+  按 created_at→order_index 定序、全完成时最近者回退累计（镜像
+  Task.actual_duration_minutes）；空集（无计划直 Focus）直接返回。未做工
+  的块保持 PENDING（不再被追认完成），plan_item_ratios 单会话不再 N 计。
+  钉子 ×4：仅最近块得账 / 连续会话走 pending 块 / 单块累计保真（含
+  ratio 采样 50/90 单样本）/ 无槽位确定性归属。
