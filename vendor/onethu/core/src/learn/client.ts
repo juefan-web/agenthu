@@ -698,8 +698,14 @@ export class LearnClient {
     });
   }
 
-  /** 全部课程的作业（未交 + 已交未批 + 已批） */
-  async getAllHomework(courseIds: string[]): Promise<Homework[]> {
+  /** 全部课程的作业（未交 + 已交未批 + 已批）。
+   *  单项失败仍降级为空数组（部分结果语义），但经 onPartialFailure 计数
+   *  透出（外审 #14：catch(()=>[]) 吞错让「无作业」与「拉取失败」不可分）；
+   *  错误详情只进 debug 通道，不进回调载荷。 */
+  async getAllHomework(
+    courseIds: string[],
+    onPartialFailure?: (failure: { courseId: string; kind: "new" | "submitted" | "graded" }) => void,
+  ): Promise<Homework[]> {
     this.#requireCsrf();
     const groups = await Promise.all(
       courseIds.map((courseId) =>
@@ -707,6 +713,7 @@ export class LearnClient {
           (["new", "submitted", "graded"] as const).map((kind) =>
             this.#fetchHomeworkKind(courseId, kind).catch((e) => {
               this.#http.debug?.(`LEARN-HW 单项失败 course=${courseId} kind=${kind} ${String(e).slice(0, 90)}`);
+              onPartialFailure?.({ courseId, kind });
               return [] as Homework[];
             }),
           ),

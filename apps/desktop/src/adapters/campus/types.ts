@@ -92,9 +92,19 @@ export interface CampusCalendar {
   }>;
 }
 
+/** 采集部分失败计数（外审 #14）：单项查询失败时采集仍产出部分结果，
+ *  失败事实不得被 catch(()=>[]) 吞掉。仅计数——错误详情留在 debug 通道，
+ *  不进 Event 载荷与 UI。 */
+export interface CampusCollectionPartial {
+  failedQueries: number;
+  totalQueries: number;
+}
+
 export interface CampusSnapshot {
   fetchedAt: string;
   events: EventEnvelope[];
+  /** 仅在本轮存在失败查询时在场；缺省 = 完整采集 */
+  partial?: CampusCollectionPartial;
 }
 
 export interface CampusAuthGateway {
