@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 
+from backend.models.enums import MemoryKind
 from backend.services.agent_tools import MemoryWriteArgs, NotifyPushArgs
 from backend.services.tool_registry import get_tool
 
@@ -18,14 +19,14 @@ from backend.services.tool_registry import get_tool
 def test_memory_write_key_is_sha256_of_content() -> None:
     tool = get_tool("memory.write")
     assert tool is not None and tool.idempotency_key is not None
-    args = MemoryWriteArgs(content="该生在滤波器作业平均用时 40 分钟", kind="fact")
+    args = MemoryWriteArgs(content="该生在滤波器作业平均用时 40 分钟", kind=MemoryKind.FACT)
 
     digest = hashlib.sha256("该生在滤波器作业平均用时 40 分钟".encode()).hexdigest()[:16]
     assert tool.idempotency_key(args) == f"memory.write:{digest}:fact"
 
-    twin = MemoryWriteArgs(content="该生在滤波器作业平均用时 40 分钟", kind="fact")
+    twin = MemoryWriteArgs(content="该生在滤波器作业平均用时 40 分钟", kind=MemoryKind.FACT)
     assert tool.idempotency_key(twin) == tool.idempotency_key(args)
-    other = MemoryWriteArgs(content="不同的内容", kind="fact")
+    other = MemoryWriteArgs(content="不同的内容", kind=MemoryKind.FACT)
     assert tool.idempotency_key(other) != tool.idempotency_key(args)
 
 
