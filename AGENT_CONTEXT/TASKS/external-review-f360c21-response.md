@@ -146,3 +146,10 @@ status）转 E7 执行轮与部署演练的观察项。
   同源）；同意关 ⇒ 请求体无 memory.content、回执 `memory_ids=[]`；钉子
   测试双向断言（关⇒不含/开⇒原语义恢复），两处既有记忆断言测试补全局
   同意前置。E7-8 同意面语义不变（门只加不撤）。
+- 2026-10-10 R2-A 执行（#9+#12，分支 `fix/idempotency-key-robustness`）：
+  #12 = agent_tools 两处 idempotency_key 的 `hash()`（PYTHONHASHSEED 进程
+  随机）换 sha256 前 16 hex（64bit，强于原 48bit 掩码；等参跨进程稳定，
+  钉子断言精确公式）；#9 = dedupe 键长检查入 ingest_event_batch 逐
+  envelope 拒绝链（与 suppression 同级——provenance.upstream_id/
+  semantic_version 无上限，超 255 溢出曾炸整批 500），create_event 直连
+  路径同款 ValidationError。
