@@ -21,6 +21,7 @@ from backend.services.permissions import (
     ACTION_POLICY,
     LEVEL_DESCRIPTIONS,
     evaluate_permission,
+    validate_grant_action,
 )
 
 router = APIRouter(prefix="/permissions", tags=["permissions"])
@@ -49,6 +50,10 @@ def list_grants(user: CurrentUser, db: DBSession) -> list[PermissionGrant]:
 def create_grant(
     payload: PermissionGrantCreate, user: CurrentUser, db: DBSession
 ) -> PermissionGrant:
+    # External review #11: the creation face only accepts concrete
+    # ACTION_POLICY keys — the match side treats grant.action as an fnmatch
+    # pattern, so a storable wildcard row would be a live wildcard.
+    validate_grant_action(payload.action)
     # D-034 soft-revoke semantics: only the ACTIVE row (revoked_at IS NULL)
     # may be updated; re-granting after a revoke mints a NEW row so already
     # dispatched actions and audits keep referencing the revoked grant id.

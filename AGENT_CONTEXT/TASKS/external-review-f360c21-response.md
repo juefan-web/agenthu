@@ -198,3 +198,13 @@ status）转 E7 执行轮与部署演练的观察项。
   来源；openapi 再生成 71 路径）。钉子 ×5：FAILED 复活全断言 / 错键
   统一 404 / COMPLETED 永不复活 / 版本冲突 / 回执暴露状态与版本。
   E7 预期无变动（重排为新增能力，未触任何既有断言；预裁未推翻）。
+- 2026-10-10 R3-A 执行（#11，分支 `fix/grant-action-policy-membership`）：
+  grant 创建面（`POST /v1/permissions/grants` upsert 前）接
+  `validate_grant_action`：action ∈ ACTION_POLICY 键集 + 拒 fnmatch 元字
+  符 `* ? [`（服务层 ValidationError 422，信封 validation_error；未知
+  action 在评估侧本就惰性——策略回退恒 CONFIRM）。匹配侧 fnmatch 语义
+  不动（D-034 §2.5 已防模式提级；守卫前直插行的存量语义由
+  `test_l3_grant_never_elevates_l2_even_wildcard` 钉住）。钉子 ×7：
+  ACTION_POLICY 17 键全可授 / 模式拒绝 ×4（plan.* / task.? / data.[x] /
+  *）/ 未知 action 拒 / API 面 422×5 + 具体键 201。openapi 零变动
+  （错误信封既有形状）。
