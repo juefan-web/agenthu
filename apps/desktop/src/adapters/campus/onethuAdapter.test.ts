@@ -118,6 +118,23 @@ describe("OneThuCampusAdapter", () => {
     expect(assignments.map((item) => item.courseName)).toEqual(["线性代数", undefined]);
   });
 
+  it("counts partial homework failures instead of swallowing them (external #14)", async () => {
+    const session = fakeSession();
+    // 单项失败仍返回部分结果（vendored 语义），失败经回调计数透出
+    session.learn.getAllHomework = async (courseIds, onPartialFailure) => {
+      onPartialFailure?.({ courseId: courseIds[0]!, kind: "new" });
+      onPartialFailure?.({ courseId: courseIds[0]!, kind: "graded" });
+      return [];
+    };
+    const snapshot = await new OneThuCampusAdapter({ session, auth }).collectSnapshot();
+    expect(snapshot.partial).toEqual({ failedQueries: 2, totalQueries: 3 });
+  });
+
+  it("omits the partial marker when every homework query succeeds", async () => {
+    const snapshot = await new OneThuCampusAdapter({ session: fakeSession(), auth }).collectSnapshot();
+    expect(snapshot.partial).toBeUndefined();
+  });
+
   it("shares one in-flight collection when called twice", async () => {
     const session = fakeSession();
     let homeworkCalls = 0;

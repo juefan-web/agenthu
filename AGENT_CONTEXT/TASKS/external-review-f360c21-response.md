@@ -198,3 +198,12 @@ status）转 E7 执行轮与部署演练的观察项。
   来源；openapi 再生成 71 路径）。钉子 ×5：FAILED 复活全断言 / 错键
   统一 404 / COMPLETED 永不复活 / 版本冲突 / 回执暴露状态与版本。
   E7 预期无变动（重排为新增能力，未触任何既有断言；预裁未推翻）。
+- 2026-10-10 R3-B 执行（#14，分支 `fix/campus-collection-partial-marker`）：
+  采集部分失败不再被吞——vendored `getAllHomework` 增可选
+  `onPartialFailure({courseId, kind})` 回调（错误详情仍只进 debug 通道，
+  部分结果语义不变，既有调用方零改动）；适配层计数入
+  `CampusSnapshot.partial = {failedQueries, totalQueries}`（仅失败>0 在场）；
+  App 两处采集 notice 经 `collectionPartialNote` 纯函数透出计数（「无作业」
+  与「拉取失败」之别用户可见；错误串不进 UI/Event）。钉子 ×4：适配层
+  失败计数钉（2/3）+ 全成功无标记钉 + 文案双钉。验收：desktop 250 =
+  main 22ec867 基线 246 + 4（本地与 CI 双源对齐）；vendored smoke 全绿。
