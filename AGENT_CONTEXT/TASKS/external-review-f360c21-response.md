@@ -198,3 +198,20 @@ status）转 E7 执行轮与部署演练的观察项。
   来源；openapi 再生成 71 路径）。钉子 ×5：FAILED 复活全断言 / 错键
   统一 404 / COMPLETED 永不复活 / 版本冲突 / 回执暴露状态与版本。
   E7 预期无变动（重排为新增能力，未触任何既有断言；预裁未推翻）。
+- 2026-10-10 R3-B 执行（#26/#27，分支 `fix/session-viewstate-and-cache-clear`）：
+  #27 中途 401 不清查询池——session `onUnauthorized` 只清 token/owner/
+  存储，React Query 池留着前一账号数据，未经显式 logout 的换号登录在未
+  重挂载视图端出旧缓存。修：zustand store 增单调 `invalidations` 计数
+  （不随 reset 归零），401 清理队列内递增；App effect 据此整池
+  `queryClient.clear()`（与显式 logout 同语义）。restore 期 401 由
+  restore 内联清理（队列早退不计数，测试注释锚定该边界）。**owner 维度
+  键改造评估结论：维持整池清空、不重键**——键加 owner 需 owner 可响应
+  化（context provider）且 App.tsx 注释已录 E6 s1 实证（invalidate 会拿
+  死 token 立即重取、错误态保留旧 data），两个换用户过渡点（显式
+  logout + 401 失效）整池清已达成同等隔离，改动 3 行 vs 全组件键改造。
+  #26 FocusView 跨账号视图态残留——草稿存储已按 owner 命名空间，残留
+  是 mount 时读入的组件态（active/note），登出不卸载视图（BackendForms
+  叠加而非替换）。修：App 以 `key={backendState.userId ?? "anonymous"}`
+  重挂载 FocusView，换号即重读当前 owner 草稿。钉子 ×2：中途 401 计数
+  钉（invalidations+1 + EXPIRED 态 + 存储清空）+ FocusView 重挂重读钉
+  （mount1 恢复 A 会话 / 重挂 anonymous 清屏）。

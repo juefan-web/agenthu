@@ -101,6 +101,9 @@ export function createBackendSession(options: BackendSessionOptions): BackendSes
         if (current?.access_token !== token) return;
         current = null;
         state().setState({ status: "error", message: BACKEND_SESSION_EXPIRED });
+        // 外审 #27：失效与显式 logout 同为「换用户前奏」，App 据计数整池清
+        // 查询缓存（token/owner 清理不覆盖 React Query 池）
+        state().invalidate();
         await setOwner(null);
         try {
           await store.clear();

@@ -96,6 +96,13 @@ export default function App() {
     queryClient.clear();
   }
 
+  // 外审 #27：401 失效与显式 logout 同为「换用户前奏」——session 已清
+  // token/owner，但查询池不随之清，下一账号在未重挂载的视图里会端出前
+  // 一账号的缓存（backendLogout 注释的同一实证，补齐失效路径）。
+  useEffect(() => {
+    if (backendState.invalidations > 0) queryClient.clear();
+  }, [backendState.invalidations, queryClient]);
+
   useEffect(() => {
     if (!sync) return;
     const retryOnReconnect = () => {
@@ -230,7 +237,9 @@ export default function App() {
           <section className="workspace-section wide"><div className="section-heading"><h2>待办任务</h2><span className="section-meta">{taskList.length} 项</span></div><TaskList tasks={taskList} loading={tasks.isPending && !!backend} error={tasks.error ?? currentState.error} configured={!!backend} /></section>
         </div>}
         {view === "tasks" && <section className="workspace-section"><div className="section-heading"><h2>全部任务</h2><span className="section-meta">{taskList.length} 项</span></div><TaskList tasks={taskList} loading={tasks.isPending && !!backend} error={tasks.error} configured={!!backend} /></section>}
-        {view === "focus" && <FocusView tasks={taskList} />}
+        {/* 外审 #26：专注草稿存储已按 owner 命名空间，残留的是 mount 时读入
+            的组件态——按账号 key 重挂载，登出/换号即重读当前 owner 的草稿 */}
+        {view === "focus" && <FocusView key={backendState.userId ?? "anonymous"} tasks={taskList} />}
         {view === "memory" && <MemoryView />}
         {view === "explain" && <GroundedAnswersView />}
         {view === "pending" && <PendingActionsView
