@@ -146,6 +146,13 @@ status）转 E7 执行轮与部署演练的观察项。
   同源）；同意关 ⇒ 请求体无 memory.content、回执 `memory_ids=[]`；钉子
   测试双向断言（关⇒不含/开⇒原语义恢复），两处既有记忆断言测试补全局
   同意前置。E7-8 同意面语义不变（门只加不撤）。
+- 2026-10-09 R2-A 执行（#5，分支 `fix/audit-redact-execution-scan`）：
+  审计族 redact 改执行期扫描——冻结 ids 降级为 90d 回执锚（级联后
+  仍可定位），扫描谓词 = owner（users 行存续期、不限时）∪ 孤儿
+  （actor=user、user_id 已被级联置空、created_at ≥ preview.created_at
+  水位）；born-anonymous 行不误伤（全局取证轨迹保 IP）。VERIFY 同步
+  扩为 ids 存活+擦净 ∪ 扫描面零内容。E7-5 retained 预期与 manifest
+  已随实现修订（预登记纪律）。
 - 2026-10-09 R2-A 执行（#6，分支 `fix/evidence-lineage-closure`）：删除
   闭包并入 evidence 包含（`@>` 走 ix_memories_evidence GIN）——事件源
   删除的 citing 判据 = source_event_ids 交集 ∪ evidence 包含，再沿

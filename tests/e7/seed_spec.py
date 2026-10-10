@@ -1024,8 +1024,8 @@ EXPECTATIONS: dict[str, CaseExpectation] = {
                 "grounding_consents": -1,
                 "model_context_consents": -1,
                 "notification_preferences": -1,
-                # owner 可见口径：data_closure 的 redact 路径把 user_id
-                # SET-NULL（行全局存活，owner 谓词 user_id=:uid 计数归零）。
+                # owner 可见口径：users 行 CASCADE 把 user_id SET-NULL
+                # （行全局存活，owner 谓词 user_id=:uid 计数归零）。
                 "audit_logs": -3,
             }
         },
@@ -1049,7 +1049,10 @@ EXPECTATIONS: dict[str, CaseExpectation] = {
         object_expectations=(ObjectExpectation(user="U", absent_seeded=("U:f1", "U:f2")),),
         redis_absence=("U:dirty",),
         retained=(
-            "audit_logs 行全局存活但 IP/UA/path/JSON 脱敏、user_id SET-NULL（§5；owner 口径归零）",
+            "audit_logs 行全局存活但 IP/UA/path/JSON 脱敏、user_id SET-NULL（§5；owner 口径归零）；"
+            "redact 为执行期扫描（外审 #5）：冻结 ids 仅作回执锚，闭包后新增行"
+            "（删除流自身审计行）与级联后孤儿行（actor=user、水位内）同样擦净，"
+            "born-anonymous 行不误伤",
             "data_operations/barriers/cleanup/receipts 账本存活"
             "（owner_handle 键保留原值）；previews 随账号级联清空"
             "（FK CASCADE，瞬态非账本）",

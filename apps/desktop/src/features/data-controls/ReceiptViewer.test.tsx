@@ -49,10 +49,12 @@ describe("回执独立最小视图（B 稿 §1/§3）", () => {
     const open = await screen.findByRole("button", { name: "查看" });
     fireEvent.click(open);
     expect(await screen.findByText("服务端清理已完成")).toBeTruthy();
+    // jsdom 非 Tauri 运行时：第 4 参显式 undefined（沿用原生 fetch）
     expect(fetchReceiptWithCapability).toHaveBeenCalledWith(
       "http://backend",
       "019ccccc-0000-7000-8000-000000000001",
       "cap-secret-value-never-rendered",
+      undefined,
     );
     // capability 不进 DOM
     expect(document.body.textContent ?? "").not.toContain("cap-secret-value");
@@ -76,4 +78,9 @@ describe("回执独立最小视图（B 稿 §1/§3）", () => {
     expect(await screen.findByText("本机没有留存的删除回执。")).toBeTruthy();
     await waitFor(() => expect(fetchReceiptWithCapability).not.toHaveBeenCalled());
   });
+
+  // 打包路径源形态守卫（外审 #10）在 scripts/check-csp.mjs 承担：
+  // 生产 CSP 无直连出口，Tauri 态必须注入 backendFetch——该分支无法在
+  // jsdom 实跑，整函数 mock 又盖不住漏注入，故按 CSP guard 形态随
+  // build/CI 钉调用点源形态；本文件只钉浏览器态第 4 参为 undefined。
 });
