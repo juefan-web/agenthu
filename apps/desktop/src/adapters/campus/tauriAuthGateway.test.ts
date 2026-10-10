@@ -31,10 +31,42 @@ describe("TauriCampusAuthGateway", () => {
     await expect(gateway.verify2fa({ method: "totp", code: "123456", trustDevice: true }))
       .resolves.toEqual({ state: "ready", username: "12345678" });
     expect(saved).toEqual({ username: "12345678", fingerprint: expect.any(String), finger3: "" });
-    // 内存凭据供 learn 静默重登（路径二）使用；登出后必须不可用。
-    expect(gateway.silentReloginCredentials()?.username).toBe("12345678");
+    // 登录链 settle 即清内存账密：渲染进程不驻留明文凭据，静默重登
+    // （路径二）不再有凭据可供应——与重启恢复态一致（外审 R1 #3）。
+    expect(gateway.silentReloginCredentials()).toBeNull();
+    expect(gateway.canRetryTwoFactor()).toBe(false);
     await gateway.logout();
     expect(gateway.silentReloginCredentials()).toBeNull();
+  });
+
+  it("keeps credentials available while the chain is in flight and clears them exactly at settle", async () => {
+    let releaseRun: (() => void) | undefined;
+    const gateway = new TauriCampusAuthGateway(dependencies(async () => {
+      await new Promise<void>((resolve) => { releaseRun = resolve; });
+    }));
+
+    const pending = gateway.login({ username: "12345678", password: "secret" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // 分支一：链在途（等待 settle）——静默重登凭据必须可供应
+    const inflight = gateway.silentReloginCredentials();
+    expect(inflight).toMatchObject({ username: "12345678", password: "secret" });
+    expect(gateway.canRetryTwoFactor()).toBe(true);
+
+    releaseRun?.();
+    await expect(pending).resolves.toEqual({ state: "ready", username: "12345678" });
+    // 分支二：settle 落定——凭据即清，静默重登路径二不再有账密可重放
+    expect(gateway.silentReloginCredentials()).toBeNull();
+    expect(gateway.canRetryTwoFactor()).toBe(false);
+  });
+
+  it("clears credentials when the chain settles without 2FA (direct login)", async () => {
+    const gateway = new TauriCampusAuthGateway(dependencies(async () => undefined));
+
+    await expect(gateway.login({ username: "12345678", password: "secret" }))
+      .resolves.toEqual({ state: "ready", username: "12345678" });
+    // 无 2FA 直登链同样在 settle 点清凭据：明文账密零驻留
+    expect(gateway.silentReloginCredentials()).toBeNull();
+    expect(gateway.canRetryTwoFactor()).toBe(false);
   });
 
   it("cancels a pending two-factor login and clears persisted state", async () => {
@@ -202,7 +234,11 @@ describe("TauriCampusAuthGateway", () => {
     await expect(gateway.login({ username: "12345678", password: "secret" }))
       .resolves.toEqual({ state: "ready", username: "12345678" });
     expect(saved).toEqual({ username: "12345678", fingerprint: "device-fingerprint", finger3: "trusted-finger3" });
-    expect(gateway.silentReloginCredentials()).toMatchObject({ fingerprint: "device-fingerprint", finger3: "trusted-finger3" });
+    // 账密在 settle 点已清，但设备身份不随链销毁：指纹/受信凭据仍来自
+    // 登录链 helper（本测试的意义——设备信任链跨登录稳定）。
+    expect(gateway.silentReloginCredentials()).toBeNull();
+    expect(gateway["helper"].fingerprint).toBe("device-fingerprint");
+    expect(gateway["helper"].fingerGenPrint).toBe("trusted-finger3");
   });
 
   it("expires an idle two-factor round and requires a fresh login afterwards", async () => {
