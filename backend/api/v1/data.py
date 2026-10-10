@@ -40,7 +40,7 @@ from backend.services import data_exports as exports
 from backend.services import data_lifecycle as dl
 from backend.services import data_operations as ops
 from backend.services import data_recovery as recovery
-from backend.services.data_executor import retry_cleanup_operation
+from backend.services.data_executor import requeue_account_operation, retry_cleanup_operation
 from backend.services.data_registry import graph_version
 from backend.services.storage import get_storage
 
@@ -229,8 +229,38 @@ def read_receipt(receipt_id: uuid.UUID, http_request: Request, db: DBSession) ->
         completion_scope="controlled_live",
         effects=effects,
         outstanding_count=operation.outstanding_count if operation is not None else 0,
+        operation_status=operation.status.value if operation is not None else "unknown",
+        operation_version=operation.version if operation is not None else 1,
         backup_expires_at=None if completed is None else completed + _BACKUP_TTL,
         provider_limitations=list(_RECEIPT_PROVIDER_LIMITATIONS),
         local_cleanup_required=True,
         audit_receipt_version=ops.SCHEMA_VERSION,
     )
+
+
+@router.post("/receipts/{receipt_id}/requeue", response_model=DataOperationOut)
+def requeue_failed_account_deletion(
+    receipt_id: uuid.UUID,
+    request: OperationRetryRequest,
+    http_request: Request,
+    db: DBSession,
+) -> DataOperationOut:
+    """The account arm of the manual retry (external review #7; task doc
+    §3 pre-ruling).
+
+    The confirm-time deactivation stays, so the login cannot reach the
+    authed retry route — the receipt capability (this narrow path's only
+    key, Authorization header, never the URL) drives the SAME ladder reset
+    as source/memory retries. Anti-enumeration matches the receipt read: a
+    missing or wrong capability is the uniform 404; a valid one gets the
+    honest state answers (409 version_conflict / not_retryable)."""
+
+    header = http_request.headers.get("Authorization") or ""
+    token = header.removeprefix("Bearer ").strip()
+    if not token:
+        raise NotFoundError("receipt not found")
+    receipt = recovery.receipt_view(db, receipt_id=receipt_id, capability=token)
+    if receipt is None:
+        raise NotFoundError("receipt not found")
+    operation = requeue_account_operation(db, receipt, expected_version=request.expected_version)
+    return ops.operation_dto(operation)

@@ -128,7 +128,11 @@ class DeletionRecoverRequest(BaseModel):
 
 
 class DataReceiptOut(BaseModel):
-    """The content-free 90-day receipt a capability may read (A-draft §4)."""
+    """The content-free 90-day receipt a capability may read (A-draft §4).
+
+    ``operation_status`` / ``operation_version`` feed the capability-driven
+    account requeue (external review #7): after deactivation this read is
+    the only place the narrow-path caller can learn the optimistic version."""
 
     id: uuid.UUID
     operation_id: uuid.UUID
@@ -136,6 +140,8 @@ class DataReceiptOut(BaseModel):
     completion_scope: Literal["controlled_live"]
     effects: list[DataEffect]
     outstanding_count: int = Field(ge=0)
+    operation_status: str
+    operation_version: int = Field(ge=1)
     backup_expires_at: datetime | None = None
     provider_limitations: list[str]
     local_cleanup_required: bool

@@ -6411,6 +6411,100 @@
         }
       }
     },
+    "/v1/data/receipts/{receipt_id}/requeue": {
+      "post": {
+        "tags": [
+          "data"
+        ],
+        "summary": "Requeue Failed Account Deletion",
+        "description": "The account arm of the manual retry (external review #7; task doc\n§3 pre-ruling).\n\nThe confirm-time deactivation stays, so the login cannot reach the\nauthed retry route — the receipt capability (this narrow path's only\nkey, Authorization header, never the URL) drives the SAME ladder reset\nas source/memory retries. Anti-enumeration matches the receipt read: a\nmissing or wrong capability is the uniform 404; a valid one gets the\nhonest state answers (409 version_conflict / not_retryable).",
+        "operationId": "requeue_failed_account_deletion_v1_data_receipts__receipt_id__requeue_post",
+        "parameters": [
+          {
+            "name": "receipt_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Receipt Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationRetryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataOperationOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/grounding-consent": {
       "get": {
         "tags": [
@@ -10483,6 +10577,15 @@
             "minimum": 0.0,
             "title": "Outstanding Count"
           },
+          "operation_status": {
+            "type": "string",
+            "title": "Operation Status"
+          },
+          "operation_version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Operation Version"
+          },
           "backup_expires_at": {
             "anyOf": [
               {
@@ -10518,12 +10621,14 @@
           "completion_scope",
           "effects",
           "outstanding_count",
+          "operation_status",
+          "operation_version",
           "provider_limitations",
           "local_cleanup_required",
           "audit_receipt_version"
         ],
         "title": "DataReceiptOut",
-        "description": "The content-free 90-day receipt a capability may read (A-draft §4)."
+        "description": "The content-free 90-day receipt a capability may read (A-draft §4).\n\n``operation_status`` / ``operation_version`` feed the capability-driven\naccount requeue (external review #7): after deactivation this read is\nthe only place the narrow-path caller can learn the optimistic version."
       },
       "DataSafeError": {
         "properties": {

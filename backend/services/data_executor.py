@@ -49,6 +49,7 @@ from backend.models.data_lifecycle import (
     DataBarrier,
     DataCleanupItem,
     DataOperation,
+    DataReceipt,
     DataSuppression,
 )
 from backend.models.enums import (
@@ -586,25 +587,11 @@ def _run_deletion(
     _complete_operation(session, operation)
 
 
-def retry_cleanup_operation(
-    session: Session, operation: DataOperation, *, expected_version: int
-) -> DataOperation:
-    """Manual retry (A-draft §2): the SAME operation, barrier untouched,
-    exhausted items get a fresh ladder. Only source/memory deletions —
-    after an account deletion the owner can no longer authenticate, so
-    those FAILED cleanups walk the automatic ladder and ops handling only."""
+def _reset_operation_ladder(session: Session, operation: DataOperation) -> None:
+    """Shared reset for both retry entries: FAILED/PENDING items start a
+    fresh ladder, DONE progress stays, the operation re-enters the sweep
+    queue as QUEUED with its error state cleared."""
 
-    if operation.version != expected_version:
-        raise ConflictError("operation moved since; reload and retry", code="version_conflict")
-    if operation.kind != DataOperationKind.DELETION or (operation.target or {}).get("kind") not in (
-        "source",
-        "memory",
-    ):
-        raise ValidationError(
-            "manual retry applies to source/memory deletions only", code="unsupported_scope"
-        )
-    if operation.status not in (DataOperationStatus.FAILED, DataOperationStatus.RETRY_WAIT):
-        raise ConflictError("operation is not in a retryable state", code="not_retryable")
     items = _items_of(session, operation.id)
     for item in items:
         if item.state in (CleanupItemState.FAILED, CleanupItemState.PENDING):
@@ -620,4 +607,55 @@ def retry_cleanup_operation(
     operation.next_retry_at = None
     operation.version += 1
     session.flush()
+
+
+def retry_cleanup_operation(
+    session: Session, operation: DataOperation, *, expected_version: int
+) -> DataOperation:
+    """Manual retry (A-draft §2): the SAME operation, barrier untouched,
+    exhausted items get a fresh ladder. Only source/memory deletions —
+    account deletions go through :func:`requeue_account_operation`, keyed
+    by the receipt capability instead of the (deactivated) login."""
+
+    if operation.version != expected_version:
+        raise ConflictError("operation moved since; reload and retry", code="version_conflict")
+    if operation.kind != DataOperationKind.DELETION or (operation.target or {}).get("kind") not in (
+        "source",
+        "memory",
+    ):
+        raise ValidationError(
+            "manual retry applies to source/memory deletions only", code="unsupported_scope"
+        )
+    if operation.status not in (DataOperationStatus.FAILED, DataOperationStatus.RETRY_WAIT):
+        raise ConflictError("operation is not in a retryable state", code="not_retryable")
+    _reset_operation_ladder(session, operation)
+    return operation
+
+
+def requeue_account_operation(
+    session: Session, receipt: DataReceipt, *, expected_version: int
+) -> DataOperation:
+    """Capability-driven requeue for a FAILED account deletion (external
+    review #7; task doc §3 pre-ruling).
+
+    The confirm-time deactivation stays — after it the owner cannot
+    authenticate, so the receipt capability (the narrow path that already
+    reads the receipt) is the only key that may unlock the account ladder.
+    Guards mirror the source/memory retry: version conflict and
+    non-retryable state are 409s; a COMPLETED termination never resurrects.
+    The barrier is untouched (account barriers lift only with the account)
+    and the reset sweep re-dispatches the QUEUED operation."""
+
+    operation = session.get(DataOperation, receipt.operation_id)
+    if operation is None or (operation.target or {}).get("kind") != "account":
+        # Unreachable today (receipts are issued for account deletions
+        # only); kept so the narrow path cannot silently widen.
+        raise ValidationError(
+            "receipt requeue applies to account deletions only", code="unsupported_scope"
+        )
+    if operation.version != expected_version:
+        raise ConflictError("operation moved since; reload and retry", code="version_conflict")
+    if operation.status not in (DataOperationStatus.FAILED, DataOperationStatus.RETRY_WAIT):
+        raise ConflictError("operation is not in a retryable state", code="not_retryable")
+    _reset_operation_ladder(session, operation)
     return operation

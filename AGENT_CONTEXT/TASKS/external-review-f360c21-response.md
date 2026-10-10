@@ -186,3 +186,15 @@ status）转 E7 执行轮与部署演练的观察项。
   barrier 单发 409 / batch 全拒零写入 / source barrier 下无关新事件
   201。CURRENT_STATE P0-3 切片 3「events 入口」口径失实由 **D-038**
   对账修正（该切片实落 suppression + batch generation 头两件）。
+- 2026-10-10 R2-A 执行（#7，分支 `fix/account-requeue-receipt`）：按预裁
+  落地——confirm 即时停用不动（停用后业务面 401 语义不变），FAILED/
+  RETRY_WAIT 的 account 操作经回执窄路径重排：`POST
+  /receipts/{id}/requeue`（Authorization capability，缺/错/未知统一
+  404；有效键得真实态 409 version_conflict / not_retryable）。
+  `requeue_account_operation` 与 source/memory 手工 retry 共享
+  `_reset_operation_ladder`（FAILED/PENDING 项新梯、DONE 进度保留、
+  QUEUED 归队交 sweep 再派发；account barrier 不动）。回执读面增
+  operation_status / operation_version（窄路径持有者取乐观版本的唯一
+  来源；openapi 再生成 71 路径）。钉子 ×5：FAILED 复活全断言 / 错键
+  统一 404 / COMPLETED 永不复活 / 版本冲突 / 回执暴露状态与版本。
+  E7 预期无变动（重排为新增能力，未触任何既有断言；预裁未推翻）。
