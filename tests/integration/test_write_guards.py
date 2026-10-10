@@ -348,17 +348,13 @@ class TestEventsEntryBarrier:
 
         blocked = client.post(
             "/v1/events",
-            json=_anchor_event_payload(upstream_id="assignment:hw-fenced").model_dump(
-                mode="json"
-            ),
+            json=_anchor_event_payload(upstream_id="assignment:hw-fenced").model_dump(mode="json"),
             headers=auth_headers,
         )
         assert blocked.status_code == 409, blocked.text
         assert blocked.json()["error"]["code"] == "deletion_in_progress"
 
-    def test_account_barrier_rejects_every_batch_envelope(
-        self, client, auth_headers, db_session
-    ):
+    def test_account_barrier_rejects_every_batch_envelope(self, client, auth_headers, db_session):
         user_id = _me(client, auth_headers)
         handle = dl.owner_handle_of(db_session, user_id)
         dl.raise_barrier(

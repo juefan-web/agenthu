@@ -126,9 +126,7 @@ def create_event(
     # only on the account barrier — the same discipline as the focus entry
     # guard. Re-importing a deleted anchor stays the suppression net's job
     # right below.
-    assert_write_allowed(
-        session, user_id=user_id, scope=DataBarrierScope.SOURCE, target_ids=set()
-    )
+    assert_write_allowed(session, user_id=user_id, scope=DataBarrierScope.SOURCE, target_ids=set())
 
     # Suppression first (A-draft §2.6): a deleted upstream anchor must not
     # resurrect even under a fresh client_event_id — this check sits before
