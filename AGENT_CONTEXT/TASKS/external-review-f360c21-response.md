@@ -146,3 +146,15 @@ status）转 E7 执行轮与部署演练的观察项。
   同源）；同意关 ⇒ 请求体无 memory.content、回执 `memory_ids=[]`；钉子
   测试双向断言（关⇒不含/开⇒原语义恢复），两处既有记忆断言测试补全局
   同意前置。E7-8 同意面语义不变（门只加不撤）。
+- 2026-10-10 R2-A 执行（#7，分支 `fix/account-requeue-receipt`）：按预裁
+  落地——confirm 即时停用不动（停用后业务面 401 语义不变），FAILED/
+  RETRY_WAIT 的 account 操作经回执窄路径重排：`POST
+  /receipts/{id}/requeue`（Authorization capability，缺/错/未知统一
+  404；有效键得真实态 409 version_conflict / not_retryable）。
+  `requeue_account_operation` 与 source/memory 手工 retry 共享
+  `_reset_operation_ladder`（FAILED/PENDING 项新梯、DONE 进度保留、
+  QUEUED 归队交 sweep 再派发；account barrier 不动）。回执读面增
+  operation_status / operation_version（窄路径持有者取乐观版本的唯一
+  来源；openapi 再生成 71 路径）。钉子 ×5：FAILED 复活全断言 / 错键
+  统一 404 / COMPLETED 永不复活 / 版本冲突 / 回执暴露状态与版本。
+  E7 预期无变动（重排为新增能力，未触任何既有断言；预裁未推翻）。
