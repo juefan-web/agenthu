@@ -336,7 +336,7 @@ def _build_user(world: World, tag: str) -> None:
             "content": f"作业一做得吃力，重看了讲义第二页 {m(tag, 'm1.content')}",
             "source": {"origin": "e7-seed"},
             "source_event_ids": [str(e3)],
-            "evidence": [{"kind": "event", "id": str(e3)}],
+            "evidence": [{"type": "event", "id": str(e3)}],
             "confidence": 0.6,
             "correction_status": "UNREVIEWED",
         },
@@ -354,7 +354,7 @@ def _build_user(world: World, tag: str) -> None:
             "content": f"作业通常花两小时，常在晚自习后 {m(tag, 'm2b.content')}",
             "source": {"origin": "e7-seed"},
             "source_event_ids": [str(e5), str(e6)],
-            "evidence": [{"kind": "event", "id": str(e5)}, {"kind": "event", "id": str(e6)}],
+            "evidence": [{"type": "event", "id": str(e5)}, {"type": "event", "id": str(e6)}],
             "confidence": 0.8,
             "correction_status": "CONFIRMED",
             "subject_key": f"E7-{tag}-l2-key",
@@ -969,9 +969,13 @@ EXPECTATIONS: dict[str, CaseExpectation] = {
     ),
     "E7-4b": CaseExpectation(
         case_id="E7-4b",
-        title="删除 L2 源事件 e5：样本不足失效而非删除，向量零召回",
+        title="删除 L2 源事件 e5：证据链整链清理，向量零召回",
         operations=("U preview+confirm source event e5",),
-        count_deltas={"U": {"events": -1}},
+        # 外审 #6 修订（预登记纪律）：原「行数不变（失效保留）」与实现及
+        # D-036 §1 相悖——m2a/m2b 的血缘（source_event_ids 与 evidence 包含
+        # 包含）本就把 e5 带进闭包；「L2 样本不足 → 整链清理」：e5 删除
+        # 后该 subject key 样本不足，m2b（live）+ m2a（历史）整链删除。
+        count_deltas={"U": {"events": -1, "memories": -2}},
         # e5 是事件锚删除，与 E7-3a 同形流：五族账本按同形先例注册下限
         # （events 有锚 → suppressions +1）。
         count_minimums={
@@ -983,13 +987,10 @@ EXPECTATIONS: dict[str, CaseExpectation] = {
                 "data_cleanup_items": 1,
             }
         },
-        marker_absence=("e5.note",),
+        marker_absence=("e5.note", "m2a.content", "m2b.content"),
         vector_absence=("U:m2b",),
         live_key_absence=("U:E7-U-l2-key",),
-        retained=(
-            "memories 行数不变（失效保留），m2a 历史版本不复活",
-            "e6 仍在 m2b source_event_ids 中（id 引用非原文）",
-        ),
+        retained=("m1（e3 锚）/m3/m4 存活；e6 事件行存活（引用随链断开）",),
         invariants=("invalid_basis_no_original_text",),
     ),
     "E7-5": CaseExpectation(

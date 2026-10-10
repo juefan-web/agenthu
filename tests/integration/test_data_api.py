@@ -45,6 +45,7 @@ from backend.models.permission import PermissionGrant
 from backend.models.task import Task, task_events
 from backend.models.user import User
 from backend.services import data_operations as ops
+from backend.services.data_closure import enumerate_closure
 from backend.services.data_registry import graph_version
 from tests.fixtures.payloads import assignment_event
 
@@ -331,6 +332,156 @@ class TestPreviews:
         assert effects["file_objects"]["delete_count"] == 1
         assert effects["material_chunks"]["delete_count"] == 1
         assert effects["material_answers"]["delete_count"] == 1
+
+
+class TestEvidenceLineageClosure:
+    """External review #6: keyed L2s carry empty source_event_ids — their
+    lineage lives only in canonical evidence. Closure must contain through
+    evidence (@> on the GIN index) and follow memory→memory evidence edges
+    to a fixpoint, in both the event-source and memory-kind deletions."""
+
+    @staticmethod
+    def _l2(db_session, user_id, *, evidence, content="keyed habit", subject_key=None):
+        memory = Memory(
+            user_id=user_id,
+            level=2,
+            domain="study",
+            content=content,
+            confidence=0.8,
+            source_event_ids=[],
+            evidence=evidence,
+            subject_key=subject_key,
+        )
+        db_session.add(memory)
+        db_session.flush()
+        return memory
+
+    def test_event_deletion_closes_keyed_l2_via_evidence(self, client, auth_headers, db_session):
+        """The defect pin: an L2 whose only lineage is evidence (exactly the
+        upsert_keyed_memory write shape) used to escape the closure."""
+
+        me = _me(client, auth_headers)
+        user_id = uuid.UUID(me["id"])
+        event_id = _seed_event(client, auth_headers)
+        episode = Memory(
+            user_id=user_id,
+            level=1,
+            domain="study",
+            content="episode",
+            confidence=0.6,
+            source_event_ids=[event_id],
+            evidence=[{"type": "event", "id": event_id}],
+        )
+        db_session.add(episode)
+        l2 = self._l2(
+            db_session,
+            user_id,
+            evidence=[
+                {"type": "event", "id": event_id},
+                {"type": "memory", "id": str(episode.id)},
+            ],
+            subject_key="habit/hw-duration",
+        )
+        db_session.flush()
+        db_session.expire_all()
+
+        preview = _preview(
+            client, auth_headers, {"kind": "source", "source_kind": "event", "ids": [event_id]}
+        )
+        effects = _effects(preview)
+        assert effects["memories"]["delete_count"] == 2, "L1 via ids AND keyed L2 via evidence"
+        closure = enumerate_closure(
+            db_session,
+            user_id=user_id,
+            target={"kind": "source", "source_kind": "event", "ids": [event_id]},
+        )
+        deleted = set(closure.delete_ids_of("memories"))
+        assert deleted == {str(episode.id), str(l2.id)}
+
+    def test_event_deletion_follows_memory_lineage_to_fixpoint(
+        self, client, auth_headers, db_session
+    ):
+        me = _me(client, auth_headers)
+        user_id = uuid.UUID(me["id"])
+        event_id = _seed_event(client, auth_headers)
+        other_event = _seed_event(client, auth_headers)
+        first = self._l2(
+            db_session,
+            user_id,
+            evidence=[{"type": "event", "id": event_id}],
+            subject_key="habit/a",
+        )
+        second = self._l2(
+            db_session,
+            user_id,
+            evidence=[{"type": "memory", "id": str(first.id)}],
+            subject_key="habit/b",
+        )
+        third = self._l2(
+            db_session,
+            user_id,
+            evidence=[{"type": "memory", "id": str(second.id)}],
+            subject_key="habit/c",
+        )
+        unrelated = self._l2(
+            db_session,
+            user_id,
+            evidence=[{"type": "event", "id": other_event}],
+            subject_key="habit/other",
+        )
+        db_session.expire_all()
+
+        preview = _preview(
+            client, auth_headers, {"kind": "source", "source_kind": "event", "ids": [event_id]}
+        )
+        effects = _effects(preview)
+        assert effects["memories"]["delete_count"] == 3, "event + memory edges close transitively"
+        closure = enumerate_closure(
+            db_session,
+            user_id=user_id,
+            target={"kind": "source", "source_kind": "event", "ids": [event_id]},
+        )
+        deleted = set(closure.delete_ids_of("memories"))
+        assert deleted == {str(first.id), str(second.id), str(third.id)}
+        assert str(unrelated.id) not in deleted
+
+    def test_memory_deletion_follows_evidence_lineage(self, client, auth_headers, db_session):
+        me = _me(client, auth_headers)
+        user_id = uuid.UUID(me["id"])
+        target = self._l2(db_session, user_id, evidence=[], subject_key="habit/target-old")
+        successor = self._l2(db_session, user_id, evidence=[], subject_key="habit/target-new")
+        target.supersedes_id = successor.id  # chain edge: older points at newer (D-032)
+        citing = self._l2(
+            db_session,
+            user_id,
+            evidence=[{"type": "memory", "id": str(target.id)}],
+            subject_key="habit/citing",
+        )
+        transitive = self._l2(
+            db_session,
+            user_id,
+            evidence=[{"type": "memory", "id": str(citing.id)}],
+            subject_key="habit/transitive",
+        )
+        outsider = self._l2(db_session, user_id, evidence=[], subject_key="habit/outsider")
+        db_session.flush()
+        db_session.expire_all()
+
+        preview = _preview(
+            client,
+            auth_headers,
+            {"kind": "memory", "ids": [str(target.id)], "include_history": True},
+        )
+        effects = _effects(preview)
+        assert effects["memories"]["delete_count"] == 4
+        closure = enumerate_closure(
+            db_session,
+            user_id=user_id,
+            target={"kind": "memory", "ids": [str(target.id)], "include_history": True},
+        )
+        deleted = set(closure.delete_ids_of("memories"))
+        assert deleted == {str(target.id), str(successor.id), str(citing.id), str(transitive.id)}
+        assert str(outsider.id) not in deleted
 
 
 class TestConfirmDeletion:
