@@ -146,3 +146,12 @@ status）转 E7 执行轮与部署演练的观察项。
   同源）；同意关 ⇒ 请求体无 memory.content、回执 `memory_ids=[]`；钉子
   测试双向断言（关⇒不含/开⇒原语义恢复），两处既有记忆断言测试补全局
   同意前置。E7-8 同意面语义不变（门只加不撤）。
+- 2026-10-10 R2-A 执行（写守卫 events 入口对账，分支
+  `fix/write-guard-events-entry`）：修码 arm——`create_event` 汇点接
+  `assert_write_allowed(SOURCE, target_ids=set())`（精确空集：account
+  barrier 冻结入口，scoped barrier 不挡新事件行——其 target ids 是
+  既有行 UUID；同锚重导入仍归 suppression 网）；batch 循环
+  WriteBlocked 与 suppression 同级逐 envelope 拒绝。钉子 ×3：account
+  barrier 单发 409 / batch 全拒零写入 / source barrier 下无关新事件
+  201。CURRENT_STATE P0-3 切片 3「events 入口」口径失实由 **D-038**
+  对账修正（该切片实落 suppression + batch generation 头两件）。
