@@ -146,3 +146,11 @@ status）转 E7 执行轮与部署演练的观察项。
   同源）；同意关 ⇒ 请求体无 memory.content、回执 `memory_ids=[]`；钉子
   测试双向断言（关⇒不含/开⇒原语义恢复），两处既有记忆断言测试补全局
   同意前置。E7-8 同意面语义不变（门只加不撤）。
+- 2026-10-09 R2-A 执行（#6，分支 `fix/evidence-lineage-closure`）：删除
+  闭包并入 evidence 包含（`@>` 走 ix_memories_evidence GIN）——事件源
+  删除的 citing 判据 = source_event_ids 交集 ∪ evidence 包含，再沿
+  memory→memory evidence 边迭代至不动点；memory 域整链忘记的不动点同
+  步扩三生长规则（successor/older/evidence 引用）。E7-4b 预期随实现
+  修订（原「行数不变」与实现相悖；D-036 §1 样本不足→整链清理：e5 删
+  除 ⇒ m2b+m2a 整链 -2）+ seed 的 evidence 键名 kind→type 归一（生产
+  写入方均为 type，模型注释同）。
