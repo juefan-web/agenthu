@@ -23,18 +23,24 @@ struct QueueStore {
 /// 决定，走 queue_unowned_adopt / queue_unowned_discard）。重建表是因为
 /// PK 必须纳入 owner：两个账号可采集同一上游事件（client_event_id 同值），
 /// 全局唯一键会把后入队的静默丢掉。
-fn migrate_owner(connection: &Connection) -> Result<(), String> {
-    let has_owner = |table: &str| -> Result<bool, String> {
-        let mut statement = connection
-            .prepare(&format!("PRAGMA table_info({table})"))
-            .map_err(|error| error.to_string())?;
-        let rows = statement.query_map([], |row| row.get::<_, String>(1))
-            .map_err(|error| error.to_string())?;
-        let found = rows.filter_map(|row| row.ok()).any(|name| name == "owner");
-        Ok(found)
-    };
-    if !has_owner("pending_events")? {
-        connection.execute_batch(
+/// 每表迁移包显式事务（外审 #13）：SQLite 的 DDL 可回滚，崩溃在任何
+/// 语句之间都会整批回滚到旧表形态——否则「RENAME 后崩、下次 open 先
+/// CREATE IF NOT EXISTS 建出空新表 → has_owner 为真 → 迁移永久跳过、
+/// *_old 孤儿表带走数据」。
+fn table_has_owner(connection: &Connection, table: &str) -> Result<bool, String> {
+    let mut statement = connection
+        .prepare(&format!("PRAGMA table_info({table})"))
+        .map_err(|error| error.to_string())?;
+    let rows = statement.query_map([], |row| row.get::<_, String>(1))
+        .map_err(|error| error.to_string())?;
+    let found = rows.filter_map(|row| row.ok()).any(|name| name == "owner");
+    Ok(found)
+}
+
+fn migrate_owner(connection: &mut Connection) -> Result<(), String> {
+    if !table_has_owner(connection, "pending_events")? {
+        let transaction = connection.transaction().map_err(|error| error.to_string())?;
+        transaction.execute_batch(
             "ALTER TABLE pending_events RENAME TO pending_events_old;
              CREATE TABLE pending_events (
                  owner TEXT NOT NULL,
@@ -45,9 +51,11 @@ fn migrate_owner(connection: &Connection) -> Result<(), String> {
              INSERT OR IGNORE INTO pending_events SELECT 'unowned', client_event_id, payload FROM pending_events_old;
              DROP TABLE pending_events_old;",
         ).map_err(|error| error.to_string())?;
+        transaction.commit().map_err(|error| error.to_string())?;
     }
-    if !has_owner("sync_state")? {
-        connection.execute_batch(
+    if !table_has_owner(connection, "sync_state")? {
+        let transaction = connection.transaction().map_err(|error| error.to_string())?;
+        transaction.execute_batch(
             "ALTER TABLE sync_state RENAME TO sync_state_old;
              CREATE TABLE sync_state (
                  owner TEXT NOT NULL,
@@ -58,9 +66,11 @@ fn migrate_owner(connection: &Connection) -> Result<(), String> {
              INSERT OR IGNORE INTO sync_state SELECT 'unowned', key, value FROM sync_state_old;
              DROP TABLE sync_state_old;",
         ).map_err(|error| error.to_string())?;
+        transaction.commit().map_err(|error| error.to_string())?;
     }
-    if !has_owner("focus_draft")? {
-        connection.execute_batch(
+    if !table_has_owner(connection, "focus_draft")? {
+        let transaction = connection.transaction().map_err(|error| error.to_string())?;
+        transaction.execute_batch(
             "ALTER TABLE focus_draft RENAME TO focus_draft_old;
              CREATE TABLE focus_draft (
                  owner TEXT PRIMARY KEY,
@@ -69,6 +79,7 @@ fn migrate_owner(connection: &Connection) -> Result<(), String> {
              INSERT OR IGNORE INTO focus_draft SELECT 'unowned', payload FROM focus_draft_old;
              DROP TABLE focus_draft_old;",
         ).map_err(|error| error.to_string())?;
+        transaction.commit().map_err(|error| error.to_string())?;
     }
     connection.execute_batch("CREATE INDEX IF NOT EXISTS idx_pending_events_owner ON pending_events(owner);")
         .map_err(|error| error.to_string())?;
@@ -77,7 +88,7 @@ fn migrate_owner(connection: &Connection) -> Result<(), String> {
 
 impl QueueStore {
     fn open(path: &Path) -> Result<Self, String> {
-        let connection = Connection::open(path).map_err(|error| error.to_string())?;
+        let mut connection = Connection::open(path).map_err(|error| error.to_string())?;
         // WAL：读写不互斥（写写仍由 SQLite 串行）；busy_timeout：锁竞争时等待
         // 而非立即失败。两者都是连接级设置，随本连接生命周期生效。
         connection.busy_timeout(Duration::from_millis(5_000)).map_err(|error| error.to_string())?;
@@ -103,7 +114,7 @@ impl QueueStore {
                 origin TEXT PRIMARY KEY NOT NULL
             );",
         ).map_err(|error| error.to_string())?;
-        migrate_owner(&connection)?;
+        migrate_owner(&mut connection)?;
         Ok(Self { connection })
     }
 
@@ -226,6 +237,12 @@ impl QueueStore {
     }
 
     fn unowned_adopt(&mut self, target_owner: &str) -> Result<i64, String> {
+        // 自目标守卫（外审 #12，与 focus_adopt_unowned 同语义）：target=
+        // 'unowned' 时 INSERT 因 PK 冲突 moved=0，随后的 DELETE 会清空
+        // 整个无主命名空间还被 UI 显示为成功——必须在事务前拒绝。
+        if target_owner == "unowned" {
+            return Err("cannot adopt the unowned namespace into itself".into());
+        }
         let transaction = self.connection.transaction().map_err(|error| error.to_string())?;
         let moved = transaction.execute(
             "INSERT OR IGNORE INTO pending_events (owner, client_event_id, payload)
@@ -332,28 +349,52 @@ impl QueueDb {
     }
 }
 
+/// queue_*/focus_* 的 owner 入参门（外审 #11）：真实 owner 键由 TS 侧
+/// `deriveOwnerKey`（sha256 前 16 hex）派生，与回执槽 `receipt_owner_valid`
+/// 同一字符集/长度纪律；`"unowned"` 是登出态队列的系统哨兵
+/// （sync/queue.ts 以该字面量 invoke），显式放行。其余任意串（伪命名
+/// 空间、路径形态注入）一律拒绝——渲染进程不再能点名读写/清除任意
+/// 账号命名空间。
+fn queue_owner_valid(owner: &str) -> bool {
+    owner == "unowned" || receipt_owner_valid(owner)
+}
+
+fn ensure_queue_owner(owner: &str) -> Result<(), String> {
+    if queue_owner_valid(owner) {
+        Ok(())
+    } else {
+        // 不回显入参：拒绝串本身可能含攻击者构造的形态
+        Err("invalid owner namespace".into())
+    }
+}
+
 #[tauri::command]
 fn queue_add(db: tauri::State<QueueDb>, owner: String, events: Vec<serde_json::Value>) -> Result<(), String> {
+    ensure_queue_owner(&owner)?;
     db.with(|store| store.add(&owner, events))
 }
 
 #[tauri::command]
 fn queue_list(db: tauri::State<QueueDb>, owner: String) -> Result<Vec<serde_json::Value>, String> {
+    ensure_queue_owner(&owner)?;
     db.with(|store| store.list(&owner))
 }
 
 #[tauri::command]
 fn queue_remove(db: tauri::State<QueueDb>, owner: String, client_event_ids: Vec<String>) -> Result<(), String> {
+    ensure_queue_owner(&owner)?;
     db.with(|store| store.remove(&owner, client_event_ids))
 }
 
 #[tauri::command]
 fn queue_get_cursor(db: tauri::State<QueueDb>, owner: String) -> Result<Option<String>, String> {
+    ensure_queue_owner(&owner)?;
     db.with(|store| store.get_cursor(&owner))
 }
 
 #[tauri::command]
 fn queue_set_cursor(db: tauri::State<QueueDb>, owner: String, cursor: Option<String>) -> Result<(), String> {
+    ensure_queue_owner(&owner)?;
     db.with(|store| store.set_cursor(&owner, cursor))
 }
 
@@ -364,6 +405,7 @@ fn queue_unowned_count(db: tauri::State<QueueDb>) -> Result<i64, String> {
 
 #[tauri::command]
 fn queue_unowned_adopt(db: tauri::State<QueueDb>, target_owner: String) -> Result<i64, String> {
+    ensure_queue_owner(&target_owner)?;
     db.with(|store| store.unowned_adopt(&target_owner))
 }
 
@@ -376,16 +418,19 @@ fn queue_unowned_discard(db: tauri::State<QueueDb>) -> Result<i64, String> {
 /// 的 owner）。vacuum 仅账号删除路径置 true。
 #[tauri::command]
 fn queue_clear_owner(db: tauri::State<QueueDb>, owner: String, vacuum: bool) -> Result<i64, String> {
+    ensure_queue_owner(&owner)?;
     db.with(|store| store.clear_owner(&owner, vacuum))
 }
 
 #[tauri::command]
 fn queue_count_owner(db: tauri::State<QueueDb>, owner: String) -> Result<i64, String> {
+    ensure_queue_owner(&owner)?;
     db.with(|store| store.count_owner(&owner))
 }
 
 #[tauri::command]
 fn focus_adopt_unowned(db: tauri::State<QueueDb>, target_owner: String) -> Result<i64, String> {
+    ensure_queue_owner(&target_owner)?;
     db.with(|store| store.focus_adopt_unowned(&target_owner))
 }
 
@@ -396,11 +441,13 @@ fn focus_discard_unowned(db: tauri::State<QueueDb>) -> Result<i64, String> {
 
 #[tauri::command]
 fn focus_get_draft(db: tauri::State<QueueDb>, owner: String) -> Result<Option<serde_json::Value>, String> {
+    ensure_queue_owner(&owner)?;
     db.with(|store| store.focus_get_draft(&owner))
 }
 
 #[tauri::command]
 fn focus_set_draft(db: tauri::State<QueueDb>, owner: String, draft: Option<serde_json::Value>) -> Result<(), String> {
+    ensure_queue_owner(&owner)?;
     db.with(|store| store.focus_set_draft(&owner, draft))
 }
 
@@ -810,6 +857,77 @@ mod tests {
         assert_eq!(store.count_owner("owner-b").unwrap(), 1);
         assert_eq!(store.get_cursor("owner-b").unwrap().as_deref(), Some("cursor-b"));
         assert_eq!(store.count_owner("unowned").unwrap(), 1);
+    }
+
+    #[test]
+    fn queue_owner_gate_admits_sentinel_and_derived_keys_only() {
+        // 合法面：登出态哨兵 + deriveOwnerKey 形态（16 hex）+ 长度边界
+        assert!(queue_owner_valid("unowned"));
+        assert!(queue_owner_valid("0123456789abcdef"));
+        assert!(queue_owner_valid("a".repeat(8).as_str()));
+        assert!(queue_owner_valid("a".repeat(64).as_str()));
+        // 拒绝面：空/过短/过长/非字母数字/路径形态注入（"unowned2" 这类
+        // 8+ 位字母数字串与派生键同形，属合法命名空间名，不在拒绝面）
+        assert!(!queue_owner_valid(""));
+        assert!(!queue_owner_valid("a".repeat(7).as_str()));
+        assert!(!queue_owner_valid("a".repeat(65).as_str()));
+        assert!(!queue_owner_valid("UNOWNED"));
+        assert!(!queue_owner_valid("../evil"));
+        assert!(!queue_owner_valid("own er"));
+        assert!(!queue_owner_valid("own;DROP"));
+        assert!(ensure_queue_owner("unowned").is_ok());
+        let rejected = ensure_queue_owner("../evil").unwrap_err();
+        assert_eq!(rejected, "invalid owner namespace");
+        assert!(!rejected.contains("../evil"), "拒绝串不得回显入参");
+    }
+
+    #[test]
+    fn unowned_adopt_rejects_self_target_without_destroying_namespace() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = QueueStore::open(&dir.path().join("offline.sqlite3")).unwrap();
+        store.add("unowned", vec![event_json("orphan-1"), event_json("orphan-2")]).unwrap();
+        store.set_cursor("unowned", Some("cursor-u".into())).unwrap();
+
+        // 自目标：必须报错而非「moved=0 + 清空无主面 + UI 显示成功」
+        assert!(store.unowned_adopt("unowned").is_err());
+        assert_eq!(store.unowned_count().unwrap(), 2);
+        assert_eq!(store.get_cursor("unowned").unwrap().as_deref(), Some("cursor-u"));
+
+        // 正常 adopt 语义不变
+        assert_eq!(store.unowned_adopt("0123456789abcdef").unwrap(), 2);
+        assert_eq!(store.unowned_count().unwrap(), 0);
+    }
+
+    #[test]
+    fn legacy_migration_leaves_no_orphan_old_tables() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("offline.sqlite3");
+        {
+            let legacy = Connection::open(&path).unwrap();
+            legacy.execute_batch(
+                "CREATE TABLE pending_events (client_event_id TEXT PRIMARY KEY NOT NULL, payload TEXT NOT NULL);
+                 CREATE TABLE sync_state (key TEXT PRIMARY KEY NOT NULL, value TEXT);
+                 CREATE TABLE focus_draft (id INTEGER PRIMARY KEY CHECK (id = 1), payload TEXT NOT NULL);
+                 INSERT INTO pending_events VALUES ('legacy-event', '{\"client_event_id\":\"legacy-event\"}');
+                 INSERT INTO sync_state VALUES ('event_cursor', 'legacy-cursor');
+                 INSERT INTO focus_draft VALUES (1, '{\"note\":\"legacy\"}');",
+            ).unwrap();
+        }
+
+        let store = QueueStore::open(&path).unwrap();
+        // 迁移完成后无 *_old 残留（显式事务内 DROP；中途崩溃会整批回滚
+        // 到旧表形态，不存在「新表已建 + 数据滞留 *_old」的中间态）
+        let mut names: Vec<String> = Vec::new();
+        let mut statement = store.connection
+            .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+            .unwrap();
+        let rows = statement.query_map([], |row| row.get::<_, String>(0)).unwrap();
+        for name in rows.flatten() {
+            names.push(name);
+        }
+        assert!(!names.iter().any(|name| name.ends_with("_old")), "orphan tables: {names:?}");
+        assert_eq!(store.unowned_count().unwrap(), 1);
+        assert!(store.focus_get_draft("unowned").unwrap().is_some());
     }
 
     #[test]

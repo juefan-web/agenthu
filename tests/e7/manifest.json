@@ -542,13 +542,14 @@
     },
     "E7-4b": {
       "case_id": "E7-4b",
-      "title": "删除 L2 源事件 e5：样本不足失效而非删除，向量零召回",
+      "title": "删除 L2 源事件 e5：证据链整链清理，向量零召回",
       "operations": [
         "U preview+confirm source event e5"
       ],
       "count_deltas": {
         "U": {
-          "events": -1
+          "events": -1,
+          "memories": -2
         }
       },
       "count_minimums": {
@@ -561,7 +562,9 @@
         }
       },
       "marker_absence": [
-        "e5.note"
+        "e5.note",
+        "m2a.content",
+        "m2b.content"
       ],
       "all_markers_absent_for": [],
       "vector_absence": [
@@ -573,8 +576,7 @@
       "object_expectations": [],
       "redis_absence": [],
       "retained": [
-        "memories 行数不变（失效保留），m2a 历史版本不复活",
-        "e6 仍在 m2b source_event_ids 中（id 引用非原文）"
+        "m1（e3 锚）/m3/m4 存活；e6 事件行存活（引用随链断开）"
       ],
       "invariants": [
         "invalid_basis_no_original_text"
@@ -645,7 +647,7 @@
         "U:dirty"
       ],
       "retained": [
-        "audit_logs 行全局存活但 IP/UA/path/JSON 脱敏、user_id SET-NULL（§5；owner 口径归零）",
+        "audit_logs 行全局存活但 IP/UA/path/JSON 脱敏、user_id SET-NULL（§5；owner 口径归零）；redact 为执行期扫描（外审 #5）：冻结 ids 仅作回执锚，闭包后新增行（删除流自身审计行）与级联后孤儿行（actor=user、水位内）同样擦净，born-anonymous 行不误伤",
         "data_operations/barriers/cleanup/receipts 账本存活（owner_handle 键保留原值）；previews 随账号级联清空（FK CASCADE，瞬态非账本）",
         "data_suppressions 随账号终删（data_closure ACCOUNT_TERMINATION）",
         "V 全部不变"

@@ -16,7 +16,7 @@ import uuid
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import redis as redis_lib
@@ -296,6 +296,155 @@ class TestRedactRouting:
         assert db_session.scalar(select(User.id).where(User.id == user_id)) is None
         receipt = db_session.scalar(select(DataReceipt))
         assert receipt is not None, "the receipt outlives the users row"
+
+    def test_redact_scan_catches_rows_the_closure_never_saw(self, client, auth_headers, db_session):
+        """External review #5 pin: the deletion flow's own audit rows (written
+        after the closure enumerated — e.g. the confirm request's middleware
+        row) escape every frozen id list; the executor must scan at execution
+        time. Born-anonymous rows never match the scan — the shared forensic
+        trail keeps its IPs."""
+
+        me = _me(client, auth_headers)
+        user_id = uuid.UUID(me["id"])
+        db_session.add(AuditLog(user_id=user_id, actor="user", action="seed.before"))
+        db_session.flush()
+        preview = _preview(client, auth_headers, {"kind": "account"})
+        operation = _confirm(client, auth_headers, preview, key="exec-scan-1")
+        late = AuditLog(
+            user_id=user_id,
+            actor="user",
+            action="post /v1/data/deletions",
+            path="/v1/data/deletions",
+            ip_address="10.0.0.10",
+            user_agent="test-agent",
+            details={"hint": "late"},
+        )
+        anon = AuditLog(
+            user_id=None,
+            actor="anonymous",
+            action="post /v1/auth/login",
+            path="/v1/auth/login",
+            ip_address="10.0.0.11",
+            user_agent="anon-agent",
+            details={"hint": "anon"},
+        )
+        db_session.add_all([late, anon])
+        db_session.flush()
+        db_session.expire_all()
+
+        result = _run(db_session, uuid.UUID(operation["id"]), redis_client=_redis())
+
+        assert result.status == DataOperationStatus.COMPLETED
+        late_row = db_session.get(AuditLog, late.id)
+        assert late_row is not None, "redact keeps the 90-day receipt row"
+        assert late_row.user_id is None, "the users-row CASCADE ran (orphan scope proved)"
+        assert late_row.path is None and late_row.resource_id is None
+        assert late_row.ip_address is None and late_row.user_agent is None
+        assert late_row.details is None or late_row.details == {}
+        anon_row = db_session.get(AuditLog, anon.id)
+        assert anon_row.ip_address == "10.0.0.11", "born-anonymous rows are not in scope"
+        assert anon_row.path == "/v1/auth/login"
+        assert anon_row.details == {"hint": "anon"}
+
+    def test_redact_owner_scan_is_time_unbounded_pre_cascade(self, db_session):
+        """The owner branch must not lean on the watermark: any owner-linked
+        row — however old — is redacted while the users row still exists.
+        The watermark only bounds the post-cascade orphan branch."""
+
+        owner = uuid.uuid4()
+        db_session.add(
+            User(
+                id=owner,
+                email=f"audit-scan-{owner.hex[:10]}@example.com",
+                display_name="Audit Scan Owner",
+                hashed_password="not-a-real-hash",
+            )
+        )
+        db_session.flush()
+        old = AuditLog(
+            user_id=owner,
+            actor="user",
+            action="old.action",
+            path="/v1/old",
+            ip_address="10.0.0.12",
+            details={"hint": "old"},
+            created_at=datetime.now(UTC) - timedelta(days=30),
+        )
+        db_session.add(old)
+        db_session.flush()
+        item = DataCleanupItem(
+            operation_id=uuid.uuid4(),
+            owner_handle="0" * 16,
+            resource_type="audit_logs",
+            item_ref="audit_logs:redact",
+            action=CleanupItemAction.DELETE_RELATIONAL,
+            payload={
+                "redact": True,
+                "ids": [],
+                "scan": {
+                    "owner_user_id": str(owner),
+                    "watermark": datetime.now(UTC).isoformat(),
+                },
+            },
+        )
+
+        execute_cleanup_item(db_session, item, storage=get_storage())
+
+        row = db_session.get(AuditLog, old.id)
+        assert row.user_id == owner, "no cascade here — the owner link stays"
+        assert row.path is None and row.ip_address is None
+        assert row.details is None or row.details == {}
+
+    def test_redact_orphan_branch_is_watermark_bounded(self, db_session):
+        """Post-cascade orphans are locatable ONLY through the watermark:
+        an in-window orphan (actor='user', user_id gone, created after the
+        preview) is redacted; an older orphan belongs to someone else's
+        frozen-ids coverage and stays."""
+
+        now = datetime.now(UTC)
+        fresh_orphan = AuditLog(
+            user_id=None,
+            actor="user",
+            action="post /v1/data/deletions",
+            path="/v1/data/deletions",
+            ip_address="10.0.0.13",
+            details={"hint": "fresh"},
+            created_at=now,
+        )
+        old_orphan = AuditLog(
+            user_id=None,
+            actor="user",
+            action="old.other.deletion",
+            path="/v1/elsewhere",
+            ip_address="10.0.0.14",
+            details={"hint": "old"},
+            created_at=now - timedelta(days=1),
+        )
+        db_session.add_all([fresh_orphan, old_orphan])
+        db_session.flush()
+        item = DataCleanupItem(
+            operation_id=uuid.uuid4(),
+            owner_handle="0" * 16,
+            resource_type="audit_logs",
+            item_ref="audit_logs:redact",
+            action=CleanupItemAction.DELETE_RELATIONAL,
+            payload={
+                "redact": True,
+                "ids": [],
+                "scan": {
+                    "owner_user_id": str(uuid.uuid4()),
+                    "watermark": now.isoformat(),
+                },
+            },
+        )
+
+        execute_cleanup_item(db_session, item, storage=get_storage())
+
+        fresh = db_session.get(AuditLog, fresh_orphan.id)
+        assert fresh.path is None and fresh.ip_address is None
+        stale = db_session.get(AuditLog, old_orphan.id)
+        assert stale.path == "/v1/elsewhere", "pre-watermark orphans stay out of scope"
+        assert stale.ip_address == "10.0.0.14"
 
 
 class TestFailureAndManualRetry:

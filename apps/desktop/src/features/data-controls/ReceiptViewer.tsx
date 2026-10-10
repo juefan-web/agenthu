@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
 import type { DataReceiptOut } from "@agenthu/contracts";
+import { isTauriRuntime } from "../../adapters/campus/tauriTransport";
 import { fetchReceiptWithCapability } from "../../backend/data";
+import { backendFetch } from "../../backend/transport";
 import type { ReceiptSlotSummary, ReceiptStore } from "../../backend/receiptStore";
 
 /** 回执独立最小视图（B 稿 §1/§3）：业务 401 退出后的读取面——登录屏
  *  入口，不经 AppServices 业务会话、不进 React Query；capability 作
  *  Bearer 直连，且从不进 URL/日志/DOM 文本。无效能力统一「回执不可
  *  用」（不区分不存在/过期/身份不符）。手动刷新（GET only）——回执
- *  视图的轮询节奏 B 稿未冻结，本片不擅自定参（任务书判断记录）。 */
+ *  视图的轮询节奏 B 稿未冻结，本片不擅自定参（任务书判断记录）。
+ *  打包态流量走 backend_request 受控转发（生产 CSP 无直连出口，默认
+ *  fetch 会被拦——外审 #10）；浏览器开发态沿用原生 fetch。 */
 export function ReceiptViewer({ baseUrl, store }: { baseUrl: string; store: ReceiptStore }) {
   const [summaries, setSummaries] = useState<ReceiptSlotSummary[]>([]);
   const [selected, setSelected] = useState<DataReceiptOut | null>(null);
@@ -30,10 +34,11 @@ export function ReceiptViewer({ baseUrl, store }: { baseUrl: string; store: Rece
       setSelected(null);
       setSelectedOwner(summary.owner);
       try {
-        // capability 只在内存中转：slot → 直连请求，不渲染、不外发
+        // capability 只在内存中转：slot → 直连请求，不渲染、不外发；
+        // Tauri 下经 IPC 受控转发，不走 WebView 直连 fetch
         const stored = await store.read(summary.owner);
         const receipt = stored
-          ? await fetchReceiptWithCapability(baseUrl, summary.receipt_id, stored.capability)
+          ? await fetchReceiptWithCapability(baseUrl, summary.receipt_id, stored.capability, isTauriRuntime() ? backendFetch : undefined)
           : null;
         if (!receipt) {
           setUnavailable(true);
