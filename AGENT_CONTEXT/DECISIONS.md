@@ -1113,3 +1113,21 @@ replan_triggers）语义注释随实现片落地；迁移前历史时长是否�
 对 public 仓 force-push 重写全部历史并重新对账全部克隆与在途分支，成本
 与风险不成比例。终局关闭前如需重估，由用户届时发起。树内残留已由 #90
 清零（协调人独立残留扫描 0 命中在案）。
+
+## D-038 — events 入口写守卫接线：精确空集语义（2026-10-10，A 实现，B 复审）
+
+外审 P2 抽核坐实「写守卫 events 入口 0 接线（16 处其他面在案）」，与
+CURRENT_STATE P0-3 切片 3「§2.3 全面接线（events 入口…）」口径冲突——
+该切片实际只落了 suppression 锚拦与 batch X-Data-Generation 两件，barrier
+断言未接（当时口径失实，本条即对账修正）。修码而非修文：`create_event`
+汇点接 `assert_write_allowed(scope=SOURCE, target_ids=set())`。语义两条：
+1. **精确空集而非失闭 None**——SOURCE/MEMORY barrier 的 target ids 是
+   事件/文件/聊天行 UUID（`_barrier_shape`→`_uuids`），新事件行不触碰
+   任何既有 id，空集精确表达「不在任何 barred 恒等空间」，scoped
+   barrier 不挡新事件；同 upstream 重导入归 suppression 网（锚空间）。
+   ACCOUNT barrier 全挡（fences everything）——对 events 即账号删除
+   期间入口冻结。
+2. **batch 逐 envelope 拒绝**——WriteBlocked 与 SuppressedSource 同级
+   处理（未写任何行、无需回滚），客户端按 rejected 清队列；单发路径
+   409 `deletion_in_progress` 直出。汇点接线顺带覆盖 focus `_emit` 与
+   未来调用方（focus 入口本有断言，双查幂等无害）。

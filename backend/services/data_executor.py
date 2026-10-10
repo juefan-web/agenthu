@@ -8,7 +8,9 @@ Deletion runs the four frozen phases (A-draft §2.5 / §4):
                       before any row delete.
     DELETE_RELATIONAL durable items with action DELETE_RELATIONAL — rows by
                       the exact closure ids; the audit redact item is routed
-                      by reading its payload FIRST (adjudication ②).
+                      by reading its payload FIRST (adjudication ②) and
+                      redacts by execution-time scan on top of its
+                      receipt-anchor ids (external review #5).
     DELETE_OBJECTS    DELETE_OBJECT items (storage objects) plus CLEAR_REDIS
                       items (this owner's membership in shared wake-up sets).
     DELETE_VERIFY     VERIFY_ABSENT items; object verification uses the
@@ -28,7 +30,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from redis import Redis
@@ -169,17 +171,54 @@ def _items_of(session: Session, operation_id: uuid.UUID) -> list[DataCleanupItem
 # --- item execution -------------------------------------------------------------
 
 
-def _redact_audit_rows(session: Session, ids: list[str]) -> None:
-    """Adjudication ② redact path: scrub content/PII columns in place, keep
-    the row as the 90-day content-free receipt (never a row delete)."""
+def _audit_scan_clause(payload: dict) -> Any | None:
+    """Execution-time redact scope (external review #5): the rows a frozen
+    closure id list can never have seen. Owner predicate while the users row
+    still exists (any created_at); once the users-row CASCADE SET-NULLs
+    user_id, only watermark-bounded orphans remain locatable — actor='user'
+    rows that lost their owner link (the audit writers pair actor='user'
+    with a real user_id; born-anonymous rows are actor='anonymous' and never
+    match, so the shared forensic trail keeps its IPs)."""
 
-    parsed = _as_uuids(ids)
+    scan = payload.get("scan") or {}
+    owner, watermark = scan.get("owner_user_id"), scan.get("watermark")
+    if not owner or not watermark:
+        return None
+    try:
+        owner_uuid = uuid.UUID(str(owner))
+        cut = datetime.fromisoformat(str(watermark))
+    except (ValueError, TypeError) as error:
+        raise ItemExecutionError("malformed audit scan spec", retryable=False) from error
+    return or_(
+        AuditLog.user_id == owner_uuid,
+        (AuditLog.user_id.is_(None)) & (AuditLog.actor == "user") & (AuditLog.created_at >= cut),
+    )
+
+
+def _redact_audit_rows(session: Session, payload: dict) -> None:
+    """Adjudication ② redact path: scrub content/PII columns in place, keep
+    the row as the 90-day content-free receipt (never a row delete).
+
+    The frozen ids remain the receipt anchor; the execution-time scan adds
+    rows the closure could not have enumerated — the deletion flow's own
+    audit rows and anything raced in around the users-row CASCADE (external
+    review #5). NOTE: details is JSONB NOT NULL — SQLAlchemy writes Python
+    None as JSON null, which satisfies the constraint and still reads back
+    as None (the ids-only scrub always relied on the same trick)."""
+
+    scrub = {
+        "details": None,
+        "path": None,
+        "resource_id": None,
+        "ip_address": None,
+        "user_agent": None,
+    }
+    parsed = _as_uuids(payload.get("ids") or [])
     if parsed:
-        session.execute(
-            update(AuditLog)
-            .where(AuditLog.id.in_(parsed))
-            .values(details=None, path=None, resource_id=None, ip_address=None, user_agent=None)
-        )
+        session.execute(update(AuditLog).where(AuditLog.id.in_(parsed)).values(**scrub))
+    clause = _audit_scan_clause(payload)
+    if clause is not None:
+        session.execute(update(AuditLog).where(clause).values(**scrub))
 
 
 def _delete_rows(session: Session, resource_type: str, ids: list[str]) -> None:
@@ -214,8 +253,6 @@ def _verify_item(session: Session, item: DataCleanupItem, *, storage: ObjectStor
         # evidence and membership is best-effort, so nothing to verify here.
         return
     ids = payload.get("ids") or []
-    if not ids:
-        return
     if item.resource_type == "audit_logs":
         # Redact verification is the INVERSE of absence: the 90-day receipt
         # rows must still exist, with every content/PII column scrubbed.
@@ -223,22 +260,46 @@ def _verify_item(session: Session, item: DataCleanupItem, *, storage: ObjectStor
         # disagreed with a same-transaction column read on this stack, so the
         # check uses the shape that was verified to read post-update truth.)
         parsed = _as_uuids(ids)
-        rows = session.execute(
-            select(
-                AuditLog.details,
-                AuditLog.path,
-                AuditLog.resource_id,
-                AuditLog.ip_address,
-                AuditLog.user_agent,
-            ).where(AuditLog.id.in_(parsed))
-        ).all()
-        if len(rows) != len(parsed):
-            raise ItemExecutionError(
-                "audit receipt rows missing; redact must keep them", retryable=True
-            )
-        unscrubbed = sum(1 for row in rows if any(value is not None for value in row))
-        if unscrubbed:
-            raise ItemExecutionError(f"{unscrubbed} audit rows still carry content", retryable=True)
+        if parsed:
+            rows = session.execute(
+                select(
+                    AuditLog.details,
+                    AuditLog.path,
+                    AuditLog.resource_id,
+                    AuditLog.ip_address,
+                    AuditLog.user_agent,
+                ).where(AuditLog.id.in_(parsed))
+            ).all()
+            if len(rows) != len(parsed):
+                raise ItemExecutionError(
+                    "audit receipt rows missing; redact must keep them", retryable=True
+                )
+            unscrubbed = sum(1 for row in rows if any(value is not None for value in row))
+            if unscrubbed:
+                raise ItemExecutionError(
+                    f"{unscrubbed} audit rows still carry content", retryable=True
+                )
+        # Scan-scope verification (external review #5): nothing the redact
+        # scan can still locate may carry content — same Python-side shape
+        # as above for the JSON-null / post-update-truth reasons.
+        scan_clause = _audit_scan_clause(payload)
+        if scan_clause is not None:
+            scan_rows = session.execute(
+                select(
+                    AuditLog.details,
+                    AuditLog.path,
+                    AuditLog.resource_id,
+                    AuditLog.ip_address,
+                    AuditLog.user_agent,
+                ).where(scan_clause)
+            ).all()
+            leaking = sum(1 for row in scan_rows if any(value is not None for value in row))
+            if leaking:
+                raise ItemExecutionError(
+                    f"{leaking} in-scope audit rows still carry content", retryable=True
+                )
+        return
+    if not ids:
         return
     if item.resource_type == "task_events":
         pairs = _edge_pairs(ids)
@@ -283,7 +344,7 @@ def execute_cleanup_item(
                     f"redact payload on non-audit family {item.resource_type}",
                     retryable=False,
                 )
-            _redact_audit_rows(session, payload.get("ids") or [])
+            _redact_audit_rows(session, payload)
             return
         ids = payload.get("ids")
         if not ids:

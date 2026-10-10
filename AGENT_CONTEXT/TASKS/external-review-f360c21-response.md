@@ -146,6 +146,46 @@ status）转 E7 执行轮与部署演练的观察项。
   同源）；同意关 ⇒ 请求体无 memory.content、回执 `memory_ids=[]`；钉子
   测试双向断言（关⇒不含/开⇒原语义恢复），两处既有记忆断言测试补全局
   同意前置。E7-8 同意面语义不变（门只加不撤）。
+- 2026-10-09 R2-A 执行（#5，分支 `fix/audit-redact-execution-scan`）：
+  审计族 redact 改执行期扫描——冻结 ids 降级为 90d 回执锚（级联后
+  仍可定位），扫描谓词 = owner（users 行存续期、不限时）∪ 孤儿
+  （actor=user、user_id 已被级联置空、created_at ≥ preview.created_at
+  水位）；born-anonymous 行不误伤（全局取证轨迹保 IP）。VERIFY 同步
+  扩为 ids 存活+擦净 ∪ 扫描面零内容。E7-5 retained 预期与 manifest
+  已随实现修订（预登记纪律）。
+- 2026-10-09 R2-A 执行（#6，分支 `fix/evidence-lineage-closure`）：删除
+  闭包并入 evidence 包含（`@>` 走 ix_memories_evidence GIN）——事件源
+  删除的 citing 判据 = source_event_ids 交集 ∪ evidence 包含，再沿
+  memory→memory evidence 边迭代至不动点；memory 域整链忘记的不动点同
+  步扩三生长规则（successor/older/evidence 引用）。E7-4b 预期随实现
+  修订（原「行数不变」与实现相悖；D-036 §1 样本不足→整链清理：e5 删
+  除 ⇒ m2b+m2a 整链 -2）+ seed 的 evidence 键名 kind→type 归一（生产
+  写入方均为 type，模型注释同）。
+- 2026-10-10 R2-A 执行（#9+#12，分支 `fix/idempotency-key-robustness`）：
+  #12 = agent_tools 两处 idempotency_key 的 `hash()`（PYTHONHASHSEED 进程
+  随机）换 sha256 前 16 hex（64bit，强于原 48bit 掩码；等参跨进程稳定，
+  钉子断言精确公式）；#9 = dedupe 键长检查入 ingest_event_batch 逐
+  envelope 拒绝链（与 suppression 同级——provenance.upstream_id/
+  semantic_version 无上限，超 255 溢出曾炸整批 500），create_event 直连
+  路径同款 ValidationError。
+- 2026-10-10 R2-A 执行（#13，分支 `fix/lease-heartbeat-settlement`）：
+  AgentRun 结算改 claim_token 条件更新——`_settle_run` 带 token 时走
+  `WHERE status='RUNNING' AND lease->>'claim_token'=:token`，败者仅落
+  `agent.run.settle_superseded` 审计、不覆写胜者终态；执行循环每 turn
+  顶部 `heartbeat_run` 续租（run 单事务，租约仅对中点提交后的会话可
+  见，循环内续租即活性信号，硬保证仍由条件结算承担）；watchdog 回收
+  与用户取消保留无条件结算路径。钉子 ×5（回收后迟结算让位 / token
+  不匹配让位 / 活 token 落地 / heartbeat 续租 / 循环每 turn 心跳）；
+  E7-5 retained 增双 worker 竞态语义行。
+- 2026-10-10 R2-A 执行（写守卫 events 入口对账，分支
+  `fix/write-guard-events-entry`）：修码 arm——`create_event` 汇点接
+  `assert_write_allowed(SOURCE, target_ids=set())`（精确空集：account
+  barrier 冻结入口，scoped barrier 不挡新事件行——其 target ids 是
+  既有行 UUID；同锚重导入仍归 suppression 网）；batch 循环
+  WriteBlocked 与 suppression 同级逐 envelope 拒绝。钉子 ×3：account
+  barrier 单发 409 / batch 全拒零写入 / source barrier 下无关新事件
+  201。CURRENT_STATE P0-3 切片 3「events 入口」口径失实由 **D-038**
+  对账修正（该切片实落 suppression + batch generation 头两件）。
 - 2026-10-10 R2-A 执行（#7，分支 `fix/account-requeue-receipt`）：按预裁
   落地——confirm 即时停用不动（停用后业务面 401 语义不变），FAILED/
   RETRY_WAIT 的 account 操作经回执窄路径重排：`POST

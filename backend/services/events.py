@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from backend.core.errors import ValidationError
 from backend.core.sensitive import validate_json_payload
+from backend.models.enums import DataBarrierScope
 from backend.models.event import Event
 from backend.models.task import Task
 from backend.schemas.client_contract import EventEnvelope
@@ -20,7 +21,13 @@ from backend.schemas.event import EventCreate
 from backend.services.current_state import defer_state_recompute, flush_state_recompute
 from backend.services.event_handlers import process_event
 from backend.services.pagination import count_total, decode_cursor, keyset_page
-from backend.services.write_guards import SUPPRESSED_REASON, SuppressedSource, is_suppressed
+from backend.services.write_guards import (
+    SUPPRESSED_REASON,
+    SuppressedSource,
+    WriteBlocked,
+    assert_write_allowed,
+    is_suppressed,
+)
 from backend.worker.enqueue import mark_user_dirty
 
 _ASSIGNMENT_PREFIX = "study.assignment."
@@ -97,6 +104,26 @@ def compute_dedupe_key(source: str, provenance: dict[str, Any] | None) -> str | 
     return None
 
 
+# models/event.py caps dedupe_key at String(255); the provenance parts are
+# otherwise unbounded, and an overlong key used to fail the whole batch
+# INSERT with a 500 (external review #9) — reject that envelope instead.
+DEDUPE_KEY_MAX = 255
+DEDUPE_TOO_LONG_REASON = (
+    "dedupe key exceeds 255 characters (source:upstream_id:semantic_version); "
+    "shorten upstream_id or semantic_version"
+)
+
+
+def dedupe_key_length_rejection(payload: EventCreate) -> str | None:
+    """Per-envelope rejection reason when the effective dedupe key cannot
+    fit its column — the batch-level sibling of the suppression check."""
+
+    key = payload.dedupe_key or compute_dedupe_key(payload.source, payload.provenance)
+    if key is not None and len(key) > DEDUPE_KEY_MAX:
+        return DEDUPE_TOO_LONG_REASON
+    return None
+
+
 def create_event(
     session: Session,
     *,
@@ -112,6 +139,15 @@ def create_event(
     safe.
     """
 
+    # Entry barrier (A-draft §2.3 "events 入口"; the external review found
+    # this leg unwired while CURRENT_STATE claimed it). A brand-new row
+    # names no id any SOURCE/MEMORY barrier holds (source barriers carry
+    # event/file/chat row ids), so with the exact empty id set this trips
+    # only on the account barrier — the same discipline as the focus entry
+    # guard. Re-importing a deleted anchor stays the suppression net's job
+    # right below.
+    assert_write_allowed(session, user_id=user_id, scope=DataBarrierScope.SOURCE, target_ids=set())
+
     # Suppression first (A-draft §2.6): a deleted upstream anchor must not
     # resurrect even under a fresh client_event_id — this check sits before
     # the dedupe lookup on purpose, so a replay of a since-deleted event is
@@ -122,6 +158,10 @@ def create_event(
         raise SuppressedSource()
 
     dedupe_key = payload.dedupe_key or compute_dedupe_key(payload.source, payload.provenance)
+    if dedupe_key is not None and len(dedupe_key) > DEDUPE_KEY_MAX:
+        # Direct (non-batch) callers get the same 422-class rejection the
+        # batch loop records per envelope — never a truncation 500.
+        raise ValidationError(DEDUPE_TOO_LONG_REASON)
     if dedupe_key:
         existing = find_by_dedupe_key(session, user_id=user_id, dedupe_key=dedupe_key)
         if existing is not None:
@@ -291,6 +331,12 @@ def ingest_event_batch(
                 context=envelope.context,
                 provenance=envelope.provenance.model_dump(mode="json"),
             )
+            # An overlong dedupe key rejects THIS envelope (external review
+            # #9) — same level as suppression below, never a batch-wide 500.
+            length_reason = dedupe_key_length_rejection(payload)
+            if length_reason is not None:
+                outcome.rejected.append((envelope.client_event_id, length_reason))
+                continue
             # Envelope-level validation already ran; create and classify.
             # A suppressed anchor is a per-envelope rejection, not a batch
             # failure — the client clears it from its queue like any other
@@ -304,6 +350,14 @@ def ingest_event_batch(
                 )
             except SuppressedSource:
                 outcome.rejected.append((envelope.client_event_id, SUPPRESSED_REASON))
+                continue
+            except WriteBlocked as blocked:
+                # A barrier fencing the entry is owner-level state, not an
+                # envelope defect — but like suppression nothing was written
+                # yet, so the envelope rejects without poisoning the rest of
+                # the queue (for events this fires only under the account
+                # barrier; see the guard in create_event).
+                outcome.rejected.append((envelope.client_event_id, blocked.message))
                 continue
             if created:
                 outcome.accepted.append(envelope.client_event_id)

@@ -51,7 +51,11 @@ from backend.services.current_state import (
     mark_state_dirty,
 )
 from backend.services.data_executor import run_deletion
-from backend.services.events import create_event, ingest_event_batch
+from backend.services.events import (
+    DEDUPE_TOO_LONG_REASON,
+    create_event,
+    ingest_event_batch,
+)
 from backend.services.material_ingestion import embed_pending_chunks, run_extraction
 from backend.services.storage_orphans import (
     claim_due_storage_orphans,
@@ -238,6 +242,31 @@ class TestSuppressionInterception:
         assert outcome.rejected == [("c-1", SUPPRESSED_REASON)]
         assert outcome.accepted == []
 
+    def test_overlong_dedupe_key_rejects_one_envelope_not_the_batch(
+        self, client, auth_headers, db_session
+    ):
+        """External review #9 pin: an unbounded provenance.upstream_id makes
+        the computed dedupe key overflow String(255); the INSERT used to
+        roll back the WHOLE batch into a 500. The check sits in the
+        per-envelope rejection chain — same level as suppression — and the
+        good envelope in the same batch still lands."""
+
+        me = client.get("/v1/auth/me", headers=auth_headers).json()
+        user_id = uuid.UUID(me["id"])
+
+        outcome = ingest_event_batch(
+            db_session,
+            user_id=user_id,
+            envelopes=[
+                _anchor_envelope(upstream_id="u" * 300, client_event_id="too-long-1"),
+                _anchor_envelope(upstream_id="assignment:hw-42", client_event_id="good-1"),
+            ],
+        )
+
+        assert outcome.rejected == [("too-long-1", DEDUPE_TOO_LONG_REASON)]
+        assert outcome.accepted == ["good-1"]
+        assert outcome.duplicates == []
+
         # A different anchor from the same source is unaffected — the guard
         # is anchor-scoped, not source-string-scoped.
         assert _seed_anchor_event(client, auth_headers, upstream_id="assignment:hw-10")
@@ -326,6 +355,76 @@ class TestSuppressionInterception:
                 user_id=user_id,
                 payload=_anchor_event_payload(upstream_id="assignment:hw-s"),
             )
+
+
+# ----------------------------------------------------------- events entry --
+
+
+class TestEventsEntryBarrier:
+    """The A-draft §2.3 events leg (external review reconciliation): the
+    account barrier fences event creation at the sink; scoped source/memory
+    barriers do not, because a brand-new row names no id they hold."""
+
+    def test_account_barrier_blocks_single_event_post(self, client, auth_headers, db_session):
+        user_id = _me(client, auth_headers)
+        handle = dl.owner_handle_of(db_session, user_id)
+        dl.raise_barrier(
+            db_session,
+            owner_handle=handle,
+            scope=DataBarrierScope.ACCOUNT,
+            raised_generation=dl.bump_data_generation(db_session, user_id),
+        )
+
+        blocked = client.post(
+            "/v1/events",
+            json=_anchor_event_payload(upstream_id="assignment:hw-fenced").model_dump(mode="json"),
+            headers=auth_headers,
+        )
+        assert blocked.status_code == 409, blocked.text
+        assert blocked.json()["error"]["code"] == "deletion_in_progress"
+
+    def test_account_barrier_rejects_every_batch_envelope(self, client, auth_headers, db_session):
+        user_id = _me(client, auth_headers)
+        handle = dl.owner_handle_of(db_session, user_id)
+        dl.raise_barrier(
+            db_session,
+            owner_handle=handle,
+            scope=DataBarrierScope.ACCOUNT,
+            raised_generation=dl.bump_data_generation(db_session, user_id),
+        )
+
+        outcome = ingest_event_batch(
+            db_session,
+            user_id=user_id,
+            envelopes=[
+                _anchor_envelope(upstream_id="assignment:hw-b1", client_event_id="b-1"),
+                _anchor_envelope(upstream_id="assignment:hw-b2", client_event_id="b-2"),
+            ],
+        )
+        # Nothing was written, so each envelope rejects on its own — the
+        # client clears them from the queue like any other rejected item.
+        assert outcome.accepted == []
+        assert outcome.duplicates == []
+        assert [client_event_id for client_event_id, _ in outcome.rejected] == ["b-1", "b-2"]
+        for _, reason in outcome.rejected:
+            assert "deletion blocks this write" in reason
+
+    def test_source_barrier_does_not_fence_new_events(self, client, auth_headers):
+        # Scoped barriers hold event-row ids of the dying closure; a new
+        # row cannot be one of them, so an unrelated event still lands
+        # (re-imports of the deleted anchor stay the suppression net's job).
+        _me(client, auth_headers)
+        event_id = _seed_anchor_event(client, auth_headers, upstream_id="assignment:hw-src")
+        _confirm_source_event(client, auth_headers, event_id, key="evt-bar-1")
+
+        fresh = client.post(
+            "/v1/events",
+            json=_anchor_event_payload(upstream_id="assignment:hw-unrelated").model_dump(
+                mode="json"
+            ),
+            headers=auth_headers,
+        )
+        assert fresh.status_code == 201, fresh.text
 
 
 # ------------------------------------------------------------- generation --

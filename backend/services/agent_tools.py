@@ -15,6 +15,7 @@ file.delete, data.delete) fail honestly with ``tool_not_implemented``
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -651,7 +652,15 @@ register_tool(
         input_model=MemoryWriteArgs,
         side_effect=True,
         idempotency="required",
-        idempotency_key=lambda a: f"memory.write:{hash(a.content) & 0xFFFFFFFFFFFF}:{a.kind.value}",
+        # Process-stable digest (external review #12): builtin hash() is
+        # PYTHONHASHSEED-randomized, so identical args produced different
+        # keys across processes/restarts and idempotent replay never hit.
+        # 16 hex = 64 bits (stronger than the 48-bit mask it replaces), well
+        # under the String(255) idempotency column.
+        idempotency_key=lambda a: (
+            f"memory.write:{hashlib.sha256(a.content.encode('utf-8')).hexdigest()[:16]}"
+            f":{a.kind.value}"
+        ),
         failure_mode="create_pending",
         data_scope=frozenset(),
         audit_fields=frozenset({"kind", "domain", "subject_key"}),
@@ -699,7 +708,9 @@ register_tool(
         input_model=NotifyPushArgs,
         side_effect=True,
         idempotency="required",
-        idempotency_key=lambda a: f"notify.push:{a.category}:{hash(a.title) & 0xFFFFFFFFFFFF}",
+        idempotency_key=lambda a: (
+            f"notify.push:{a.category}:{hashlib.sha256(a.title.encode('utf-8')).hexdigest()[:16]}"
+        ),
         failure_mode="fail_closed",
         data_scope=frozenset(),
         audit_fields=frozenset({"category"}),
