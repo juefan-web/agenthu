@@ -198,3 +198,13 @@ status）转 E7 执行轮与部署演练的观察项。
   来源；openapi 再生成 71 路径）。钉子 ×5：FAILED 复活全断言 / 错键
   统一 404 / COMPLETED 永不复活 / 版本冲突 / 回执暴露状态与版本。
   E7 预期无变动（重排为新增能力，未触任何既有断言；预裁未推翻）。
+- 2026-10-10 R3-B 执行（#17 前置对账，分支 `docs/r3b-notices-reconciliation`，
+  全档见 `r3-b-17-notices-reconciliation.md`）：三处口径互斥坐实三项——
+  M1 根 NOTICES info-lib 节整节停留在路径 B 之前（Source/pin/BSL 边界三句
+  全失实，现态 = info-lib/LICENSE 三段声明 + 普查 §2.2）；M2 根 NOTICES 的
+  LearnX 移植宣称与普查 §2.1 实测相反；M3 VENDORED_FROM.md 缺 info-lib
+  现状节。cookie 镜像声明两处需精确化（镜像实况 = campus host 三元组受控
+  内存投影；日志遮蔽 ≥20 字符、短值残留缺口）。死代码上游面 D1–D4 钉锚
+  （venue/sign、cas submit 死件、demoLogin 退役、未引用模块面），D5（#20
+  确认栅栏）仓内无法独立钉锚、待协调人供原始锚点。本档只对账不修文，
+  吸收落笔归 A 的 NOTICES 轮。
