@@ -198,3 +198,16 @@ status）转 E7 执行轮与部署演练的观察项。
   来源；openapi 再生成 71 路径）。钉子 ×5：FAILED 复活全断言 / 错键
   统一 404 / COMPLETED 永不复活 / 版本冲突 / 回执暴露状态与版本。
   E7 预期无变动（重排为新增能力，未触任何既有断言；预裁未推翻）。
+- 2026-10-11 R3-A 执行（#4，分支 `fix/compose-prod-fail-closed`）：新增
+  docker-compose.prod.yml 生产叠层——ENVIRONMENT 钉 production 字面值
+  （非插值，环境变量压不回 local）、SECRET_KEY/S3_SECRET_KEY 用
+  `${VAR:?}` 渲染期必填（零默认值，compose 拒渲染先于任何容器启动）、
+  worker 代码 bind mount `!reset []`（生产跑镜像代码，无 checkout 的
+  主机不被自动创建的空目录遮蔽）。CI docker-build job 增两道执行探针：
+  裸镜像无密钥必须拒启（exit≠0 且报 SECRET_KEY must be set…）、叠层无
+  密钥必须拒渲染 + 强密钥下渲染出 ENVIRONMENT: production。三探针本地
+  预验全过（渲染闸门 ×2 + 探针镜像实跑 exit=1 信息原文命中）。钉子
+  ×3（yaml 形状钉子，!reset loader）：production 字面钉 / 密钥零默认 /
+  worker 卷重置。dev extras 加 PyYAML（钉子解析用）；.env.example 补
+  生产形态指引。防线本体（config 默认 production + 弱密钥拒绝）既有
+  测试不动——本件补的是「被执行形态」这层。

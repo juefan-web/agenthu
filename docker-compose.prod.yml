@@ -1,0 +1,38 @@
+# Production overlay (external review #4): the dev stack defaults to
+# ENVIRONMENT=local, which opts OUT of the fail-closed secret guards — so
+# until now the guards only ever ran in unit tests. This overlay is the
+# executed deployment form where they are unavoidable:
+#
+#   - ENVIRONMENT is pinned to production: ambient ENVIRONMENT=local cannot
+#     opt the production stack back out of the guards;
+#   - the secrets carry NO defaults: `${VAR:?...}` makes compose refuse to
+#     RENDER the stack until values are provided, and the Settings guard
+#     (backend/config.py) rejects weak values even when they are;
+#   - the worker's dev code bind mount is reset: production runs the image's
+#     code, and a host-less bind mount would shadow /app/backend with an
+#     empty directory (requires compose >= 2.24 for `!reset`).
+#
+# db/redis/minio topology still comes from the base stack; point
+# S3_ENDPOINT_URL & co. at real infrastructure through the environment.
+#
+# Usage:
+#   SECRET_KEY=... S3_SECRET_KEY=... \
+#     docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+#     up -d --wait
+#
+# CI pins this file's shape (tests/unit/test_prod_compose_fail_closed.py)
+# and executes both fail-closed layers every run (docker-build job: bare
+# image boot probe + render gate).
+services:
+  api:
+    environment:
+      ENVIRONMENT: production
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set for the production stack}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?S3_SECRET_KEY must be set for the production stack}
+
+  worker:
+    environment:
+      ENVIRONMENT: production
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set for the production stack}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?S3_SECRET_KEY must be set for the production stack}
+    volumes: !reset []
