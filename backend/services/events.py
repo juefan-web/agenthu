@@ -104,6 +104,26 @@ def compute_dedupe_key(source: str, provenance: dict[str, Any] | None) -> str | 
     return None
 
 
+# models/event.py caps dedupe_key at String(255); the provenance parts are
+# otherwise unbounded, and an overlong key used to fail the whole batch
+# INSERT with a 500 (external review #9) — reject that envelope instead.
+DEDUPE_KEY_MAX = 255
+DEDUPE_TOO_LONG_REASON = (
+    "dedupe key exceeds 255 characters (source:upstream_id:semantic_version); "
+    "shorten upstream_id or semantic_version"
+)
+
+
+def dedupe_key_length_rejection(payload: EventCreate) -> str | None:
+    """Per-envelope rejection reason when the effective dedupe key cannot
+    fit its column — the batch-level sibling of the suppression check."""
+
+    key = payload.dedupe_key or compute_dedupe_key(payload.source, payload.provenance)
+    if key is not None and len(key) > DEDUPE_KEY_MAX:
+        return DEDUPE_TOO_LONG_REASON
+    return None
+
+
 def create_event(
     session: Session,
     *,
@@ -138,6 +158,10 @@ def create_event(
         raise SuppressedSource()
 
     dedupe_key = payload.dedupe_key or compute_dedupe_key(payload.source, payload.provenance)
+    if dedupe_key is not None and len(dedupe_key) > DEDUPE_KEY_MAX:
+        # Direct (non-batch) callers get the same 422-class rejection the
+        # batch loop records per envelope — never a truncation 500.
+        raise ValidationError(DEDUPE_TOO_LONG_REASON)
     if dedupe_key:
         existing = find_by_dedupe_key(session, user_id=user_id, dedupe_key=dedupe_key)
         if existing is not None:
@@ -307,6 +331,12 @@ def ingest_event_batch(
                 context=envelope.context,
                 provenance=envelope.provenance.model_dump(mode="json"),
             )
+            # An overlong dedupe key rejects THIS envelope (external review
+            # #9) — same level as suppression below, never a batch-wide 500.
+            length_reason = dedupe_key_length_rejection(payload)
+            if length_reason is not None:
+                outcome.rejected.append((envelope.client_event_id, length_reason))
+                continue
             # Envelope-level validation already ran; create and classify.
             # A suppressed anchor is a per-envelope rejection, not a batch
             # failure — the client clears it from its queue like any other

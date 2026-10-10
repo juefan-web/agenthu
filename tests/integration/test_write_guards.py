@@ -51,7 +51,11 @@ from backend.services.current_state import (
     mark_state_dirty,
 )
 from backend.services.data_executor import run_deletion
-from backend.services.events import create_event, ingest_event_batch
+from backend.services.events import (
+    DEDUPE_TOO_LONG_REASON,
+    create_event,
+    ingest_event_batch,
+)
 from backend.services.material_ingestion import embed_pending_chunks, run_extraction
 from backend.services.storage_orphans import (
     claim_due_storage_orphans,
@@ -237,6 +241,31 @@ class TestSuppressionInterception:
         )
         assert outcome.rejected == [("c-1", SUPPRESSED_REASON)]
         assert outcome.accepted == []
+
+    def test_overlong_dedupe_key_rejects_one_envelope_not_the_batch(
+        self, client, auth_headers, db_session
+    ):
+        """External review #9 pin: an unbounded provenance.upstream_id makes
+        the computed dedupe key overflow String(255); the INSERT used to
+        roll back the WHOLE batch into a 500. The check sits in the
+        per-envelope rejection chain — same level as suppression — and the
+        good envelope in the same batch still lands."""
+
+        me = client.get("/v1/auth/me", headers=auth_headers).json()
+        user_id = uuid.UUID(me["id"])
+
+        outcome = ingest_event_batch(
+            db_session,
+            user_id=user_id,
+            envelopes=[
+                _anchor_envelope(upstream_id="u" * 300, client_event_id="too-long-1"),
+                _anchor_envelope(upstream_id="assignment:hw-42", client_event_id="good-1"),
+            ],
+        )
+
+        assert outcome.rejected == [("too-long-1", DEDUPE_TOO_LONG_REASON)]
+        assert outcome.accepted == ["good-1"]
+        assert outcome.duplicates == []
 
         # A different anchor from the same source is unaffected — the guard
         # is anchor-scoped, not source-string-scoped.

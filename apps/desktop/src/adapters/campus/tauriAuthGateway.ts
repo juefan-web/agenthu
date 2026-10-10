@@ -49,8 +49,9 @@ export class TauriCampusAuthGateway implements CampusAuthGateway {
   private timedOut = false;
   private timeout: ReturnType<typeof setTimeout> | undefined;
   private restoreInFlight: Promise<SessionStatus> | undefined;
-  /** 登录链凭据（仅内存；logout/下次登录清除）：2FA 链自愈重启与 learn 静默
-   *  重登的账密源（上游 inflight 同语义）。不落盘、不随会话持久化。 */
+  /** 登录链凭据（仅内存；链成功 settle 时清空，logout/下次登录/超时亦清）：
+   *  2FA 链自愈重启与 settle 前 learn 静默重登的账密源（上游 inflight 同
+   *  语义）。不落盘、不随会话持久化；settle 后渲染进程不驻留明文账密。 */
   private credentials: { username: string; password: string } | null = null;
   /** 设备身份（Stronghold 元数据回填）：指纹与受信凭据跨登录稳定，信任链才成立。 */
   private remembered = { fingerprint: "", finger3: "" };
@@ -90,8 +91,9 @@ export class TauriCampusAuthGateway implements CampusAuthGateway {
 
   isAborted(): boolean { return this.aborted; }
 
-  /** learn 静默重登路径二的账密供应（runtime 接线）。仅内存凭据期间可用；
-   *  指纹/受信凭据取自登录链 helper，与 session 内的展示状态无关。 */
+  /** learn 静默重登路径二的账密供应（runtime 接线）。仅登录链存续（至
+   *  settle）期间可用；settle 后与重启恢复态一致返回 null，路径二退化为
+   *  仅 SSO。指纹/受信凭据取自登录链 helper，与 session 内的展示状态无关。 */
   silentReloginCredentials(): { username: string; password: string; fingerprint: string; finger3?: string } | null {
     if (!this.credentials) return null;
     return {
@@ -215,6 +217,10 @@ export class TauriCampusAuthGateway implements CampusAuthGateway {
       if (this.aborted) throw cancelled;
       this.remembered = { fingerprint: this.helper.fingerprint, finger3: this.helper.fingerGenPrint };
       await this.deps.save({ username: this.helper.userId, fingerprint: this.helper.fingerprint, finger3: this.helper.fingerGenPrint });
+      // 链已 settle：内存账密使命终结（2FA 自愈与静默重登源都不再需要），
+      // 渲染进程不驻留明文凭据；learn 静默重登路径二退化为仅 SSO，与重启
+      // 恢复态一致。
+      this.credentials = null;
       return { state: "ready", username: this.helper.userId };
     }).catch(async (error): Promise<SessionStatus> => {
       await this.deps.clear().catch(() => undefined);

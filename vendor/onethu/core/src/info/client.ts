@@ -1758,7 +1758,7 @@ export class InfoClient {
       }
       const rows = [...table.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)].map((r) => r[1] ?? "");
       const body = rows.slice(1, rows.length - 1); // dorm.ts：slice(1, length-1)
-      // 严格过滤（用户截图实证：「欢迎您郭嘉乐」/「快速通道」/ vpn_eval / 表头行 /
+      // 严格过滤（用户截图实证：「欢迎您测试同学」/「快速通道」/ vpn_eval / 表头行 /
       // 「我要【充值电费】」按钮行全被解析成记录行）——只保留三条硬指标全过的行：
       // 状态列 ∈ {已成功,已失败,处理中} 且 金额列可解析为数字 且 行内含日期。
       const VALID_STATUS = new Set(["已成功", "已失败", "处理中"]);
@@ -3860,7 +3860,7 @@ export class InfoClient {
     const password = neth.rsaEncryptPkcs1v15(pub, creds.password);
     const user = await this.getUserInfo().catch(() => null);
     // usereg 用户名=邮箱前缀（学号登录 INFO 时邮箱在个人信息/Coremail 里，
-    // 前缀即 usereg 账号；学号本身 usereg 不收——用户实测 2025013332 被拒）
+    // 前缀即 usereg 账号；学号本身 usereg 不收——用户实测被拒）
     let emailName = user?.email?.split("@")[0] ?? "";
     let nameSource = "userinfo.email";
     if (!emailName) {

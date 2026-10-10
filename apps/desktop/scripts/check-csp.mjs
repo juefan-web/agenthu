@@ -64,4 +64,21 @@ if (problems.length) {
   for (const problem of problems) console.error(`  - ${problem}`);
   process.exit(1);
 }
+
+// Source-form guard (external review #10): the production CSP above has no
+// direct backend outlet, so any packaged fetch to the backend MUST ride the
+// backend_request IPC channel. ReceiptViewer is the one view outside the
+// AppServices wiring that calls the backend directly — pin its call site to
+// the Tauri fetcher injection so a missing injection cannot ship (the whole-
+// function mocks in its vitest file cannot catch this branch).
+{
+  const viewer = readFileSync(join(root, "src", "features", "data-controls", "ReceiptViewer.tsx"), "utf8");
+  const callLine = viewer.split("\n").find((line) => line.includes("await fetchReceiptWithCapability"));
+  if (!callLine || !callLine.includes("isTauriRuntime() ? backendFetch : undefined")) {
+    console.error("CSP guard failed:");
+    console.error("  - ReceiptViewer must inject the Tauri fetcher (isTauriRuntime() ? backendFetch : undefined) at the fetchReceiptWithCapability call site; packaged default fetch is blocked by the production CSP");
+    process.exit(1);
+  }
+}
+
 console.log("CSP guard passed");
