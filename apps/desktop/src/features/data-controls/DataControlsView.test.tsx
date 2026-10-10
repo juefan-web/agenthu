@@ -149,6 +149,52 @@ describe("数据与隐私页", () => {
     expect(stored?.confirm_body).toMatchObject({ preview_id: makePreview().id, confirmed: true, client_request_id: expect.stringMatching(/^del-/) });
   });
 
+  it("同一 preview 的确认重试收敛同一 client_request_id（外审 #28）", async () => {
+    // 首次提交「网络丢失」形态失败，用户重试——两次必须是同一个
+    // client_request_id（服务端幂等收敛），而非各生成新键造成双删除
+    confirmDeletion.mockReset()
+      .mockRejectedValueOnce(new Error("network lost"))
+      .mockResolvedValue(makeOperation({ status: "QUEUED" }));
+    renderView();
+    fireEvent.change(await screen.findByLabelText("对象 ID"), { target: { value: "019ddddd-bbbb-7000-8000-000000000009" } });
+    fireEvent.click(await screen.findByRole("button", { name: "查看删除范围" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "确认删除" }));
+    expect(await screen.findByText(/network lost/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
+
+    await waitFor(() => expect(confirmDeletion).toHaveBeenCalledTimes(2));
+    const first = confirmDeletion.mock.calls[0]![0] as { client_request_id: string };
+    const second = confirmDeletion.mock.calls[1]![0] as { client_request_id: string };
+    expect(first.client_request_id).toMatch(/^del-/);
+    expect(second.client_request_id).toBe(first.client_request_id);
+  });
+
+  it("source 删除回执可达：确认后留存完整回执三件套（外审 #28）", async () => {
+    confirmDeletion.mockReset().mockResolvedValue(makeOperation({
+      status: "QUEUED",
+      receipt_id: "019ddddd-dddd-7000-8000-000000000004",
+      receipt_capability: "cap-source-once-delivered",
+    }));
+    const { receipts } = renderView();
+    fireEvent.change(await screen.findByLabelText("对象 ID"), { target: { value: "019ddddd-bbbb-7000-8000-000000000009" } });
+    fireEvent.click(await screen.findByRole("button", { name: "查看删除范围" }));
+    fireEvent.click(await screen.findByRole("button", { name: "确认删除" }));
+
+    const stored = await waitFor(async () => {
+      const found = await receipts.read("owner-key-0001");
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    expect(stored.capability).toBe("cap-source-once-delivered");
+    expect(stored.receipt_id).toBe("019ddddd-dddd-7000-8000-000000000004");
+    expect(stored.confirm_body).toMatchObject({
+      preview_id: makePreview().id,
+      confirmed: true,
+      client_request_id: expect.stringMatching(/^del-/),
+    });
+  });
+
   it("409 deletion_in_progress 显示冻结文案，不开第二个确认", async () => {
     confirmDeletion.mockReset().mockRejectedValue(new BackendHttpError("已有删除正在进行", 409, "deletion_in_progress"));
     renderView();

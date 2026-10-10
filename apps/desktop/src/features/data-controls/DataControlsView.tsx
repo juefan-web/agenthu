@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
 import type { DataOperationOut, DataPreviewOut, DeleteTarget } from "@agenthu/contracts";
@@ -119,6 +119,7 @@ export function DataControlsView() {
       return await backend!.createDataPreview(target);
     },
     onSuccess: (result) => {
+      confirmRequestIdRef.current = null;
       setPreview(result);
       setAccountStep(0);
       setAccountAcknowledged(false);
@@ -127,21 +128,42 @@ export function DataControlsView() {
     onError: (error) => setNotice(errorCopy(error)),
   });
 
-  /** 确认键锁定同一 client_request_id（B 稿 §2）：202 丢失重发同 ID 幂等
-   *  收敛，不因重试点击生成新删除。 */
+  /** 确认键绑定删除意图 = 当前 preview（外审 #28）：键在点击处生成、同一
+   *  preview 的重试/重发收敛同 ID（202 丢失重发幂等收敛的兑现位），
+   *  mutationFn 内现生成会让每次重试都成为新删除。新 preview 即新意图。 */
+  const confirmRequestIdRef = useRef<string | null>(null);
+  const beginConfirmRequestId = (): string => {
+    confirmRequestIdRef.current ??= `del-${newRequestId()}`.slice(0, 128);
+    return confirmRequestIdRef.current;
+  };
+
   const confirmSourceMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (client_request_id: string) => {
       if (!preview) throw new Error("先查看删除范围");
-      const client_request_id = `del-${newRequestId()}`.slice(0, 128);
-      const operation = await backend!.confirmDataDeletion({
+      const confirm_body = {
         preview_id: preview.id,
         preview_digest: preview.preview_digest,
         client_request_id,
         confirmed: true,
-      });
-      return { operation, client_request_id };
+      } as const;
+      const operation = await backend!.confirmDataDeletion({ ...confirm_body });
+      return { operation, confirm_body };
     },
-    onSuccess: ({ operation }) => {
+    onSuccess: async ({ operation, confirm_body }) => {
+      // 回执留存（外审 #28：source 删除回执此前不可达——只解构 operation，
+      // 一次性 capability 被丢弃；account 路径已有同形消费）
+      const ownerKey = resolveOwner();
+      if (ownerKey && operation.receipt_capability && operation.receipt_id) {
+        await receipts.write(ownerKey, {
+          capability: operation.receipt_capability,
+          receipt_id: operation.receipt_id,
+          client_request_id: confirm_body.client_request_id,
+          confirm_body: { ...confirm_body },
+          issued_at: new Date().toISOString(),
+          expires_at: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
+        });
+      }
+      confirmRequestIdRef.current = null;
       setPreview(null);
       setPolledOperationId(operation.id);
       setNotice("删除已提交。");
@@ -150,11 +172,10 @@ export function DataControlsView() {
   });
 
   const confirmAccountMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (client_request_id: string) => {
       if (!preview) throw new Error("先查看删除范围");
       const ownerKey = resolveOwner();
       if (!ownerKey) throw new Error("账号身份尚未落定，无法关联本机数据");
-      const client_request_id = `del-${newRequestId()}`.slice(0, 128);
       const confirm_body = {
         preview_id: preview.id,
         preview_digest: preview.preview_digest,
@@ -176,6 +197,7 @@ export function DataControlsView() {
           expires_at: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
         });
       }
+      confirmRequestIdRef.current = null;
       setPreview(null);
       setAccountStep(0);
       setCleanupOwnerKey(ownerKey);
@@ -324,12 +346,12 @@ export function DataControlsView() {
         {targetKind === "account" && accountStep === 1 && <>
           <label className="data-check"><input type="checkbox" aria-label="我理解此操作不可恢复" checked={accountAcknowledged} onChange={(event) => setAccountAcknowledged(event.target.checked)} />我理解此操作不可恢复</label>
           <div className="section-actions">
-            <button className="danger-button" disabled={!accountAcknowledged || confirmAccountMutation.isPending} onClick={() => confirmAccountMutation.mutate()}>永久删除账号</button>
+            <button className="danger-button" disabled={!accountAcknowledged || confirmAccountMutation.isPending} onClick={() => confirmAccountMutation.mutate(beginConfirmRequestId())}>永久删除账号</button>
             <button className="ghost-button" onClick={() => setAccountStep(0)}>返回</button>
           </div>
         </>}
         {targetKind !== "account" && <div className="section-actions">
-          <button className="danger-button" disabled={confirmSourceMutation.isPending} onClick={() => confirmSourceMutation.mutate()}>确认删除</button>
+          <button className="danger-button" disabled={confirmSourceMutation.isPending} onClick={() => confirmSourceMutation.mutate(beginConfirmRequestId())}>确认删除</button>
         </div>}
       </div>}
 

@@ -198,3 +198,19 @@ status）转 E7 执行轮与部署演练的观察项。
   来源；openapi 再生成 71 路径）。钉子 ×5：FAILED 复活全断言 / 错键
   统一 404 / COMPLETED 永不复活 / 版本冲突 / 回执暴露状态与版本。
   E7 预期无变动（重排为新增能力，未触任何既有断言；预裁未推翻）。
+- 2026-10-10 R3-B 执行（#28/#29，协调人供锚并独立复核，分支
+  `fix/confirm-key-and-receipt-and-redaction`）：#28 两面——①确认键生成
+  位置：`del-${newRequestId()}` 从两个 confirm mutationFn 内移到点击处
+  （`beginConfirmRequestId`，`useRef` 绑定当前 preview 意图；新 preview /
+  确认成功即重置）——同 preview 的重试/重发收敛同 ID，兑现 :130 注释
+  「202 丢失重发同 ID 幂等收敛」的承诺（服务端一次性下发已由
+  data_operations.py docstring 坐实）；②source 删除回执可达：
+  `confirmSourceMutation.onSuccess` 此前只解构 `operation`、一次性
+  capability 被丢弃——补齐与 account 路径同形的 `receipts.write`（完整
+  确认体三件套；owner 缺席时跳过不写）。account 路径回执已消费，未重复
+  修。#29——`redactCampusDebugLine` 字符类补 `.` `+` `/` 三字符：点分段
+  JWT 与含 +/ 的 base64 不再整值穿透；`:` 仍在类外，URL 形态（https:
+  早断）原样保留的既有语义经钉子验证不变。已知边界：`name=Bearer x.y.z`
+  形态（= 后带空格前缀）超出 `name=值` 契约形态，不属本修面。钉子 ×3：
+  键收敛钉（首败重试同 ID）/ source 回执钉（三件套+capability 留存）/
+  JWT+base64 脱敏钉（含 URL 不受影响断言）。desktop 249 = 基线 246 + 3。
