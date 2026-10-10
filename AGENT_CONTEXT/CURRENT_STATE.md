@@ -1610,3 +1610,26 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   口径对账）→ A 吸收 THIRD_PARTY_NOTICES → **E7 双轮（顺延，通道与
   协议不变，manifest 预期随各修复 PR 同步修订）** → M5 收口。P2 待核
   余项与 P3 转 M5 后 backlog（复核过才修）。
+
+- **R1+R2 全量落库（2026-10-10，协调人）**：外部审查修复队列前两轮
+  七件全部合并、双 CI 双绿、计数算术精确。**R1**：#90 fixtures PII 合成
+  重生成 → `11eb775`；#91 grounded 同意门 → `a195bf2`；#92 密码 settle
+  即清 → `4abed99`（backend 504 = 503+1）。**R2**：#93 回执 fetcher +
+  Rust owner 校验三连（B，A 批）→ `944a60a`；#94 审计 redact 执行期
+  三层扫描（A，B 批）→ `f97406d`（507）；#95 evidence 血缘闭包 →
+  `2a3c056`（510）；#96 sha256 键 + 键长拒绝链 → `3762ea9`（515）；
+  #97 claim-token 条件结算 + 逐轮心跳 → `5e97d2b`（518p+2s 总量 520）；
+  #98 写守卫 events 入口对账（D-038 空集语义）→ `79c64f8`（517p+6s
+  总量 523）；#99 FAILED 重排 receipt 窄路径（预裁三红线全保持）→
+  `17eccc0`（521p+7s 总量 **528 = 504+24 全数落账**）。互叠冲突按纪律
+  逐件化解：A merge-main 解冲突轮（每件对当时 main 恰一轮）、B 对
+  post-approve 推头机械复核续批（#98 真代码冲突轮 events.py +
+  test_write_guards.py 升级全 hunk 精读、两核互证）；全部续批
+  head-bound 零漂移后由协调人合并。**夜窗口径入档**：每日尾
+  130/65/45 分钟 conftest 守卫产生注册 skip，CI 对账按总量
+  （passed+skipped）并逐条归因注册守卫串；过午夜归零。过程台账新增
+  两案：stale `pr/N` fetch ref 冒充进行中工作（f162569 案，ref 时戳
+  vs 实际合并链定性后删除）；编码层 grep 假阴性（#90 VIEWSTATE
+  base64 载荷标记，协调人误报已当众撤回）。**下一步**：R3 双线
+  （A=#18/#22/#4/#8/#11 + NOTICES 吸收前置解 #17 三处口径互斥；
+  B=#14/#26/#27/#28/#29 + #17 对账落档）→ E7 双轮 → M5 收口。
