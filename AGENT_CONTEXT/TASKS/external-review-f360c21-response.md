@@ -219,3 +219,12 @@ status）转 E7 执行轮与部署演练的观察项。
   （venue/sign、cas submit 死件、demoLogin 退役、未引用模块面），D5（#20
   确认栅栏）仓内无法独立钉锚、待协调人供原始锚点。本档只对账不修文，
   吸收落笔归 A 的 NOTICES 轮。
+- 2026-10-10 R3-B 执行（#14，分支 `fix/campus-collection-partial-marker`）：
+  采集部分失败不再被吞——vendored `getAllHomework` 增可选
+  `onPartialFailure({courseId, kind})` 回调（错误详情仍只进 debug 通道，
+  部分结果语义不变，既有调用方零改动）；适配层计数入
+  `CampusSnapshot.partial = {failedQueries, totalQueries}`（仅失败>0 在场）；
+  App 两处采集 notice 经 `collectionPartialNote` 纯函数透出计数（「无作业」
+  与「拉取失败」之别用户可见；错误串不进 UI/Event）。钉子 ×4：适配层
+  失败计数钉（2/3）+ 全成功无标记钉 + 文案双钉。验收：desktop 250 =
+  main 22ec867 基线 246 + 4（本地与 CI 双源对齐）；vendored smoke 全绿。

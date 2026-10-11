@@ -233,10 +233,18 @@ export class OneThuCampusAdapter implements CampusAdapter {
       const schedulePromise = session.info.getSchedule(
         dateOnly(now), dateOnly(new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000)),
       );
+      let failedQueries = 0;
       const learnPromise = (async () => {
         const calendarRaw = await session.learn.getCalendarData();
         const coursesRaw = await session.learn.getCourseList(calendarRaw.semesterId);
-        const assignmentsRaw = await session.learn.getAllHomework(coursesRaw.map((course) => course.id));
+        // 外审 #14：单项失败经回调计数（vendored 仍降级为空数组——部分结果语义），
+        // 快照携带 partial 供 UI 透出「无作业」与「拉取失败」之别。
+        const assignmentsRaw = await session.learn.getAllHomework(
+          coursesRaw.map((course) => course.id),
+          () => {
+            failedQueries += 1;
+          },
+        );
         return { calendarRaw, coursesRaw, assignmentsRaw };
       })();
       const [scheduleRaw, { calendarRaw, coursesRaw, assignmentsRaw }] = await Promise.all([
@@ -247,7 +255,7 @@ export class OneThuCampusAdapter implements CampusAdapter {
       const assignments = assignmentsRaw.map((homework) => mapAssignment(homework, courseNames.get(homework.courseId)));
       const calendar = mapCalendar(calendarRaw);
       const schedule = scheduleRaw.map(mapSchedule);
-      return {
+      const snapshot: CampusSnapshot = {
         fetchedAt,
         events: [
           ...courses.map((course) => mapCourseEvent(course, fetchedAt)),
@@ -256,6 +264,12 @@ export class OneThuCampusAdapter implements CampusAdapter {
           mapCalendarEvent(calendar, fetchedAt),
         ],
       };
+      // totalQueries 与 vendored 的作业拉取扇出同构：每课程 × 3 类
+      // （new/submitted/graded）
+      if (failedQueries > 0) {
+        snapshot.partial = { failedQueries, totalQueries: coursesRaw.length * 3 };
+      }
+      return snapshot;
     } catch (error) {
       // 透出上游真实原因（如 XSRF 缺失、漫游失败），不再折叠成通用文案。
       if (error instanceof AuthRequiredError) throw new CampusAuthError(error.message);
