@@ -47,6 +47,20 @@ describe("campus cookie mirror jar", () => {
     expect(campusCookieJar().getCookies(new URL(INFO_URL))).toHaveLength(0);
   });
 
+  it("redacts dotted JWT and base64(+/) shapes the old class let through (external #29)", () => {
+    // 点分段 JWT（name=值 契约形态）：旧字符类缺 `.`，分段断在点处整值穿透
+    const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyXzAwMDEifQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV";
+    const jwtLine = redactCampusDebugLine(`Authorization=${jwt}`);
+    expect(jwtLine).not.toContain(jwt);
+    expect(jwtLine).not.toContain("eyJhbGciOiJIUzI1NiJ9");
+    // 标准 base64（含 + 与 /）：旧类同样漏
+    const b64 = "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVphYmNkZWZnaGlqa2xt+bnBxcnN0dXZ3eHl6LzAxMjM0";
+    expect(redactCampusDebugLine(`payload=${b64}`)).not.toContain(b64);
+    // URL 形态不受影响：`:` 不在类内，https 后早断，整行原样
+    expect(redactCampusDebugLine("final=https://learn.tsinghua.edu.cn/f/wlxt/index/course/student/index"))
+      .toContain("https://learn.tsinghua.edu.cn/f/wlxt/index/course/student/index");
+  });
+
   it("redacts token-shaped values from debug lines but keeps cookie names and URLs", () => {
     // cookie 名单原样保留（值不出现）
     expect(redactCampusDebugLine("[HTTP-WENGINE] cookies=wengine_vpn_ticket,XSRF-TOKEN body(1024)=…"))

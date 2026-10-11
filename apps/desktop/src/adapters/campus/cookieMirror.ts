@@ -56,11 +56,12 @@ export function applyCampusCookieMirror(cookies: MirroredCookie[]): void {
 }
 
 /** debug 通道脱敏（A 的隐私建议回归断言的落点）：`name=token` 形态的长值
- *  （≥20 个字母数字/%/_/- 字符——cookie 值、CAS ticket、_csrf 令牌）遮蔽为
- *  <redacted>；cookie 名单（逗号连接、含 :// 的 URL）不含该形态故原样保留；
+ *  （≥20 个字母数字/%/_/+/.// 字符——cookie 值、CAS ticket、_csrf 令牌，
+ *  及点分段 JWT 与含 +/ 的 base64；外审 #29 补 . + / 三字符）遮蔽为
+ *  <redacted>；cookie 名单（逗号连接、不含 = 后长值形态）原样保留；
  *  超长行（vendored 的 wengine body 转储）截断到 4000 字符。 */
 export function redactCampusDebugLine(line: string): string {
-  const redacted = line.replace(/=([A-Za-z0-9%_-]{20,})(?=[\s;"'&<>]|$)/g, "=<redacted>");
+  const redacted = line.replace(/=([A-Za-z0-9%_+./-]{20,})(?=[\s;"'&<>]|$)/g, "=<redacted>");
   return redacted.length > 4000 ? redacted.slice(0, 4000) + "…<truncated>" : redacted;
 }
 
