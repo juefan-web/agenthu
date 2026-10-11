@@ -130,8 +130,14 @@ credentials 成立 ✓。
   zhjwxk/client.ts:309 实调）。**判定：报告所指死分支位于死函数内；表单解析
   系活件，表单提交包装层是死件。**
 - **D3 `vendor/onethu/core/src/auth/demoLogin.ts`**：`session.ts:10` 退役记录
-  在案（"demoLogin 全链…退役"）；残存引用只有 `exthw/tuojCas.ts:77/:294`
-  的注释类比与 `info/client.ts:1560` 的历史注释。
+  在案（"demoLogin 全链…退役"）；残存引用 = `exthw/tuojCas.ts:77/:294` 的
+  注释类比、`info/client.ts:1560` 与 `zhjwxk/client.ts:6` 的历史注释（后者
+  称"所有请求走 demoLogin.ts 的 webvpnRequest"，实况 zhjwxk import 面零引用
+  demoLogin——过期头注），以及**唯一非注释残存** `index.ts:196` 的桶再导出
+  （`export { setWebvpnLog } from "./auth/demoLogin.js"`）。`setWebvpnLog`
+  全仓仅定义（`demoLogin.ts:55`）+ 该再导出，零消费（desktop 不 import）——
+  demoLogin 确系全死；但该行是**删除耦合点**：若裁定删除 demoLogin.ts，必须
+  同步删 `index.ts:196`，否则桶导出断链、tauri 构建红。
 - **D4 普查 §2.1 已测的 vendored 未引用模块面**（沿用普查，不重测）：
   `coursex`/`caldav`/`exthw`/`privacy` 整模块 desktop 0 import（源码树随仓
   分发）；`zhjwxk` 直接 import 0、`fetchZhjwxkPage` 经 InfoClient 兜底进
