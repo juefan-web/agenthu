@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createBackendSession } from "./session";
+import { BACKEND_SESSION_EXPIRED, createBackendSession } from "./session";
 import type { StoredToken, TokenStore } from "./tokenStore";
 import { useBackendSessionStore } from "../state/backendSession";
 
@@ -170,6 +170,32 @@ describe("createBackendSession", () => {
 
     expect(session.token()).toBe("jwt-2");
     expect(store.value?.access_token).toBe("jwt-2");
+  });
+
+  it("bumps the invalidation counter a mid-session 401 uses to clear the query pool (external #27)", async () => {
+    // 中途失效（restore 时 token 仍有效）：onUnauthorized 队列完成完整清理
+    // 并递增计数——App 据此整池清查询缓存（restore 期 401 的清理由
+    // restore 内联完成、current 已清空，队列早退不递增，不属本面）。
+    const store = memoryStore();
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path.endsWith("/v1/auth/login")) return json({ access_token: "jwt-1", token_type: "bearer", expires_in: 3600 });
+      const authorization = new Headers(init?.headers).get("Authorization");
+      if (authorization === "Bearer jwt-1" && path.endsWith("/v1/current-state")) return json({ error: { code: "unauthenticated", message: "expired" } }, 401);
+      return json(user);
+    });
+    const session = createBackendSession({ baseUrl: "http://backend", store, fetcher, now: () => 1_000 });
+
+    await session.login("student@example.com", "password");
+    const before = useBackendSessionStore.getState().invalidations;
+    await expect(session.client.getCurrentState()).rejects.toThrow("expired");
+    // onUnauthorized 清理在会话串行队列内 flush
+    await expect(Promise.resolve()).resolves.toBeUndefined();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(useBackendSessionStore.getState().invalidations).toBe(before + 1);
+    expect(useBackendSessionStore.getState()).toMatchObject({ status: "error", message: BACKEND_SESSION_EXPIRED });
+    expect(store.value).toBeNull();
   });
 
   it("reports a storage error when ordinary 401 cleanup fails", async () => {
