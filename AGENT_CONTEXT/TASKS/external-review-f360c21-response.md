@@ -198,6 +198,17 @@ status）转 E7 执行轮与部署演练的观察项。
   来源；openapi 再生成 71 路径）。钉子 ×5：FAILED 复活全断言 / 错键
   统一 404 / COMPLETED 永不复活 / 版本冲突 / 回执暴露状态与版本。
   E7 预期无变动（重排为新增能力，未触任何既有断言；预裁未推翻）。
+- 2026-10-10 R3-A 执行（#18，分支 `fix/drift-signature-security`）：漂移
+  签名补 security 三层——操作级 `security`（要求列表规范化排序，显式
+  空表公开态与缺键态可区分）、`components.securitySchemes`、根级
+  `security`；新增 security floor 第三检查（对生成侧执行）：白名单 8 面
+  （根/健康 ×3、auth 引导 login/register/token ×3、回执窄路径 ×2——
+  capability token 是其唯一钥匙，D-036 §6 非 OAuth2 面）之外的操作必须
+  带非空 security 要求，白名单项失配真操作同红。丢 CurrentUser 后即使
+  忠实再生成 openapi.json（新鲜度比较按构造恒绿）floor 仍红。钉子 ×5：
+  签名可见 security 删除 / floor 现面全绿 / 丢 CurrentUser 红 / 显式空
+  security 红 / 白名单僵尸项红。openapi.json 零变动（签名补字段两侧
+  同源相等）。
 - 2026-10-10 R3-B 执行（#17 前置对账，分支 `docs/r3b-notices-reconciliation`，
   全档见 `r3-b-17-notices-reconciliation.md`）：三处口径互斥坐实三项——
   M1 根 NOTICES info-lib 节整节停留在路径 B 之前（Source/pin/BSL 边界三句
