@@ -198,6 +198,36 @@ status）转 E7 执行轮与部署演练的观察项。
   来源；openapi 再生成 71 路径）。钉子 ×5：FAILED 复活全断言 / 错键
   统一 404 / COMPLETED 永不复活 / 版本冲突 / 回执暴露状态与版本。
   E7 预期无变动（重排为新增能力，未触任何既有断言；预裁未推翻）。
+- 2026-10-10 R3-A 执行（#18，分支 `fix/drift-signature-security`）：漂移
+  签名补 security 三层——操作级 `security`（要求列表规范化排序，显式
+  空表公开态与缺键态可区分）、`components.securitySchemes`、根级
+  `security`；新增 security floor 第三检查（对生成侧执行）：白名单 8 面
+  （根/健康 ×3、auth 引导 login/register/token ×3、回执窄路径 ×2——
+  capability token 是其唯一钥匙，D-036 §6 非 OAuth2 面）之外的操作必须
+  带非空 security 要求，白名单项失配真操作同红。丢 CurrentUser 后即使
+  忠实再生成 openapi.json（新鲜度比较按构造恒绿）floor 仍红。钉子 ×5：
+  签名可见 security 删除 / floor 现面全绿 / 丢 CurrentUser 红 / 显式空
+  security 红 / 白名单僵尸项红。openapi.json 零变动（签名补字段两侧
+  同源相等）。
+- 2026-10-10 R3-B 执行（#17 前置对账，分支 `docs/r3b-notices-reconciliation`，
+  全档见 `r3-b-17-notices-reconciliation.md`）：三处口径互斥坐实三项——
+  M1 根 NOTICES info-lib 节整节停留在路径 B 之前（Source/pin/BSL 边界三句
+  全失实，现态 = info-lib/LICENSE 三段声明 + 普查 §2.2）；M2 根 NOTICES 的
+  LearnX 移植宣称与普查 §2.1 实测相反；M3 VENDORED_FROM.md 缺 info-lib
+  现状节。cookie 镜像声明两处需精确化（镜像实况 = campus host 三元组受控
+  内存投影；日志遮蔽 ≥20 字符、短值残留缺口）。死代码上游面 D1–D4 钉锚
+  （venue/sign、cas submit 死件、demoLogin 退役、未引用模块面），D5（#20
+  确认栅栏）仓内无法独立钉锚、待协调人供原始锚点。本档只对账不修文，
+  吸收落笔归 A 的 NOTICES 轮。
+- 2026-10-10 R3-B 执行（#14，分支 `fix/campus-collection-partial-marker`）：
+  采集部分失败不再被吞——vendored `getAllHomework` 增可选
+  `onPartialFailure({courseId, kind})` 回调（错误详情仍只进 debug 通道，
+  部分结果语义不变，既有调用方零改动）；适配层计数入
+  `CampusSnapshot.partial = {failedQueries, totalQueries}`（仅失败>0 在场）；
+  App 两处采集 notice 经 `collectionPartialNote` 纯函数透出计数（「无作业」
+  与「拉取失败」之别用户可见；错误串不进 UI/Event）。钉子 ×4：适配层
+  失败计数钉（2/3）+ 全成功无标记钉 + 文案双钉。验收：desktop 250 =
+  main 22ec867 基线 246 + 4（本地与 CI 双源对齐）；vendored smoke 全绿。
 - 2026-10-10 R3-B 执行（#26/#27，分支 `fix/session-viewstate-and-cache-clear`）：
   #27 中途 401 不清查询池——session `onUnauthorized` 只清 token/owner/
   存储，React Query 池留着前一账号数据，未经显式 logout 的换号登录在未

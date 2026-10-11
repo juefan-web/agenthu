@@ -15,8 +15,10 @@ import pytest
 
 from backend.main import app
 from backend.scripts.check_contract_drift import (
+    PUBLIC_OPERATIONS,
     ZOD_TO_OPENAPI,
     check_client_alignment,
+    check_security_floor,
     compare_artifact,
     parse_zod_schemas,
     run,
@@ -291,6 +293,61 @@ def test_artifact_comparison_detects_stale_openapi() -> None:
     messages = compare_artifact(stale, app.openapi())
     assert messages
     assert any("/v1/tasks" in message for message in messages)
+
+
+def test_signature_tracks_operation_security() -> None:
+    """External review #18, stale-artifact direction: ``security`` used to be
+    absent from the operation signature, so a hand-edited or stale
+    openapi.json could drift on the auth surface undetected."""
+
+    stripped = copy.deepcopy(app.openapi())
+    operation = stripped["paths"]["/v1/tasks"]["get"]
+    assert operation.get("security"), "premise: GET /v1/tasks is OAuth2-secured"
+    del operation["security"]
+
+    messages = compare_artifact(stripped, app.openapi())
+    assert any("operation changed: GET /v1/tasks" in message for message in messages)
+
+
+def test_security_floor_is_green_on_the_generated_contract() -> None:
+    assert check_security_floor(app.openapi()) == []
+    # The allowlist must stay honest: every entry matches a real operation.
+    assert PUBLIC_OPERATIONS, "the public allowlist must not silently empty out"
+
+
+def test_security_floor_red_when_current_user_is_dropped() -> None:
+    """External review #18, faithful-regeneration direction: losing the
+    CurrentUser dependency removes the operation's ``security`` entry, and a
+    refreshed openapi.json keeps the artifact comparison green by
+    construction — the floor itself must go red."""
+
+    broken = copy.deepcopy(app.openapi())
+    del broken["paths"]["/v1/tasks"]["get"]["security"]
+
+    errors = check_security_floor(broken)
+    assert any("GET /v1/tasks: no security requirement" in error for error in errors)
+
+
+def test_security_floor_red_on_explicitly_empty_security() -> None:
+    # ``security: []`` declares an operation public; that is a real auth
+    # change, not a formatting one, and must not pass as "present".
+    broken = copy.deepcopy(app.openapi())
+    broken["paths"]["/v1/tasks"]["get"]["security"] = []
+
+    errors = check_security_floor(broken)
+    assert any("GET /v1/tasks: no security requirement" in error for error in errors)
+
+
+def test_security_floor_red_on_stale_allowlist_entry() -> None:
+    # A renamed/removed public endpoint must invalidate its allowlist row,
+    # otherwise the floor would quietly shrink with the contract.
+    broken = copy.deepcopy(app.openapi())
+    del broken["paths"]["/v1/auth/login"]["post"]
+
+    errors = check_security_floor(broken)
+    assert any(
+        "POST /v1/auth/login: public allowlist entry no longer exists" in error for error in errors
+    )
 
 
 def test_write_refreshes_artifact(tmp_path: Path) -> None:
