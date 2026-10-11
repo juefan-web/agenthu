@@ -310,3 +310,19 @@ status）转 E7 执行轮与部署演练的观察项。
   原可抬第二道栅栏双删）；确定性交错钉 ×1（monkeypatch 首查模拟「赢者未
   提交时刻」，断言重查真跑（calls==2）+ 409 deletion_in_progress）。
   #20 自 §6 Backlog 移出。backend 新总量预期 555 = 547 + 8（闸门 7 + 钉 1）。
+
+- 2026-10-11 R3-A 执行（NOTICES 吸收，分支 `docs/notices-absorption`，输入 =
+  #17 对账档 §4 建议 1–4）：M1 = 根 NOTICES info-lib 节整节重写（来源改
+  thu-info-app@06dc3cf0 基座重推导 + 本仓自有层，对齐 info-lib/LICENSE 三段
+  声明；「BSL 1.1 boundary applies…」句删除、BSL 谱系降为历史注记
+  「superseded … does not describe this tree」；邮件授权警示 + 分发审查保留）。
+  M2 = LearnX 句改事实形（上游 notices 识别 vs 本仓 vendored 子集普查实测
+  无移植标注 §2.1，条款保留作防御性披露）。M3 = VENDORED_FROM.md 增
+  info-lib 现状节（明示 NOT a copy of an OneTHU package + 指 LICENSE 三段
+  声明与 path-b 任务书）。cookie/凭据尾行按对账档 §2 精确化（镜像存在 +
+  四字段边界 + 不持久 + logout 清 + 遮蔽规则现状与短值缺口如实写）。
+  验收：失实句全仓 grep——LearnX 句零命中；BSL 句仅剩对账档内引文两处
+  （证据记录保留）；docs-only（backend 555 / desktop 255 持平）。三点
+  注记维持：第三段 BSL 字样保守保留（分发前审查清单项，无害）；zhjwxk
+  头注归 D1–D5 裁定轮；英文措辞 B 复核可改字不改义。#4 建议 5（D1–D5
+  去留裁定）不入本轮。
