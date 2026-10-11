@@ -138,6 +138,34 @@ jobs:
       - name: Build Backend image
         run: docker build --tag agenthu-backend:ci .
 
+      # External review #4: the fail-closed secret guards must be effective
+      # in at least one EXECUTED form. The bare image boots with production
+      # defaults and no secrets — config must refuse to serve (fast non-zero
+      # exit naming SECRET_KEY) instead of coming up weak.
+      - name: Fail-closed boot probe (bare image, no secrets)
+        run: |
+          set +e
+          timeout 60 docker run --rm agenthu-backend:ci > probe.log 2>&1
+          status=$?
+          set -e
+          cat probe.log
+          test "$status" -ne 0
+          grep -q "SECRET_KEY must be set to a strong, unique value" probe.log
+
+      # The production overlay is the deployment form where the guards are
+      # unavoidable: compose itself must refuse to render it without the
+      # secrets, and must pin ENVIRONMENT=production when they are provided.
+      - name: Production overlay renders fail-closed
+        run: |
+          if docker compose -f docker-compose.yml -f docker-compose.prod.yml config > /dev/null 2>&1; then
+            echo "prod overlay rendered without secrets"
+            exit 1
+          fi
+          SECRET_KEY=a-very-strong-and-long-secret-key-value-1234567890 \
+          S3_SECRET_KEY=a-very-strong-s3-secret-key-1234567890 \
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml config \
+            | grep -q "ENVIRONMENT: production"
+
   compose-smoke:
     name: Compose smoke (api + worker healthy)
     runs-on: ubuntu-latest
