@@ -297,9 +297,10 @@ status）转 E7 执行轮与部署演练的观察项。
 
 - 2026-10-11 R3-A 末轮执行（#22+#20 搭车，分支 `fix/ci-test-gate-and-barrier-recheck`）：
   #22 = `backend/scripts/ci_test_gate.py` 解析 junitxml（`pytest --junitxml`），
-  双不变量——passed ≥ floor（自锚 = 本 PR 落库后新总量 555 − 夜窗 6 = 549；
+  双不变量——passed ≥ floor（自锚 = 本 PR 落库后新总量 555 − 夜窗最深形态 8
+  （6×130+1×65+1×45 个 skip_late_night 调用点，协调人核差后裁定）= 547；
   常量 `CI_TEST_FLOOR`/`CI_TEST_SKIP_CEILING` 入 ci.yml backend job env，锚随
-  套件增长而抬、禁为破绿下调）与 skipped ≤ 8（夜窗 6 + 余量）；闸门步在
+  套件增长而抬、禁为破绿下调）与 skipped ≤ 8（= 注册最深夜窗形态，两常量自洽）；闸门步在
   Run tests 后执行，失败时上传 junit 工件。动因 = 本地实证「测试库下线 →
   357 例整体跳过仍 33 秒绿」。钉子 ×7：wrapper 形解析 / floor 边界绿 /
   夜窗 6 skip 绿 / 全跳双红（floor+ceiling 同红）/ ceiling 独立红 /

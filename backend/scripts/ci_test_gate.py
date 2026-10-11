@@ -7,8 +7,8 @@ tests to skip and the suite stayed "green" in 33 seconds). This gate reads
 the junit XML and enforces two invariants:
 
 - at least FLOOR tests actually passed (the anchored suite total minus the
-  six clock-sensitive tests that legitimately skip in the late-night
-  window; see tests/conftest.py skip_late_night);
+  eight clock-sensitive late-night call sites — 6x130 + 1x65 + 1x45, the
+  deepest form the window can flip; see tests/conftest.py skip_late_night);
 - at most SKIP_CEILING tests skipped (a run that skips more than the
   night window allows is hiding a broken environment).
 
@@ -63,7 +63,7 @@ def evaluate(totals: dict[str, int], *, floor: int, skip_ceiling: int) -> list[s
     if totals["skipped"] > skip_ceiling:
         problems.append(
             f"{totals['skipped']} test(s) skipped, above the ceiling of "
-            f"{skip_ceiling} (the late-night window flips at most 6)"
+            f"{skip_ceiling} (the late-night window flips at most 8)"
         )
     return problems
 

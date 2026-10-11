@@ -12,8 +12,10 @@ from pathlib import Path
 
 from backend.scripts.ci_test_gate import evaluate, main, parse_junit
 
-FULL_TOTAL = 554
-FLOOR = FULL_TOTAL - 6  # the six clock-sensitive late-night skips
+FULL_TOTAL = 555
+# The eight registered late-night call sites (6x130 + 1x65 + 1x45),
+# i.e. the deepest form the window can flip: that is the whole margin.
+FLOOR = FULL_TOTAL - 8
 
 
 def _write_junit(path: Path, *, tests: int, skipped: int = 0, failures: int = 0) -> Path:
@@ -37,12 +39,14 @@ def test_parse_reads_the_pytest_wrapper_shape(tmp_path: Path) -> None:
 
 
 def test_full_run_at_the_floor_boundary_passes() -> None:
-    totals = {"tests": FULL_TOTAL - 6, "errors": 0, "failures": 0, "skipped": 0}
+    totals = {"tests": FULL_TOTAL - 8, "errors": 0, "failures": 0, "skipped": 0}
     assert evaluate(totals, floor=FLOOR, skip_ceiling=8) == []
 
 
-def test_late_night_form_six_skips_still_passes() -> None:
-    totals = {"tests": FULL_TOTAL, "errors": 0, "failures": 0, "skipped": 6}
+def test_deepest_late_night_form_eight_skips_still_passes() -> None:
+    # 23:15-midnight: every registered call site flips (8), which is the
+    # floor's whole allowance — the merge window must stay green here.
+    totals = {"tests": FULL_TOTAL, "errors": 0, "failures": 0, "skipped": 8}
     assert evaluate(totals, floor=FLOOR, skip_ceiling=8) == []
 
 
@@ -75,5 +79,5 @@ def test_main_exits_red_on_below_floor_run_and_green_on_health(tmp_path: Path) -
     broken = _write_junit(tmp_path / "broken.xml", tests=FULL_TOTAL, skipped=357)
     assert main(["--junit", str(broken), "--floor", str(FLOOR)]) == 1
 
-    healthy = _write_junit(tmp_path / "healthy.xml", tests=FULL_TOTAL, skipped=6)
+    healthy = _write_junit(tmp_path / "healthy.xml", tests=FULL_TOTAL, skipped=8)
     assert main(["--junit", str(healthy), "--floor", str(FLOOR), "--skip-ceiling", "8"]) == 0

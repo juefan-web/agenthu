@@ -31,11 +31,12 @@ jobs:
       S3_BUCKET: agenthu
       S3_REGION: us-east-1
       # Minimal-pass gate anchor (#22): the suite's measured total on main
-      # (555 = 547 + this gate's own tests) minus the six clock-sensitive
-      # tests that legitimately skip in the late-night window. Bump WITH a
-      # suite-growing PR, never to make a broken run pass; the skip ceiling
-      # is the night window's 6 plus a small margin.
-      CI_TEST_FLOOR: "549"
+      # (555 = 547 + this gate's own tests) minus the eight clock-sensitive
+      # late-night call sites (6x130 + 1x65 + 1x45) — the deepest form the
+      # window can flip is the whole margin, so a merge at 23:15-midnight
+      # stays green. Bump WITH a suite-growing PR, never to make a broken
+      # run pass; the skip ceiling equals that same deepest form.
+      CI_TEST_FLOOR: "547"
       CI_TEST_SKIP_CEILING: "8"
 
     steps:
