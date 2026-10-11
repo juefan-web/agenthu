@@ -30,6 +30,13 @@ jobs:
       S3_SECRET_KEY: agenthu123
       S3_BUCKET: agenthu
       S3_REGION: us-east-1
+      # Minimal-pass gate anchor (#22): the suite's measured total on main
+      # (555 = 547 + this gate's own tests) minus the six clock-sensitive
+      # tests that legitimately skip in the late-night window. Bump WITH a
+      # suite-growing PR, never to make a broken run pass; the skip ceiling
+      # is the night window's 6 plus a small margin.
+      CI_TEST_FLOOR: "549"
+      CI_TEST_SKIP_CEILING: "8"
 
     steps:
       - uses: actions/checkout@v4
@@ -98,7 +105,21 @@ jobs:
         run: python -m backend.scripts.export_openapi --output openapi.json
 
       - name: Run tests
-        run: pytest
+        run: pytest --junitxml=pytest-results.xml
+
+      # #22: a wholesale-skip run still exits 0 (observed: test DB down,
+      # 357 tests skipped, green in 33s), so the junit totals are gated
+      # explicitly — floor of CI_TEST_FLOOR passed, at most
+      # CI_TEST_SKIP_CEILING skipped.
+      - name: Enforce minimal pass gate
+        run: python -m backend.scripts.ci_test_gate --junit pytest-results.xml
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-results
+          path: pytest-results.xml
 
   pip-audit:
     name: Dependency vulnerability audit

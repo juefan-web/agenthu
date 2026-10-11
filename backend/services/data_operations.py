@@ -455,6 +455,16 @@ def confirm_deletion(
             )
         return existing, None
 
+    # Post-lock barrier re-check (#20): a different-key confirm can pass the
+    # pre-lock check, wait on the users-row lock while a same-scope winner
+    # commits, and then find nothing here (its client_request_id differs) —
+    # without this re-check it would raise a second barrier and delete again.
+    active = dl.matching_barrier(session, handle, scope=scope, target_ids=barrier_ids)
+    if active is not None:
+        raise ConflictError(
+            "a deletion is already in progress for this scope", code="deletion_in_progress"
+        )
+
     request = dl.OperationRequest(
         kind=DataOperationKind.DELETION,
         client_request_id=client_request_id,
