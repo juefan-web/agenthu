@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CampusAuthError } from "./adapters/campus/types";
+import { CampusAuthError, type CampusCollectionPartial } from "./adapters/campus/types";
 import { isTauriRuntime } from "./adapters/campus/tauriTransport";
 import { campus } from "./campus/instance";
 import { CampusConnection, applySession } from "./components/CampusConnection";
@@ -27,6 +27,12 @@ import type { EventSyncCoordinator } from "./sync/coordinator";
 type View = "today" | "tasks" | "focus" | "memory" | "explain" | "pending" | "chat" | "reminders" | "data";
 const VIEW_LABELS: Record<View, string> = { today: "今天", tasks: "任务", focus: "专注", memory: "记忆", explain: "讲解", pending: "确认", chat: "对话", reminders: "提醒", data: "数据与隐私" };
 type CollectionStage = "collecting" | "saving" | "syncing" | null;
+
+/** 采集部分失败的 UI 标记（外审 #14）：只透出计数——「无作业」与「拉取
+ *  失败」之别用户可见，错误详情不进 UI。 */
+export function collectionPartialNote(partial?: CampusCollectionPartial): string {
+  return partial ? `，作业查询部分失败 ${partial.failedQueries}/${partial.totalQueries}` : "";
+}
 
 function syncResultText(result: Awaited<ReturnType<EventSyncCoordinator["flush"]>>): string {
   const rejectionSummary = result.rejections.length > 0
@@ -96,6 +102,13 @@ export default function App() {
     queryClient.clear();
   }
 
+  // 外审 #27：401 失效与显式 logout 同为「换用户前奏」——session 已清
+  // token/owner，但查询池不随之清，下一账号在未重挂载的视图里会端出前
+  // 一账号的缓存（backendLogout 注释的同一实证，补齐失效路径）。
+  useEffect(() => {
+    if (backendState.invalidations > 0) queryClient.clear();
+  }, [backendState.invalidations, queryClient]);
+
   useEffect(() => {
     if (!sync) return;
     const retryOnReconnect = () => {
@@ -116,10 +129,12 @@ export default function App() {
       const startedAt = performance.now();
       let collected = 0;
       let saved = false;
+      let partial: CampusCollectionPartial | undefined;
       try {
         setCollectionStage("collecting");
         const snapshot = await campus.collectSnapshot();
         collected = snapshot.events.length;
+        partial = snapshot.partial;
         const collectionSeconds = ((performance.now() - startedAt) / 1_000).toFixed(1);
         setCollectionStage("saving");
         if (sync) await sync.enqueue(snapshot.events);
@@ -130,18 +145,19 @@ export default function App() {
         const result = sync ? await sync.flush() : null;
         const syncSeconds = ((performance.now() - syncStartedAt) / 1_000).toFixed(1);
         setPending((await queue.list()).length);
-        return { collected, collectionSeconds, syncSeconds, result };
+        return { collected, collectionSeconds, syncSeconds, result, partial };
       } catch (error) {
         setNotice(saved
-          ? `采集 ${collected} 条已保存到本地，上传未完成：${errorText(error)}`
+          ? `采集 ${collected} 条已保存到本地${collectionPartialNote(partial)}，上传未完成：${errorText(error)}`
           : `校园数据未保存：${errorText(error)}`);
         throw error;
       }
     },
-    onSuccess: ({ collected, collectionSeconds, syncSeconds, result }) => {
+    onSuccess: ({ collected, collectionSeconds, syncSeconds, result, partial }) => {
+      const partialNote = collectionPartialNote(partial);
       setNotice(result
-        ? `采集 ${collected} 条（${collectionSeconds} 秒），同步 ${syncSeconds} 秒；${syncResultText(result)}`
-        : `采集 ${collected} 条（${collectionSeconds} 秒），已保存到本地队列；配置 Backend 后可上传。`);
+        ? `采集 ${collected} 条（${collectionSeconds} 秒）${partialNote}，同步 ${syncSeconds} 秒；${syncResultText(result)}`
+        : `采集 ${collected} 条（${collectionSeconds} 秒）${partialNote}，已保存到本地队列；配置 Backend 后可上传。`);
       void queryClient.invalidateQueries();
     },
     onError: (error) => {
@@ -230,7 +246,9 @@ export default function App() {
           <section className="workspace-section wide"><div className="section-heading"><h2>待办任务</h2><span className="section-meta">{taskList.length} 项</span></div><TaskList tasks={taskList} loading={tasks.isPending && !!backend} error={tasks.error ?? currentState.error} configured={!!backend} /></section>
         </div>}
         {view === "tasks" && <section className="workspace-section"><div className="section-heading"><h2>全部任务</h2><span className="section-meta">{taskList.length} 项</span></div><TaskList tasks={taskList} loading={tasks.isPending && !!backend} error={tasks.error} configured={!!backend} /></section>}
-        {view === "focus" && <FocusView tasks={taskList} />}
+        {/* 外审 #26：专注草稿存储已按 owner 命名空间，残留的是 mount 时读入
+            的组件态——按账号 key 重挂载，登出/换号即重读当前 owner 的草稿 */}
+        {view === "focus" && <FocusView key={backendState.userId ?? "anonymous"} tasks={taskList} />}
         {view === "memory" && <MemoryView />}
         {view === "explain" && <GroundedAnswersView />}
         {view === "pending" && <PendingActionsView
