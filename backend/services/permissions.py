@@ -24,6 +24,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.core.errors import ValidationError
 from backend.models.enums import AuditActor, AuditDecision
 from backend.models.permission import PermissionGrant
 from backend.services.audit import record_audit
@@ -98,6 +99,38 @@ class PermissionDecision:
 def required_level_for(action: str) -> int:
     entry = ACTION_POLICY.get(action)
     return entry[0] if entry else DEFAULT_REQUIRED_LEVEL
+
+
+# fnmatch metacharacters — a grant action containing any of these is a
+# pattern, and the match side still interprets grant.action as one.
+PATTERN_METACHARACTERS = "*?["
+
+
+def validate_grant_action(action: str) -> None:
+    """Creation-face guard (external review #11): grant actions are concrete
+    ACTION_POLICY keys, never patterns.
+
+    The match side historically treats grant.action as an fnmatch pattern,
+    so a storable ``plan.*`` / ``*`` row IS a wildcard; D-034 §2.5 already
+    stops patterns from elevating levels, and this guard stops new pattern
+    rows from being minted at all (rows predating the guard keep their
+    legacy match semantics). Unknown actions are inert in evaluation — the
+    policy fallback answers CONFIRM regardless — so granting one only
+    litters the table with rows that would go live if the policy later
+    grows a same-named action; they are refused here.
+    """
+
+    metacharacters = sorted({char for char in action if char in PATTERN_METACHARACTERS})
+    if metacharacters:
+        raise ValidationError(
+            f"grant action {action!r} contains fnmatch metacharacters "
+            f"({''.join(metacharacters)}); grants are concrete actions, not patterns"
+        )
+    if action not in ACTION_POLICY:
+        raise ValidationError(
+            f"unknown action {action!r}; grant actions must be declared in "
+            "ACTION_POLICY (see GET /v1/permissions/policy)"
+        )
 
 
 def _active_grants(session: Session, user_id: uuid.UUID) -> list[PermissionGrant]:
