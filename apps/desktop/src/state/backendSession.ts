@@ -10,6 +10,9 @@ interface BackendSessionStore {
   userId: string | null;
   message: string | null;
   expiresAt: string | null;
+  /** 401 失效轮次（外审 #27）：单调递增、不随 reset 归零——App 据此整池清
+   *  查询缓存（与显式 logout 的整池清空同语义）。 */
+  invalidations: number;
   setState: (state: {
     status: BackendSessionState;
     email?: string | null;
@@ -18,6 +21,7 @@ interface BackendSessionStore {
     message?: string | null;
     expiresAt?: string | null;
   }) => void;
+  invalidate: () => void;
   reset: () => void;
 }
 
@@ -32,6 +36,7 @@ const EMPTY = {
 
 export const useBackendSessionStore = create<BackendSessionStore>((set) => ({
   ...EMPTY,
+  invalidations: 0,
   setState: (state) => set({
     status: state.status,
     email: state.email ?? null,
@@ -40,5 +45,7 @@ export const useBackendSessionStore = create<BackendSessionStore>((set) => ({
     message: state.message ?? null,
     expiresAt: state.expiresAt ?? null,
   }),
+  // 计数单调（不进 EMPTY/reset）：0→N 每次变化都是一次失效事件
+  invalidate: () => set((state) => ({ invalidations: state.invalidations + 1 })),
   reset: () => set(EMPTY),
 }));
