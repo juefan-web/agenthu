@@ -136,7 +136,7 @@ def handle_focus_completed(session: Session, event: Event) -> None:
                 task.completed_at = event.timestamp
             else:
                 task.status = TaskStatus.IN_PROGRESS
-        _mark_confirmed_plan_items(session, task.id, actual)
+        _mark_confirmed_plan_items(session, task.id, actual, session_at=event.timestamp)
     _mark_state_dirty(session, event.user_id)
 
 
@@ -289,20 +289,76 @@ def _recent_episode_ids(
     return [str(row_id) for (row_id,) in rows]
 
 
+def _item_slot_distance(item: PlanItem, session_at: datetime) -> float:
+    """|slot - session| in seconds; slot-less items sort last (deterministic
+    fallback for manual plans that carry no planned_start/planned_end)."""
+
+    anchor = item.planned_start or item.planned_end
+    if anchor is None:
+        return float("inf")
+    return abs((anchor - session_at).total_seconds())
+
+
+def _nearest_plan_item(items: list[PlanItem], session_at: datetime) -> PlanItem | None:
+    """The item ONE focus session is attributed to (external review #8).
+
+    Prefer items not yet completed so consecutive sessions walk the chunks
+    of a split task instead of stacking on the first one; when every item
+    is already completed the nearest one still wins, so extra polish time
+    keeps accumulating somewhere (mirroring Task.actual_duration_minutes).
+    Slot-less items (manual plans) fall behind slotted ones and break ties
+    by creation time then ``order_index`` — the plan's own ordering is the
+    only meaningful sequence for items without a slot.
+    """
+
+    pending = [item for item in items if item.status != PlanItemStatus.COMPLETED]
+    candidates = pending or items
+    if not candidates:
+        # No confirmed plan items at all — focus without a plan is normal.
+        return None
+    return min(
+        candidates,
+        key=lambda item: (
+            _item_slot_distance(item, session_at),
+            item.created_at,
+            item.order_index,
+            item.id,
+        ),
+    )
+
+
 def _mark_confirmed_plan_items(
-    session: Session, task_id: object, actual_minutes: int | None
+    session: Session,
+    task_id: object,
+    actual_minutes: int | None,
+    *,
+    session_at: datetime,
 ) -> None:
+    """Nearest-slot accounting: one session lands on exactly one item.
+
+    A long task is split into several plan items (planner §3.1 blocks); the
+    old loop marked EVERY chunk COMPLETED and stacked the whole session's
+    minutes on each, N-counting one session in ``plan_item_ratios`` (the
+    estimate-learning sampler reads actual/planned per item — external
+    review #8). Chunks that were never worked stay PENDING instead of being
+    completed retroactively.
+    """
+
     stmt = (
         select(PlanItem)
         .join(Plan, PlanItem.plan_id == Plan.id)
         .where(PlanItem.task_id == task_id, Plan.status == PlanStatus.CONFIRMED)
     )
-    for item in session.scalars(stmt):
-        item.status = PlanItemStatus.COMPLETED
-        if actual_minutes is not None:
-            # Accumulated, mirroring Task.actual_duration_minutes so the plan
-            # item and the task never disagree about time spent.
-            item.actual_minutes = (item.actual_minutes or 0) + actual_minutes
+    items = list(session.scalars(stmt))
+    target = _nearest_plan_item(items, session_at)
+    if target is None:
+        return
+    target.status = PlanItemStatus.COMPLETED
+    if actual_minutes is not None:
+        # Accumulated across the sessions attributed to this item, mirroring
+        # Task.actual_duration_minutes so item and task never disagree about
+        # time spent.
+        target.actual_minutes = (target.actual_minutes or 0) + actual_minutes
 
 
 @register("task.*")
