@@ -126,7 +126,8 @@ main HEAD。理由：#5/#6/#7/#9/#13 恰在 E7-2/3/4b/5/7 断言面上，先跑
 
 ## 6. Backlog（M5 收口后）
 
-P2 待核余项（#20/#21/#23/#24/#30）与 P3 全清单按模块就近批量清；
+P2 待核余项（#21/#23/#24/#30）与 P3 全清单按模块就近批量清；
+（#20 已于 2026-10-11 随 #22 末轮移出——病灶/修法/验证见 §7 末条；）
 每项修前按本任务书 §1 同标准自证（复核过才修）。报告「需实测」节
 （桶版本化、部署拓扑、GBK 影响面、keyring 漫游、GitHub required
 status）转 E7 执行轮与部署演练的观察项。
@@ -293,3 +294,19 @@ status）转 E7 执行轮与部署演练的观察项。
   worker 卷重置。dev extras 加 PyYAML（钉子解析用）；.env.example 补
   生产形态指引。防线本体（config 默认 production + 弱密钥拒绝）既有
   测试不动——本件补的是「被执行形态」这层。
+
+- 2026-10-11 R3-A 末轮执行（#22+#20 搭车，分支 `fix/ci-test-gate-and-barrier-recheck`）：
+  #22 = `backend/scripts/ci_test_gate.py` 解析 junitxml（`pytest --junitxml`），
+  双不变量——passed ≥ floor（自锚 = 本 PR 落库后新总量 555 − 夜窗最深形态 8
+  （6×130+1×65+1×45 个 skip_late_night 调用点，协调人核差后裁定）= 547；
+  常量 `CI_TEST_FLOOR`/`CI_TEST_SKIP_CEILING` 入 ci.yml backend job env，锚随
+  套件增长而抬、禁为破绿下调）与 skipped ≤ 8（= 注册最深夜窗形态，两常量自洽）；闸门步在
+  Run tests 后执行，失败时上传 junit 工件。动因 = 本地实证「测试库下线 →
+  357 例整体跳过仍 33 秒绿」。钉子 ×7：wrapper 形解析 / floor 边界绿 /
+  夜窗 6 skip 绿 / 全跳双红（floor+ceiling 同红）/ ceiling 独立红 /
+  失败态报红 / main 红绿双态。#20 = data_operations.py 确认流在
+  `bump_data_generation` 行锁 + 异 key 幂等查（必 miss）之后、
+  `get_or_create_operation` 之前补 `matching_barrier` 锁后重查（异 key 输者
+  原可抬第二道栅栏双删）；确定性交错钉 ×1（monkeypatch 首查模拟「赢者未
+  提交时刻」，断言重查真跑（calls==2）+ 409 deletion_in_progress）。
+  #20 自 §6 Backlog 移出。backend 新总量预期 555 = 547 + 8（闸门 7 + 钉 1）。

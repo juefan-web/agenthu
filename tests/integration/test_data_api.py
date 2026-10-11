@@ -44,6 +44,7 @@ from backend.models.memory import Memory
 from backend.models.permission import PermissionGrant
 from backend.models.task import Task, task_events
 from backend.models.user import User
+from backend.services import data_lifecycle
 from backend.services import data_operations as ops
 from backend.services.data_closure import enumerate_closure
 from backend.services.data_registry import graph_version
@@ -675,6 +676,49 @@ class TestConfirmDeletion:
             },
             headers=auth_headers,
         )
+        assert response.status_code == 409
+        assert response.json()["error"]["code"] == "deletion_in_progress"
+
+    def test_interleaved_different_key_confirm_blocked_after_lock(
+        self, client, auth_headers, monkeypatch
+    ):
+        # #20: both confirms pass the pre-lock barrier check, the loser then
+        # waits on the users-row lock while a same-scope winner commits. The
+        # first matching_barrier call is masked to replay that stale moment;
+        # the post-lock re-check must still refuse — the idempotent lookup
+        # cannot converge this race (the keys differ), so without the
+        # re-check the loser would raise a second barrier and delete again.
+        event_id = _seed_event(client, auth_headers)
+        preview = _preview(
+            client, auth_headers, {"kind": "source", "source_kind": "event", "ids": [event_id]}
+        )
+        _confirm(client, auth_headers, preview, key="winner-key-1")
+        fresh = _preview(
+            client, auth_headers, {"kind": "source", "source_kind": "event", "ids": [event_id]}
+        )
+
+        real = data_lifecycle.matching_barrier
+        calls: list[int] = []
+
+        def stale_first_check(*args, **kwargs):
+            calls.append(1)
+            if len(calls) == 1:
+                return None  # the loser's pre-lock check, pre-winner-commit
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(data_lifecycle, "matching_barrier", stale_first_check)
+
+        response = client.post(
+            "/v1/data/deletions",
+            json={
+                "preview_id": fresh["id"],
+                "preview_digest": fresh["preview_digest"],
+                "client_request_id": "loser-key-1",
+                "confirmed": True,
+            },
+            headers=auth_headers,
+        )
+        assert len(calls) == 2  # the post-lock re-check really ran
         assert response.status_code == 409
         assert response.json()["error"]["code"] == "deletion_in_progress"
 
