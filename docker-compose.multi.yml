@@ -21,6 +21,15 @@
 # defaults to 8000 — the evidence range must coexist with both). For the
 # cross-process rate-limit evidence run, export a small AUTH_RATE_LIMIT_MAX
 # first (it interpolates into the api environment).
+#
+# Project name: this file re-pins `name: agenthu-multi` so the merged files
+# NEVER land in the dev project (base pins `name: agenthu`) — without this,
+# bringing this stack up would reconfigure the running dev db/redis/s3mock
+# (their port overrides here drop the host bindings) instead of coexisting
+# with it. The worker also drops the dev service's ./backend bind mount:
+# evidence runs the image baked from the committed tree, not host working
+# tree state.
+name: agenthu-multi
 services:
   # The evidence stack must coexist with the running dev stack: db/redis/
   # s3mock drop their host port bindings entirely (containers talk over the
@@ -35,7 +44,10 @@ services:
     ports: !override []
 
   otel-collector:
-    image: ${OTEL_COLLECTOR_IMAGE:-otel/opentelemetry-collector:0.116.0}
+    # 0.116.0 is unloadable on amd64 hosts (entrypoint exec fails with
+    # ENOENT on both the core and contrib images — missing ELF loader in
+    # the distroless root, D2 bring-up finding); 0.111.0 verified working.
+    image: ${OTEL_COLLECTOR_IMAGE:-otel/opentelemetry-collector:0.111.0}
     command: ["--config=/etc/otelcol/config.yaml"]
     volumes:
       # Evidence-grade config: detailed verbosity so cross-process trace
@@ -70,6 +82,12 @@ services:
       # image is unavailable upstream, same posture as ci-smoke); override
       # to point at a real MinIO when one is reachable.
       S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://s3mock:9090}
+      # Model provider face for the trace-linkage run: the worker's outbound
+      # /responses call must land in the same trace, so both processes point
+      # at the replay service the runbook starts on the host (E6 discipline:
+      # no live provider during evidence).
+      OPENAI_BASE_URL: ${E7_OPENAI_BASE_URL:-http://host.docker.internal:9099/v1}
+      OPENAI_API_KEY: ${E7_OPENAI_API_KEY:-e7-replay}
     # Base publishes a single host port; a ranged mapping lets both scaled
     # instances publish without colliding. 8100-8101, not 8000-8001: the
     # developer's llm_gateway holds 8000 in WSL and the dev api defaults to
@@ -87,3 +105,8 @@ services:
       OTEL_ENABLED: "true"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318/v1/traces
       S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://s3mock:9090}
+      OPENAI_BASE_URL: ${E7_OPENAI_BASE_URL:-http://host.docker.internal:9099/v1}
+      OPENAI_API_KEY: ${E7_OPENAI_API_KEY:-e7-replay}
+    # Evidence purity (see the header): run the baked image, not the dev
+    # service's ./backend bind mount.
+    volumes: !override []

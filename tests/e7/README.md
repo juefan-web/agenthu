@@ -82,3 +82,43 @@ B 侧库面抽查（修复轮起）：容器 `agenthu-db-1`/`agenthu-s3mock-1` �
 运行，`docker exec agenthu-db-1 psql -U agenthu -d agenthu_e7` 直连在档；
 API/worker 按 §2 环境块两条命令即起（A 会话进程存活期间
 `http://127.0.0.1:8011` 可直连）。
+
+## 6. E7-9 多进程栈（multi compose，项目 `agenthu-multi`）
+
+E7-9 的证据载体是 `docker-compose.yml` + `docker-compose.multi.yml` 合并
+形态：2 API（宿主 `127.0.0.1:8100/8101`，**非 8000-8001**——WSL 内
+llm_gateway 占 8000 是红线，端口覆写即为此冲突的冻结解法）+ 2 arq
+worker + OTel Collector（`127.0.0.1:4318`，debug exporter detailed，
+span 名/trace id 可直读 `docker logs`）。multi 文件把 `name:` 钉为
+`agenthu-multi`，栈与 dev 栈（项目 `agenthu`）隔离共存：multi 侧
+db/redis/s3mock 不发布宿主端口，dev 栈照常持有 5432/6379/9090。
+
+```bash
+# 起栈（E7-9 驱动会自己做；手工形态同此，compose >= 2.24，!override 需要）
+AUTH_RATE_LIMIT_MAX=6 docker compose -p agenthu-multi \
+  -f docker-compose.yml -f docker-compose.multi.yml --profile s3mock \
+  up -d --wait --scale api=2 --scale worker=2 \
+  migrate db redis s3mock otel-collector api worker
+
+# seed（镜像烤了 tests/；容器内走内网地址；bucket 需先建一次）
+docker compose -p agenthu-multi -f docker-compose.yml -f docker-compose.multi.yml \
+  exec -T api python -c "<boto3 head/create_bucket agenthu-e7 @ s3mock:9090>"
+docker compose -p agenthu-multi -f docker-compose.yml -f docker-compose.multi.yml \
+  exec -T -e E7_DATABASE_URL=postgresql+psycopg://agenthu:agenthu@db:5432/agenthu \
+  -e E7_REDIS_URL=redis://redis:6379/0 -e S3_ENDPOINT_URL=http://s3mock:9090 \
+  -e S3_ACCESS_KEY=agenthu -e S3_SECRET_KEY=agenthu123 -e S3_BUCKET=agenthu-e7 \
+  api python -m tests.e7.seed
+
+# 限流账本清零（滑窗确定性）；provider 面接宿主 e6-replay（:9099，须先起）
+docker compose -p agenthu-multi -f docker-compose.yml -f docker-compose.multi.yml \
+  exec -T redis sh -c "redis-cli --scan --pattern 'rl:*' | xargs -r redis-cli DEL"
+node apps/desktop/tests/e2e/e6-replay.mjs &   # 容器内经 host.docker.internal 访问
+
+# 证据面：collector/api/worker 的 docker logs --since <起栈时刻> + 审计表
+# 拆栈（确认收口后）：docker compose -p agenthu-multi ... down -v
+```
+
+注意：worker 的 dev bind mount 在 multi 形态被 `!override []` 撤除——证据
+栈跑镜像里烤进的已提交代码，不跑宿主工作树；api/worker 的
+OPENAI_BASE_URL 默认指 `host.docker.internal:9099/v1`（e6-replay 假件，
+沿用「证据期不接活 provider」纪律）。

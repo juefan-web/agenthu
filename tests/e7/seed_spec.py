@@ -646,7 +646,18 @@ def _build_user(world: World, tag: str) -> None:
                 "task_id": str(t1),
             },
             "decision_basis": {
-                "references": [{"kind": "event", "id": str(e1)}, {"kind": "task", "id": str(t1)}]
+                # Current DecisionBasis schema (M4 structured-basis slice):
+                # basis_version/summary and per-reference labels are required
+                # — the messages serializer validates the run's basis, and
+                # the old bare-references shape 500s it (D2 bring-up find).
+                # No new marker() calls here on purpose: token allocation is
+                # sequential, and inserting any would shift every later token.
+                "basis_version": "e7-1",
+                "summary": "按作业事件与任务给出建议",
+                "references": [
+                    {"kind": "event", "id": str(e1), "label": "作业 deadline 事件"},
+                    {"kind": "task", "id": str(t1), "label": "作业任务"},
+                ],
             },
             "tool_calls": [{"name": "task.create", "args_hash": "0" * 64}],
             "result": {"reply": f"建议先读讲义 {m(tag, 'r1.result')}"},
@@ -1184,8 +1195,16 @@ EXPECTATIONS: dict[str, CaseExpectation] = {
     "E7-9": CaseExpectation(
         case_id="E7-9",
         title="2API+2worker 共享限流/恢复、trace 链、敏感 marker 扫描",
-        operations=("待 P0-5 观测面落地后执行",),
-        blocked_by="P0-5",
+        operations=(
+            "multi 栈（项目 agenthu-multi，api 127.0.0.1:8100/8101 + collector "
+            "4318，--scale api=2 worker=2）容器内 seed 同一 E7 世界 → "
+            "ping/chat 跨进程流量 → 限流两 API 交替锤击 → redis 停启断供面 → "
+            "collector/api/worker 容器日志 + 审计表 marker 扫描",
+        ),
+        # 无 count_deltas/minimums（op-4 注记）：E7-9 的世界在 multi 栈独立
+        # db 上，单栈 verifier 不可达；本案的「计数」= 驱动侧限流边界
+        # （allowed==MAX-1、两端口均见 429）、拓扑计数（2+2）与扫描零命中，
+        # 全部落在驱动断言与 output/e7/<round>/E7-9/verify.json。
         invariants=("shared_rate_limit_not_doubled", "trace_linkage", "no_markers_in_telemetry"),
     ),
     "E7-10": CaseExpectation(
