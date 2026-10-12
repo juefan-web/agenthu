@@ -53,8 +53,12 @@ export AGENTHU_E7_STACK=1 AGENTHU_E7_BACKEND_URL=http://127.0.0.1:8011
 # 门控套件（每用例自带 fresh world；证据落 output/e7/<round>/<case>/）
 ./.venv/Scripts/python.exe -m pytest tests/e7/cases -v
 
-# 逐 case 核账（驱动内已跑；独立复核用）
-./.venv/Scripts/python.exe -m tests.e7.verify --case E7-3a --report output/e7/smoke/E7-3a/verify-standalone.json
+# 单案独立复核 = 重跑该 pytest 案本身：自带 fresh world + 动作 + 案内
+# verify，证据照常落 output/e7/<round>/<案>/。CLI verify 仅保留
+# --baseline——旧「--case 对当前库核账」形态已撤（D1 裁定）：case 期望
+# 是动作后终态账，只对该案自己驱动的世界成立；对套件终末世界或任何
+# 其他案的世界结构性必红（r1 假红的根因，示例恰是必红的 E7-3a）。
+./.venv/Scripts/python.exe -m pytest "tests/e7/cases/test_e7_3_source_deletion.py::test_e7_3a_delete_anchored_event_whole_deletes_derived_task" -v
 ```
 
 ## 4. 纪律
