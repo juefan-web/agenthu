@@ -9,7 +9,13 @@ pack must grow with the registry (m5-e7-acceptance §3 "owner限制先于内容
 Usage::
 
     python -m tests.e7.verify --baseline
-    python -m tests.e7.verify --case E7-3a --report output/e7/r1/E7-3a/verify.json
+
+The CLI is baseline-only by design: case expectations are post-action
+terminal-state accounts, meaningful only against that case's own driven
+world (each pytest case re-seeds, acts and verifies internally — that
+re-run IS the standalone per-case form). A ``--case`` read against
+whatever world happens to be live is structurally false-red; the r1
+process account removed it.
 """
 
 from __future__ import annotations
@@ -370,9 +376,9 @@ class E7Verifier:
             raise RuntimeError(f"case {case_id} is blocked by {raw['blocked_by']}")
         expectation = CaseExpectation(
             object_expectations=tuple(
-                ObjectExpectation(**obj) for obj in raw.pop("object_expectations")
+                ObjectExpectation(**obj) for obj in raw.get("object_expectations", ())
             ),
-            **raw,
+            **{key: value for key, value in raw.items() if key != "object_expectations"},
         )
         report = VerifyReport(mode="case", case_id=case_id)
         before = self.manifest["before_counts"]
@@ -567,9 +573,7 @@ class E7Verifier:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--baseline", action="store_true")
-    group.add_argument("--case", metavar="CASE_ID")
+    parser.add_argument("--baseline", action="store_true", required=True)
     parser.add_argument("--report", type=Path, default=None)
     args = parser.parse_args(argv)
 
@@ -588,7 +592,7 @@ def main(argv: list[str] | None = None) -> int:
     engine = create_engine(os.environ["E7_DATABASE_URL"])
     manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
     verifier = E7Verifier(engine, manifest)
-    report = verifier.baseline() if args.baseline else verifier.case(args.case)  # type: ignore[arg-type]
+    report = verifier.baseline()
 
     rendered = json.dumps(report.to_dict(), ensure_ascii=False, indent=2)
     if args.report:

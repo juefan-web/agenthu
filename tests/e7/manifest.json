@@ -518,7 +518,14 @@
           "memories": -2
         }
       },
-      "count_minimums": {},
+      "count_minimums": {
+        "U": {
+          "data_operations": 1,
+          "data_previews": 1,
+          "data_barriers": 1,
+          "data_cleanup_items": 1
+        }
+      },
       "marker_absence": [
         "m2b.content",
         "m2a.content"
@@ -549,7 +556,8 @@
       "count_deltas": {
         "U": {
           "events": -1,
-          "memories": -2
+          "memories": -2,
+          "current_states": -1
         }
       },
       "count_minimums": {
@@ -718,12 +726,16 @@
       "title": "被删来源重采不复活；解除后重授权可复用（server 面）",
       "operations": [
         "删除 e1 → 同 upstream 重采（新 client_event_id）→ 409 source_deleted",
-        "release_source_suppressions → 同 upstream 重采 → 201 新行（无 HTTP 路由——P0-6 触发面或进程内调用）",
+        "release_source_suppressions → 同 upstream 重采 → 201 新行（无 HTTP 路由——D1 驱动走进程内调用）",
         "换账号守卫/离线队列/Stronghold 等客户端面按 E7-7 预登记注记执行"
       ],
       "count_deltas": {
         "U": {
-          "events": 0
+          "events": 0,
+          "tasks": -1,
+          "focus_sessions": -1,
+          "current_states": -1,
+          "audit_logs": 1
         }
       },
       "count_minimums": {
@@ -763,7 +775,8 @@
       ],
       "count_deltas": {
         "U": {
-          "permission_grants": 0
+          "permission_grants": 1,
+          "audit_logs": 7
         }
       },
       "count_minimums": {},
@@ -774,7 +787,7 @@
       "object_expectations": [],
       "redis_absence": [],
       "retained": [
-        "既有 pg1 保留；新 grant 走 API 创建后撤销（净 0）",
+        "既有 pg1 保留（pre-guard legacy 行）；新 grant（notify.push）创建后软撤销，D-034 留行 → +1",
         "consent 行数不变（状态翻转）"
       ],
       "invariants": [

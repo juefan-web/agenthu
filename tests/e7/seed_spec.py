@@ -962,6 +962,18 @@ EXPECTATIONS: dict[str, CaseExpectation] = {
         title="忘记 L2 最新版 m2b：superseded 旧版不复活",
         operations=("U 对 m2b 执行整链忘记（lifecycle）",),
         count_deltas={"U": {"memories": -2}},
+        # D1 预跑注册（op-4 随驱动落；与 E7-3/E7-4b 同形流的账本族下限）：
+        # memory 整链忘记同样经 preview/confirm 走 data lifecycle——
+        # operation/preview/barrier/cleanup 行存在性按下限注册；memory
+        # kind 无事件锚，无 suppression（同形先例中仅 event 锚注册）。
+        count_minimums={
+            "U": {
+                "data_operations": 1,
+                "data_previews": 1,
+                "data_barriers": 1,
+                "data_cleanup_items": 1,
+            }
+        },
         marker_absence=("m2b.content", "m2a.content"),
         vector_absence=("U:m2b",),
         live_key_absence=("U:E7-U-l2-key",),
@@ -975,7 +987,9 @@ EXPECTATIONS: dict[str, CaseExpectation] = {
         # D-036 §1 相悖——m2a/m2b 的血缘（source_event_ids 与 evidence 包含
         # 包含）本就把 e5 带进闭包；「L2 样本不足 → 整链清理」：e5 删除
         # 后该 subject key 样本不足，m2b（live）+ m2a（历史）整链删除。
-        count_deltas={"U": {"events": -1, "memories": -2}},
+        # D1 预跑对账（op-4 随驱动落）：事件锚整删同样清 U 的投影行
+        # （E7-3a 注册面同机制：fence 拥有闭包后重算，终态零行）。
+        count_deltas={"U": {"events": -1, "memories": -2, "current_states": -1}},
         # e5 是事件锚删除，与 E7-3a 同形流：五族账本按同形先例注册下限
         # （events 有锚 → suppressions +1）。
         count_minimums={
@@ -1100,17 +1114,30 @@ EXPECTATIONS: dict[str, CaseExpectation] = {
         operations=(
             "删除 e1 → 同 upstream 重采（新 client_event_id）→ 409 source_deleted",
             # release 今无 HTTP 路由（write_guards §4 路由矩阵有意不设，
-            # acceptance 文档已锚 P0-6 触发面）：执行轮驱动等 P0-6 路由
-            # 或进程内调服务，二选一随驱动定并在此注记更新。
+            # acceptance 文档已锚 P0-6 触发面）：D1 驱动定为进程内调服务
+            # （同一验收库、同一服务函数；P0-6 路由落地后驱动再改走路由）。
             "release_source_suppressions → 同 upstream 重采 → 201 新行"
-            "（无 HTTP 路由——P0-6 触发面或进程内调用）",
+            "（无 HTTP 路由——D1 驱动走进程内调用）",
             "换账号守卫/离线队列/Stronghold 等客户端面按 E7-7 预登记注记执行",
         ),
         # Net zero: -1 delete then +1 re-import after release. The new row
         # is a NEW event id with fresh content markers, so no U marker may
         # be asserted absent at the end state; the intermediate rejection
-        # is a driver-level hard assert.
-        count_deltas={"U": {"events": 0}},
+        # is a driver-level hard assert. The in-process release writes its
+        # own durable audit row (data.suppression_released, kind+count
+        # only) — pre-run reconciliation with the D1 driver (E7-4b
+        # precedent): audit_logs +1. E7-7 的删除目标就是 e1——与 E7-3a
+        # 同一锚，其派生闭包扇出（锚定 task t1 整删含 fs1 级联、投影行
+        # 清零）按 E7-3a 已注册面同机制记账（D1 预跑对账）。
+        count_deltas={
+            "U": {
+                "events": 0,
+                "tasks": -1,
+                "focus_sessions": -1,
+                "current_states": -1,
+                "audit_logs": 1,
+            }
+        },
         # 删除流与 E7-4b 同形（五族账本）；suppressions 的 release 是
         # UPDATE 置 released_at（durable 账本不删行，write_guards），终态
         # ≥1 而非 0——删除 e1 的 +1 不会被 release 抵消。
@@ -1139,9 +1166,17 @@ EXPECTATIONS: dict[str, CaseExpectation] = {
             "L2 不被通知 L3 绕过；quiet hours/daily budget 独立生效",
             "notification.delivered 仅预算结算，不当远程已读",
         ),
-        count_deltas={"U": {"permission_grants": 0}},
+        # Pre-run reconciliation with the D1 driver (E7-4b precedent):
+        # plan.auto_send（pg1）不在 ACTION_POLICY——创建面拒绝（外审 #11
+        # guard），唯一 AUTO 级通知动作是 notify.push；新 grant 走 API 创建
+        # 后撤销，D-034 软撤销留行 → permission_grants +1（净 0 不可达）。
+        # 审计账：每次 /permissions/check 恰写一行 permission.check
+        # （3 次），每次 settle 恰写一行 notification.*（4 次：3 抑制 +
+        # 1 delivered）→ audit_logs +7。
+        count_deltas={"U": {"permission_grants": 1, "audit_logs": 7}},
         retained=(
-            "既有 pg1 保留；新 grant 走 API 创建后撤销（净 0）",
+            "既有 pg1 保留（pre-guard legacy 行）；新 grant（notify.push）"
+            "创建后软撤销，D-034 留行 → +1",
             "consent 行数不变（状态翻转）",
         ),
         invariants=("grant_revocation_blocks_send",),
