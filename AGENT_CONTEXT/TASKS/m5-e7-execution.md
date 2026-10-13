@@ -207,3 +207,20 @@ B 轮证据包、B 核 A 轮证据包，机械对照 manifest 与 runbook 口径
   - 验证（d2-dev7/d2-full1）：门控 12p+1 blocked-skip（E7-9 与
     11 案共存，无单栈扰动）；逐案 verify.json ok；CI 形状 555 恒
     总量、门脚本 exit 0；ruff/format/pyright 全 0。
+  - **观察撤回（10-13，协调人指令；A 的 #110 流程观察被 API 权威
+    记录证伪）**：A 曾报告「#110 于 reviews=0 状态被合并」——失实。
+    API 实据（REST `pulls/110/reviews` 与按 review id 直查双路同证）：
+    review **5493002697**，juefan-web，APPROVED，head `f2d9875`，
+    提交 2026-10-12T15:42:16Z；merge 15:43:59Z——**批准先于合并
+    103 秒落库**。A 的「reviews=0」属假读（本机 graphql 通道空读，
+    同 Git Bash 拒连 / 198.18 假 IP 代理病族），且未换路径复 query
+    即升级为流程指控；该失实陈述曾入 A 的过程报告与记忆，未曾入
+    本节（更正时点本节首次记录）。**新规（本事件 crystallize，
+    协调人裁定入台账）**：载荷级查询的「意外的空/零结果」必须换
+    路径立即复 query 才能成为断言——尤其流程违规指控必须附当时的
+    原始 API 捕获。与 B 的 graphql EOF、协调人 jq 误写同族：本网络
+    环境下空读不等于事实。
+  - **alpha compose 同病钉版（协调人裁定采纳，随 #111 落）**：
+    `docker-compose.alpha.yml` collector 默认 tag 同为坏 `0.116.0`，
+    与 multi 同缺陷类，一行改钉 `0.111.0` 随本 PR 带上并披露，免开
+    专属 PR。
