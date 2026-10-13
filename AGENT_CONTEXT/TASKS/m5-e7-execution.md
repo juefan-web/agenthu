@@ -224,3 +224,55 @@ B 轮证据包、B 核 A 轮证据包，机械对照 manifest 与 runbook 口径
     `docker-compose.alpha.yml` collector 默认 tag 同为坏 `0.116.0`，
     与 multi 同缺陷类，一行改钉 `0.111.0` 随本 PR 带上并披露，免开
     专属 PR。
+- **2026-10-13 D3 交付记录（A，随件转录）**：
+  - 四断言真实现（`tests/e7/cases/test_e7_10_recovery_gates.py`）：
+    ① 旧 key 拒/新 key 可用——假件轮换语义：scratch 库
+    `agenthu_e7_10_rotate` 上 K_old 进程(:8112) 铸 JWT → 切 K_new
+    (:8113) → 旧 JWT /auth/me 与 /events 双面 401 unauthenticated、
+    新登录读通（200/200，scratch 用户注册于该库，案末 DROP）。
+    ② restore 先重放抑制——源栈 seed 后 pg_dump（删除前备份）→ 删
+    e1（真实 preview/confirm）→ 抑制账本 + data_generation 独立导出
+    （ledger.json，值键行无 users FK——DataSuppression 表设计本就
+    支持单表重放）→ 隔离库 `agenthu_e7_10_restore` 恢复 → **重放先于
+    起栈**（时序断言 t_replay < t_traffic）→ 维护性重删走真实闭包
+    执行器 → 放行业务流量。③ 隔离恢复无复活——恢复前实拍危害面
+    （e1 行 + marker 在档），起栈后同锚新 envelope（新 client_event_id
+    + 新 semantic_version → dedupe 不可能命中，只有抑制网能答）409
+    `source_deleted`；恢复库运行期 data_operations=1（仅维护重删）；
+    Redis 永不恢复（db5 案内清空后断言零键、arq 队列 LLEN=0）。
+    ④ RPO/RTO 实测（d3-full3 记录轮）——RPO 7.9s / RTO 31.0s（备份
+    1.0s / 导入 3.4s / 重放 0.02s / 维护重删 27.3s），窗口变更账
+    op/preview/cleanup/barrier/suppression = 1/1/6/1/1；Alpha 目标
+    （RPO≤24h/RTO≤4h）为契约拟目标，不作 SLO 声明。
+  - license 门 = 分项 2 引用对账：驱动断言库内终态在案（inventory
+    零红旗/封印/阻断规则/用户裁定 + README 临时公开封印段 +
+    THIRD_PARTY_NOTICES 逐文件结论），不重新普查；真实 key 轮换证据位
+    如实登记「未提供」（分项 3，acceptance §2 尾注）。
+  - 四项 BLOCKED_INVARIANTS 与 stub 替换同 hunk 移入
+    DRIVER_INVARIANTS（manifest + verify + seed_spec 三面同 PR）；
+    BLOCKED_INVARIANTS 自此为空（分支保留 fail-closed 形状）。源栈
+    活面 = 锚定整删 e1，与 E7-3a 同一动作，deltas 镜像其预登记；
+    未加任何新 marker() 调用（token 顺序分配纪律）。
+  - **发现①（提请裁定，未修——D 批零产品码纪律）**：抑制锚
+    `upstream_hmac` 与 receipt 能力密封（delivery keystream）都以
+    `settings.secret_key` 为键（write_guards.py `upstream_hmac` /
+    data_recovery.py 密封派生）——轮换 SECRET_KEY 会使已存 HMAC 全部
+    失配，抑制网静默失效（已删锚可重采复活），除非配套 digest 重算
+    迁移。恢复演练因此必须沿用同 key（驱动与 runbook §7 已注记）。
+    建议 M5 后 backlog 或单开修复轮裁定。
+  - **发现②（如实披露，恢复程序形态）**：运维契约 §6「重放抑制/清理」
+    的清理腿无 pre-traffic 系统机制（抑制腿有值键表设计支撑）——驱动
+    以恢复窗口内维护性重删（真实闭包执行器、放行声明前完成）落「无
+    已删内容」，属 runbook 级流程而非系统 gate；调度人可裁定是否
+    要求后续系统化（如恢复模式维护门）。
+  - **过程账（2 笔，非凑数）**：d3-full1 E7-10 假红——案内 redis db5
+    只断言空未清零，前轮残留 arq:result 键（修=案内 FLUSHDB 后再断言，
+    d3-dev2 单案绿）；d3-full2 E7-9 摔于 up --wait 起栈竞态（compose
+    重建 redis 期间 worker 连接超时 exit(1)，arq 启动无重试容忍——与
+    单栈 WinError 121 同族），手动复位后 d3-full3 全绿；E7-9 起栈容错
+    加固未并入 D3（范围纪律），随件提请裁定。中途一次 manifest 钉单测
+    红：RUF001 修 seed_spec 文本后未重生成 manifest，钉如实抓到，重生成
+    后绿（555 恒总量不破）。
+  - 验证：d3-dev2 单案绿（83.9s）+ d3-full3 门控 13p+0s（566.7s）；
+    逐案 verify.json ok（E7-10 68 检查、E7-9 六面 True）；CI 形状
+    554p+1s=555 恒总量、门脚本 exit 0；ruff/format/pyright 全 0。

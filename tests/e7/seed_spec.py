@@ -1209,10 +1209,40 @@ EXPECTATIONS: dict[str, CaseExpectation] = {
     ),
     "E7-10": CaseExpectation(
         case_id="E7-10",
-        title="迁移恢复/隔离备份恢复/配置与 key/许可门",
-        operations=("待 P0-6 恢复/发布门就绪后执行",),
-        blocked_by="P0-6",
+        title="恢复演练/隔离恢复不复活/key 轮换/许可门（机制面）",
+        operations=(
+            "license 门引用对账（读库内终态文档，不重新普查）→ key 轮换假件语义"
+            "（隔离 scratch 栈 K_old→K_new：旧 JWT 401 / 新 JWT 业务读通）→ "
+            "源栈 pg_dump 备份（删除前）→ 删锚定事件 e1（真实 preview/confirm）→ "
+            "抑制账本+data_generation 独立导出（值键行，无 users FK）→ 隔离库恢复 "
+            "→ 先重放抑制再起栈 → 维护性重删（真实闭包执行器）→ 放行业务流量 → "
+            "同锚新 envelope 重采 409；Redis 永不恢复；全程计时记 RPO/RTO",
+        ),
+        # 源栈活面 = 锚定整删 e1（与 E7-3a 同一动作，deltas 因此镜像）；四项
+        # 机制不变量落在驱动自管的隔离栈（恢复库 :8013、轮换 scratch 库
+        # 8112/8113）与仓库文件引用面，单栈 verifier 不可达（E7-9 先例，
+        # DRIVER_INVARIANTS 形态）。op-4 注记：无额外 count 面——RPO/RTO、
+        # 重放行数、恢复库运行期操作数=1（仅维护重删）都在驱动断言与
+        # output/e7/<round>/E7-10/ 证据件。
+        count_deltas={"U": {"events": -1, "tasks": -1, "focus_sessions": -1, "current_states": -1}},
+        count_minimums={
+            "U": {
+                "data_operations": 1,
+                "data_previews": 1,
+                "data_barriers": 1,
+                "data_suppressions": 1,
+                "data_cleanup_items": 1,
+            }
+        },
+        marker_absence=("e1.title", "t1.title", "fs1.deviation"),
+        retained=(
+            "e4（manual 无锚）与 t3 存活、V 不变——同 E7-3a 形态",
+            "恢复库/轮换库为驱动自管独立库，不计入单栈账",
+            "真实 key 轮换证据位=未提供（分项 3，replay 不充数）",
+        ),
         invariants=(
+            "cleanup_ledger_drained",
+            "invalid_basis_no_original_text",
             "restore_replays_suppression",
             "rpo_rto_measured",
             "old_key_rejected_new_key_works",

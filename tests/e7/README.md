@@ -122,3 +122,28 @@ node apps/desktop/tests/e2e/e6-replay.mjs &   # 容器内经 host.docker.interna
 栈跑镜像里烤进的已提交代码，不跑宿主工作树；api/worker 的
 OPENAI_BASE_URL 默认指 `host.docker.internal:9099/v1`（e6-replay 假件，
 沿用「证据期不接活 provider」纪律）。
+
+## 7. E7-10 恢复演练 / key 轮换 / 许可门（驱动自管栈）
+
+E7-10 机制面由驱动自管三个短命栈（`tests/e7/cases/test_e7_10_recovery_gates.py`），
+宿主前置：`agenthu-db-1`（pg_dump/psql 演练面）、`agenthu-e7-redis`（:6380）
+与 s3mock 运行中，源栈（§2，:8011）照常；**端口 8013 / 8112 / 8113 须空闲**。
+
+- **key 轮换（假件语义）**：scratch 库 `agenthu_e7_10_rotate` + redis db 6；
+  K_old 进程 :8112 铸旧 JWT → 切 K_new 进程 :8113 → 旧 JWT 全业务面 401、
+  新登录读通。库随案 DROP。
+- **恢复演练**：源栈 seed 后 `pg_dump`（删除前备份）→ 删 e1 → 抑制账本 +
+  data_generation 独立导出（`ledger.json`，值键行无 users FK——表设计本就
+  支持单表重放）→ 备份恢复进隔离库 `agenthu_e7_10_restore` → **先重放抑制
+  再起栈**（:8013 api + worker，redis db 5 全新——Redis 永不恢复）→ 维护性
+  重删走真实闭包执行器 → 放行业务流量 → 同锚新 envelope 409。备份件
+  `backup.sql`/`ledger.json` 落 `output/e7/<round>/E7-10/`（gitignored）。
+- **恢复栈必须沿用源栈 SECRET_KEY**：抑制锚 `upstream_hmac` 与 receipt 能力
+  密封都以 server secret 为键（write_guards.py / data_recovery.py）——key
+  轮换需配套 digest 迁移方案，驱动级发现已录任务书 §7。
+- **许可门 = 引用对账**（分项 2）：驱动只断言库内终态文档在案
+  （license-inventory 零红旗/封印/阻断规则、README 临时公开封印段、
+  THIRD_PARTY_NOTICES 逐文件结论），不重新普查；真实 key 轮换证据位
+  如实登记「未提供」（分项 3）。
+- RPO/RTO 为演练实测墙钟（备份→故障→恢复→重放→放行），Alpha 目标
+  （RPO≤24h/RTO≤4h）是契约拟目标，不作 SLO 声明。

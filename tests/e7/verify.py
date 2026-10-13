@@ -97,18 +97,21 @@ DRIVER_INVARIANTS = frozenset(
         "shared_rate_limit_not_doubled",
         "trace_linkage",
         "no_markers_in_telemetry",
-    }
-)
-
-# Invariants that need a P0-6 surface; never silently green.
-BLOCKED_INVARIANTS = frozenset(
-    {
+        # E7-10 (D3): asserted by the recovery-gates driver on its own
+        # stacks (scratch rotate db, isolated restore db) and via repo-file
+        # reference for the license gate — all unreachable by the
+        # single-stack verifier, same driver-asserted form as E7-9.
         "restore_replays_suppression",
         "rpo_rto_measured",
         "old_key_rejected_new_key_works",
         "license_cleared",
     }
 )
+
+# Invariants that still need an unlanded surface; never silently green.
+# Empty since D3 (E7-10 was the last blocked case): the branch below stays
+# so a future pre-registered blocked surface fails closed, not silently.
+BLOCKED_INVARIANTS: frozenset[str] = frozenset()
 
 _LIVE_MEMORY_PREDICATE = (
     "supersedes_id IS NULL AND valid_to IS NULL AND (valid_from IS NULL OR valid_from <= now())"
