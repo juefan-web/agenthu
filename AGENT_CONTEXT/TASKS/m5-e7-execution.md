@@ -274,5 +274,53 @@ B 轮证据包、B 核 A 轮证据包，机械对照 manifest 与 runbook 口径
     红：RUF001 修 seed_spec 文本后未重生成 manifest，钉如实抓到，重生成
     后绿（555 恒总量不破）。
   - 验证：d3-dev2 单案绿（83.9s）+ d3-full3 门控 13p+0s（566.7s）；
-    逐案 verify.json ok（E7-10 68 检查、E7-9 六面 True）；CI 形状
-    554p+1s=555 恒总量、门脚本 exit 0；ruff/format/pyright 全 0。
+    逐案 verify.json ok（E7-10 68 检查、E7-9 六面 True）；远端 CI
+    555p+0s=555 恒总量（分支仅 4 run 全在 head 275adad，两 gate 行
+    一致，B 独立核）、门脚本 exit 0；ruff/format/pyright 全 0。
+    （初转录误记本地重放形态 554p+1s 为 CI，更正与出处见下条。）
+- **2026-10-13 #112 修正 push 记录（A，B 审 must-fix + 调度人裁定三项）**：
+  - **CI 记录更正（③）**：554p+1s 不是任何 Actions run——出处是本地
+    CI 形状重放：本地 shell 未导出 `S3_ENDPOINT_URL`（ci.yml 仅在
+    远端导出并指向 s3mock:9090），storage 用例 fixture skip×1。
+    修正轮 `-rs` 逐字捕获为证：
+    `SKIPPED [1] tests\integration\test_storage_s3.py:40:
+    S3_ENDPOINT_URL is not set` → 本地 554p+1s、门 ok exit 0；远端
+    两 run gate 行均 `555 passed, 0 skipped (floor 547, skip
+    ceiling 8)`。#112 的 CI 记录以远端为准：555p+0s，总量 555
+    恒定不受影响（本地重放缺的只是环境变量，不是用例缺席）。
+  - **原则句转录（④，B 的 D1 漏检自披露与 staging 误报同课同记：
+    截断面不等于全体）**：冻结前，任何进入 r1' verify.json 的不变量
+    名必须有同驱动断言位点。「不变量名 ↔ 断言位点」交叉自本轮起升
+    为标准查点（verify.py DRIVER 分支的 passed=True 只说明名单在册，
+    不构成证据；证据 = 驱动内可定位的断言行）。
+  - **must-fix 补断言（①②，三处同 PR，均为补断言路径——不移名故
+    manifest 无需重生成）**：`invalid_basis_no_original_text` 自 D1 起
+    在 E7-3a/E7-4b 注册、本 PR 在 E7-10 第三处注册，均无断言位点
+    （B 审证据：cases/ 全目录 docstring 一处提及、零断言）。
+    E7-3a 与 E7-10（源栈面）补同面断言：锚定整删 e1 后
+    GET /v1/plans/{p1} 与 GET /v1/agent/runs/{r1} 仍 200 且仍供
+    失效引用（p1.basis.references == {e1,t1}、pi1.basis 同集、
+    pi1.task_id 为 NULL=FK SET NULL 失效标注、r1 面含 e1 id——
+    锚定「面确实在供失效 basis」，排除空转断言），同时响应体全文
+    扫 e1.title/t1.title marker 零命中（原文不供）。E7-4b 补
+    a1 面：GET /v1/material/answers（course_name=线性代数）仍供
+    a1.memory_ids 中的 m2b 悬空 id，响应体扫 m2a.content/m2b.content
+    marker 零命中（整链原文不供）。三处均落
+    invalid-basis-face.json 证据（只记 marker 名与布尔，token 不入
+    证据——脱敏纪律）。
+  - **过程账（1 笔，断言即生效的证明）**：新读面首次落跑即翻出
+    seed 行早于现行读契约——a1.citations 缺 D-031 证据形
+    checksum/span_start/span_end、r1/r2.provider 缺 capability、
+    r2.failure 缺 retryable/safe_message，两读面对任何读取都 500
+    （此前 E7 从未读过这两面，故 D1-D3 未暴露）。修正 = seed 行
+    补齐现行读契约（fixture 侧，零产品码）：a1 引 citation 用
+    f1 实算 checksum + 合成 span；r1 capability="tools"（带
+    tool_calls 的 SUCCEEDED 形）、r2 "none"+可重试 failure 形。
+    marker() 调用序未动（question/answer/quote 提升为局部量并加
+    序冻结注释）；manifest 钉 `--check` up-to-date（计数面零变化，
+    op-4 无违）。
+  - 验证（修正轮，d3fix-* round）：standalone E7-3/4 文件 5p
+    （143.9s）+ E7-10 单案 1p（81.7s）；全量门控 d3fix-full
+    13p+0s（568.8s，E7-9 multi 栈一次起绿）；invalid-basis-face
+    证据三处落档、recovery.json 源栈面在案；CI 形态重放 554p+1s
+    门 ok（skip 行逐字见上）；ruff/format/pyright 全 0。

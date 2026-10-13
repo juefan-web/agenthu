@@ -56,6 +56,41 @@ def test_e7_3a_delete_anchored_event_whole_deletes_derived_task(
     )
     settled = wait_operation(e7_api, headers, operation["id"])
     assert settled["status"] == "COMPLETED", settled
+
+    # Invalid-basis face (frozen criterion 失效basis不再有原文): the p1/pi1/r1
+    # survivors keep serving the dead e1/t1 ids as dangling references, but
+    # the deleted originals must be absent from every response body. The
+    # E7-10 driver mirrors this exact face for its own anchored delete.
+    plan_face = e7_api.get(f"/v1/plans/{e7_fresh_world.rid('U', 'p1')}", headers=headers)
+    assert plan_face.status_code == 200, plan_face.text
+    run_face = e7_api.get(f"/v1/agent/runs/{e7_fresh_world.rid('U', 'r1')}", headers=headers)
+    assert run_face.status_code == 200, run_face.text
+    task_id = str(e7_fresh_world.rid("U", "t1"))
+    plan_body = plan_face.json()
+    served_refs = {ref["id"] for ref in plan_body["basis"]["references"]}
+    assert served_refs == {event_id, task_id}, served_refs
+    pi1_face = next(
+        item for item in plan_body["items"] if item["id"] == str(e7_fresh_world.rid("U", "pi1"))
+    )
+    assert pi1_face["task_id"] is None  # FK SET NULL marks the basis invalid
+    assert set(pi1_face["basis"].values()) == {event_id, task_id}
+    assert event_id in run_face.text  # the run face still serves the dead id
+    leaked = [
+        name
+        for name in ("e1.title", "t1.title")
+        if e7_fresh_world.marker_names["U"][name] in plan_face.text + run_face.text
+    ]
+    assert not leaked, leaked
+    write_evidence(
+        "E7-3a",
+        "invalid-basis-face.json",
+        {
+            "plan_references_served": sorted(served_refs),
+            "pi1_task_link": None,
+            "run_face_serves_deleted_event_id": True,
+            "original_text_leaked_markers": leaked,
+        },
+    )
     write_evidence("E7-3a", "operation.json", settled)
 
     report = verify_report(e7_verifier, "E7-3a")

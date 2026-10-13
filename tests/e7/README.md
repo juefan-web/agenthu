@@ -132,12 +132,14 @@ E7-10 机制面由驱动自管三个短命栈（`tests/e7/cases/test_e7_10_recov
 - **key 轮换（假件语义）**：scratch 库 `agenthu_e7_10_rotate` + redis db 6；
   K_old 进程 :8112 铸旧 JWT → 切 K_new 进程 :8113 → 旧 JWT 全业务面 401、
   新登录读通。库随案 DROP。
-- **恢复演练**：源栈 seed 后 `pg_dump`（删除前备份）→ 删 e1 → 抑制账本 +
-  data_generation 独立导出（`ledger.json`，值键行无 users FK——表设计本就
-  支持单表重放）→ 备份恢复进隔离库 `agenthu_e7_10_restore` → **先重放抑制
-  再起栈**（:8013 api + worker，redis db 5 全新——Redis 永不恢复）→ 维护性
-  重删走真实闭包执行器 → 放行业务流量 → 同锚新 envelope 409。备份件
-  `backup.sql`/`ledger.json` 落 `output/e7/<round>/E7-10/`（gitignored）。
+- **恢复演练**：源栈 seed 后 `pg_dump`（删除前备份）→ 删 e1 →（源栈面即
+  断言 p1/pi1/r1 失效 basis 仍供悬空 id 但不再供 e1/t1 原文，E7-3a 同面）→
+  抑制账本 + data_generation 独立导出（`ledger.json`，值键行无 users FK
+  ——表设计本就支持单表重放）→ 备份恢复进隔离库 `agenthu_e7_10_restore` →
+  **先重放抑制再起栈**（:8013 api + worker，redis db 5 全新——Redis 永不
+  恢复）→ 维护性重删走真实闭包执行器 → 放行业务流量 → 同锚新 envelope
+  409。备份件 `backup.sql`/`ledger.json` 落
+  `output/e7/<round>/E7-10/`（gitignored）。
 - **恢复栈必须沿用源栈 SECRET_KEY**：抑制锚 `upstream_hmac` 与 receipt 能力
   密封都以 server secret 为键（write_guards.py / data_recovery.py）——key
   轮换需配套 digest 迁移方案，驱动级发现已录任务书 §7。

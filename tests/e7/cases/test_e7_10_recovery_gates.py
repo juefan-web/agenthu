@@ -386,6 +386,36 @@ def test_e7_10_recovery_rotation_and_restore_gates(
     assert settled["status"] == "COMPLETED", settled
     t_failure = time.monotonic()
 
+    # -- source-stack face: invalid bases must not serve the deleted
+    # originals (invalid_basis_no_original_text). The anchored e1 delete is
+    # the same action E7-3a freezes, so the same survivor faces apply here:
+    # p1/pi1/r1 keep serving the dead ids (the dangling references) while
+    # e1/t1 original text stays absent from every response body.
+    plan_face = e7_api.get(f"/v1/plans/{world.rid('U', 'p1')}", headers=headers)
+    assert plan_face.status_code == 200, plan_face.text
+    run_face = e7_api.get(f"/v1/agent/runs/{world.rid('U', 'r1')}", headers=headers)
+    assert run_face.status_code == 200, run_face.text
+    task_id = str(world.rid("U", "t1"))
+    plan_body = plan_face.json()
+    served_refs = {ref["id"] for ref in plan_body["basis"]["references"]}
+    assert served_refs == {event_id, task_id}, served_refs
+    pi1_face = next(item for item in plan_body["items"] if item["id"] == str(world.rid("U", "pi1")))
+    assert pi1_face["task_id"] is None  # FK SET NULL marks the basis invalid
+    assert set(pi1_face["basis"].values()) == {event_id, task_id}
+    assert event_id in run_face.text  # the run face still serves the dead id
+    leaked = [
+        name
+        for name in ("e1.title", "t1.title")
+        if world.marker_names["U"][name] in plan_face.text + run_face.text
+    ]
+    assert not leaked, leaked
+    evidence["faces"]["source-stack-invalid-basis"] = {
+        "plan_references_served": sorted(served_refs),
+        "pi1_task_link": None,
+        "run_face_serves_deleted_event_id": True,
+        "original_text_leaked_markers": leaked,
+    }
+
     # -- independent ledger export (value-keyed rows alone; no users FK) ---
     with e7_engine.connect() as conn:
         sup_rows = [

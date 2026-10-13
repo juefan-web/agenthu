@@ -494,6 +494,9 @@ def _build_user(world: World, tag: str) -> None:
         },
     )
 
+    # checksums stay reachable for the answer citation below (D-031
+    # evidence shape: the citation pins the file version it was read from).
+    file_checksums: dict[str, str] = {}
     for name, filename, course, page_count in (
         ("f1", "线性代数讲义.pdf", "线性代数", 2),
         ("f2", "数据结构作业.pdf", "数据结构", 2),
@@ -505,6 +508,8 @@ def _build_user(world: World, tag: str) -> None:
             f"E7 fixture blob {filename} {blob_marker}\n"
             f"{course} 讲义内容占位，供泄漏扫描使用。\n" * page_count
         ).encode()
+        checksum = hashlib.sha256(content).hexdigest()
+        file_checksums[name] = checksum
         world.blobs[key] = content
         world.blob_names[f"{tag}:{name}"] = key
         R(
@@ -517,7 +522,7 @@ def _build_user(world: World, tag: str) -> None:
                 "filename": filename,
                 "content_type": "application/pdf",
                 "size_bytes": len(content),
-                "checksum_sha256": hashlib.sha256(content).hexdigest(),
+                "checksum_sha256": checksum,
                 "status": "active",
                 "course_name": course,
             },
@@ -548,18 +553,36 @@ def _build_user(world: World, tag: str) -> None:
             },
         )
         world.vector_names.append(f"{tag}:{name}")
+    # question/answer/quote stay hoisted in this exact order — marker()
+    # allocates tokens sequentially, so the call order is frozen.
+    question = f"行列式有哪些性质？{m(tag, 'a1.question')}"
+    answer = f"见讲义第一页：行列式基本性质共五条 {m(tag, 'a1.answer')}"
+    quote = m(tag, "a1.quote")
     R(
         "material_answers",
         {
             "id": a1,
             "user_id": uid,
             "course_name": "线性代数",
-            "question": f"行列式有哪些性质？{m(tag, 'a1.question')}",
-            "answer": f"见讲义第一页：行列式基本性质共五条 {m(tag, 'a1.answer')}",
+            "question": question,
+            "answer": answer,
             "grounded": True,
             # citations carry file_id — the closure links answers via
             # citations[].file_id (data_closure), chunk_ids alone would not.
-            "citations": [{"file_id": str(f1), "page": 1, "quote": m(tag, "a1.quote")}],
+            # D-031 evidence shape: MaterialCitationRead requires checksum
+            # and spans — the invalid-basis faces GET this row over HTTP,
+            # so the seed must satisfy the live read contract (synthetic
+            # offsets; the quote token stays fixture-only).
+            "citations": [
+                {
+                    "file_id": str(f1),
+                    "checksum": file_checksums["f1"],
+                    "page": 1,
+                    "span_start": 0,
+                    "span_end": len(quote),
+                    "quote": quote,
+                }
+            ],
             "chunk_ids": [str(c1), str(c2)],
             "memory_ids": [str(m2b)],
             "model_version": "e7-synthetic-1",
@@ -640,7 +663,9 @@ def _build_user(world: World, tag: str) -> None:
             "runner_version": "e7-seed-1",
             "tool_registry_version": "e7-seed-1",
             "prompt_version": "e7-1",
-            "provider": {"name": "e7-synthetic", "model": "e7-synthetic-1"},
+            # capability is required by ProviderInfo (agent-run read face);
+            # a SUCCEEDED run carrying tool_calls reads as "tools".
+            "provider": {"name": "e7-synthetic", "model": "e7-synthetic-1", "capability": "tools"},
             "context_snapshot": {
                 "summary": f"正在准备线性代数作业 {m(tag, 'r1.snapshot')}",
                 "task_id": str(t1),
@@ -680,9 +705,17 @@ def _build_user(world: World, tag: str) -> None:
             "runner_version": "e7-seed-1",
             "tool_registry_version": "e7-seed-1",
             "prompt_version": "e7-1",
-            "provider": {"name": "e7-synthetic", "model": "e7-synthetic-1"},
+            # Failed run: the failure path's capability face is "none"
+            # (agent_runner deterministic-failure shape).
+            "provider": {"name": "e7-synthetic", "model": "e7-synthetic-1", "capability": "none"},
             "context_snapshot": {"summary": m(tag, "r2.snapshot")},
-            "failure": {"code": "provider_unavailable", "message": "synthetic"},
+            # RunFailure contract: retryable + safe_message required on the
+            # read face; provider_unavailable is the retryable family.
+            "failure": {
+                "code": "provider_unavailable",
+                "retryable": True,
+                "safe_message": "synthetic provider unavailable",
+            },
             "started_at": at(210),
             "finished_at": at(211),
         },

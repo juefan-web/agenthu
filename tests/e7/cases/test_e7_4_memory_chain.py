@@ -68,6 +68,38 @@ def test_e7_4b_delete_source_event_drains_l2_chain(e7_api, e7_fresh_world, e7_ve
     e6_read = e7_api.get(f"/v1/events/{e7_fresh_world.rid('U', 'e6')}", headers=headers)
     assert e6_read.status_code == 200, e6_read.text
 
+    # Invalid-basis face (invalid_basis_no_original_text): the surviving
+    # grounded answer a1 still serves its dangling memory reference (m2b's
+    # id in memory_ids — the chain row is gone), but the deleted chain's
+    # original text must be absent from the answer face.
+    answers_face = e7_api.get(
+        "/v1/material/answers",
+        params={"course_name": "线性代数"},
+        headers=headers,
+    )
+    assert answers_face.status_code == 200, answers_face.text
+    a1_face = next(
+        item
+        for item in answers_face.json()["items"]
+        if item["id"] == str(e7_fresh_world.rid("U", "a1"))
+    )
+    memory_ids = {str(value) for value in a1_face["memory_ids"]}
+    assert str(e7_fresh_world.rid("U", "m2b")) in memory_ids, memory_ids
+    leaked = [
+        name
+        for name in ("m2a.content", "m2b.content")
+        if e7_fresh_world.marker_names["U"][name] in answers_face.text
+    ]
+    assert not leaked, leaked
+    write_evidence(
+        "E7-4b",
+        "invalid-basis-face.json",
+        {
+            "answer_serves_dangling_memory_id": True,
+            "chain_original_text_leaked_markers": leaked,
+        },
+    )
+
     write_evidence("E7-4b", "operation.json", settled)
     report = verify_report(e7_verifier, "E7-4b")
     write_evidence("E7-4b", "verify.json", report.to_dict())
