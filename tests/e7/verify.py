@@ -90,15 +90,19 @@ DRIVER_INVARIANTS = frozenset(
         "grant_revocation_blocks_send",
         "invalid_basis_no_original_text",
         "export_manifest_counts_match_seed",
-    }
-)
-
-# Invariants that need a P0-5/P0-6 surface; never silently green.
-BLOCKED_INVARIANTS = frozenset(
-    {
+        # E7-9 (D2): asserted by the multi-process driver against the
+        # agenthu-multi compose stack — the single-stack verifier has no
+        # surface for them (different db/ports), so they stay
+        # driver-asserted, never verifier-computed.
         "shared_rate_limit_not_doubled",
         "trace_linkage",
         "no_markers_in_telemetry",
+    }
+)
+
+# Invariants that need a P0-6 surface; never silently green.
+BLOCKED_INVARIANTS = frozenset(
+    {
         "restore_replays_suppression",
         "rpo_rto_measured",
         "old_key_rejected_new_key_works",
@@ -565,7 +569,7 @@ class E7Verifier:
                     expected="blocked",
                     actual="blocked",
                     passed=False,
-                    note="requires a P0-5/P0-6 surface; never green in prep",
+                    note="requires a P0-6 surface; never green in prep",
                 )
             ]
         raise RuntimeError(f"unknown invariant {name!r}")

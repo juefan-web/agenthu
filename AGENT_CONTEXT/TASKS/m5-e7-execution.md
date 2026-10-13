@@ -177,3 +177,50 @@ B 轮证据包、B 核 A 轮证据包，机械对照 manifest 与 runbook 口径
     发生（B 只读了 `truncate_all` 的 DB 面未追对象面）。误报入过程
     台账：审方提案被协调人核验拦下——交叉验证系统生效的正面案例，
     与编码层 grep 案对称。
+- **2026-10-13 D2 交付记录（A，随件转录）**：
+  - 8000 口冲突解法：multi compose 既有 8100-8101 端口覆写即冻结
+    路径（WSL llm_gateway 红线未动；宿主 8000/8100/8101/4318 实测
+    空）。D2 补三处：`name: agenthu-multi` 钉项目名（否则合并文件
+    落 dev 项目 `agenthu`，up 会重配置运行中 dev 栈的 db/redis/s3mock
+    端口而非共存）；worker `volumes: !override []`（证据栈跑烤进
+    镜像的已提交代码，不跑宿主 bind mount）；api/worker
+    OPENAI_BASE_URL 默认指宿主 e6-replay
+    （`host.docker.internal:9099/v1`，沿用证据期不接活 provider）。
+  - 三项 BLOCKED_INVARIANTS（shared_rate_limit_not_doubled /
+    trace_linkage / no_markers_in_telemetry）与驱动同 hunk 移入
+    DRIVER_INVARIANTS（multi 世界单栈 verifier 不可达，驱动断言
+    形态）；stub 真替换，E7-10 留 blocked。
+  - 带出三件事实：① otel collector `0.116.0` 双发行版（core 与
+    contrib）amd64 入口 ENOENT（distroless 缺 ELF 加载器一类），
+    D2 改钉实证可用的 `0.111.0`；**alpha compose 同默认 0.116.0
+    同病，非 D2 范围，提请协调人裁定修否**。② seed 的 agent run
+    `decision_basis` 停在 M4 结构化 basis 之前的旧形状（messages
+    序列化 500）——seed 随件修为现 schema，刻意不加新 marker()
+    调用（token 顺序分配，插入会整体漂移）。③ provider 客户端
+    span 名 = 裸 `POST`（现行 httpx 语义约定；URL 不进 span 名与
+    属性——allowlist 生效的正面证据）。
+  - op-4：E7-9 无 count_deltas（世界在 multi 独立 db）——「计数」=
+    驱动侧限流边界（两 API 交替锤击 allowed==MAX 精确、两端口均
+    见 429）/拓扑 2+2/泄漏扫描零命中（容器日志四面 + 运行期审计行
+    `created_at > 起栈`；seed 审计 fixture 按设计带 marker 属删除案
+    内容行，排除口径已写入驱动注记与 runbook §6）。
+  - 验证（d2-dev7/d2-full1）：门控 12p+1 blocked-skip（E7-9 与
+    11 案共存，无单栈扰动）；逐案 verify.json ok；CI 形状 555 恒
+    总量、门脚本 exit 0；ruff/format/pyright 全 0。
+  - **观察撤回（10-13，协调人指令；A 的 #110 流程观察被 API 权威
+    记录证伪）**：A 曾报告「#110 于 reviews=0 状态被合并」——失实。
+    API 实据（REST `pulls/110/reviews` 与按 review id 直查双路同证）：
+    review **5493002697**，juefan-web，APPROVED，head `f2d9875`，
+    提交 2026-10-12T15:42:16Z；merge 15:43:59Z——**批准先于合并
+    103 秒落库**。A 的「reviews=0」属假读（本机 graphql 通道空读，
+    同 Git Bash 拒连 / 198.18 假 IP 代理病族），且未换路径复 query
+    即升级为流程指控；该失实陈述曾入 A 的过程报告与记忆，未曾入
+    本节（更正时点本节首次记录）。**新规（本事件 crystallize，
+    协调人裁定入台账）**：载荷级查询的「意外的空/零结果」必须换
+    路径立即复 query 才能成为断言——尤其流程违规指控必须附当时的
+    原始 API 捕获。与 B 的 graphql EOF、协调人 jq 误写同族：本网络
+    环境下空读不等于事实。
+  - **alpha compose 同病钉版（协调人裁定采纳，随 #111 落）**：
+    `docker-compose.alpha.yml` collector 默认 tag 同为坏 `0.116.0`，
+    与 multi 同缺陷类，一行改钉 `0.111.0` 随本 PR 带上并披露，免开
+    专属 PR。

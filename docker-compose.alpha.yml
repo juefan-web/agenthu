@@ -12,7 +12,12 @@
 #          up -d db redis minio otel-collector api worker
 services:
   otel-collector:
-    image: ${OTEL_COLLECTOR_IMAGE:-otel/opentelemetry-collector:0.116.0}
+    # 0.116.0 is unloadable on amd64 hosts (entrypoint exec fails with
+    # ENOENT on both the core and contrib images — missing ELF loader in
+    # the distroless root); 0.111.0 verified working in the E7-9 D2
+    # bring-up. Same defect class as the multi file, pinned together per
+    # the coordinator's 2026-10-13 ruling.
+    image: ${OTEL_COLLECTOR_IMAGE:-otel/opentelemetry-collector:0.111.0}
     command: ["--config=/etc/otelcol/config.yaml"]
     volumes:
       - ./docker/otel-collector/config.yaml:/etc/otelcol/config.yaml:ro

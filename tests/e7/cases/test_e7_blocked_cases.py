@@ -1,23 +1,21 @@
-"""E7-9 / E7-10 blocked stubs.
+"""E7-10 blocked stub.
 
-These cases are pre-registered in the manifest (expected counts and
-invariants) but their drivers cannot execute until the required surfaces
-land. The skip reason carries the exact blocked-by so a gated run reports
-them as blocked, never as silent skips — and the invariants stay
-un-implementable in verify.py until then (verify.py BLOCKED_INVARIANTS
-fails if requested).
+Pre-registered in the manifest (expected counts and invariants) but its
+driver cannot execute until the required surfaces land. The skip reason
+carries the exact blocked-by so a gated run reports it as blocked, never as
+a silent skip — and the invariants stay un-implementable in verify.py until
+then (verify.py BLOCKED_INVARIANTS fails if requested).
+
+E7-9 moved out of this file in D2: its surfaces (shared rate-limit ledger,
+traceparent seam, allowlist exporter, the agenthu-multi compose stack) are
+in main, so its driver now runs for real — the third "silent skip" form
+(a stub whose blocked-by has gone stale) is exactly what this batch was
+re-scoped to eliminate.
 """
 
 from __future__ import annotations
 
 import pytest
-
-
-def test_e7_9_observability_and_shared_multiprocess() -> None:
-    pytest.skip(
-        "blocked_by=P0-5: OTel trace surface, shared rate limiting and the "
-        "2API+2worker topology do not exist yet (m5-e7-acceptance E7-9)"
-    )
 
 
 def test_e7_10_recovery_and_release_gates() -> None:

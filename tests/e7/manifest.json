@@ -800,7 +800,7 @@
       "case_id": "E7-9",
       "title": "2API+2worker 共享限流/恢复、trace 链、敏感 marker 扫描",
       "operations": [
-        "待 P0-5 观测面落地后执行"
+        "multi 栈（项目 agenthu-multi，api 127.0.0.1:8100/8101 + collector 4318，--scale api=2 worker=2）容器内 seed 同一 E7 世界 → ping/chat 跨进程流量 → 限流两 API 交替锤击 → redis 停启断供面 → collector/api/worker 容器日志 + 审计表 marker 扫描"
       ],
       "count_deltas": {},
       "count_minimums": {},
@@ -817,7 +817,7 @@
         "no_markers_in_telemetry"
       ],
       "package_scan": null,
-      "blocked_by": "P0-5"
+      "blocked_by": null
     }
   }
 }
