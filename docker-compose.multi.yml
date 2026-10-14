@@ -68,6 +68,11 @@ services:
       ENVIRONMENT: ${ENVIRONMENT:-local}
       DATABASE_URL: postgresql+psycopg://agenthu:agenthu@db:5432/agenthu
     command: ["alembic", "upgrade", "head"]
+    # Bring-up tolerance (D4): the same Windows-bridge transient family the
+    # d3-full2 outage-face race exposed on the worker can hit alembic's first
+    # db connect; on-failure lets the daemon retry the one-shot until the db
+    # accepts. The policy never fires after a successful exit(0).
+    restart: on-failure
     depends_on:
       db:
         condition: service_healthy
@@ -101,6 +106,19 @@ services:
         condition: service_completed_successfully
 
   worker:
+    # Bring-up tolerance (D4, demonstrated race): in the d3-full2 evidence
+    # run the outage-face reconcile (`up -d --wait redis worker`) failed with
+    # worker-1 exit(1) `redis.exceptions.TimeoutError: Timeout connecting to
+    # server` — arq's boot budget is conn_retries=5 x conn_timeout=1s ≈ 6s
+    # (library defaults; `_redis_settings()` doesn't override them, and that
+    # file is product code, out of this zero-product-code slice), so one
+    # WinError-121-class bridge stall longer than that killed the whole
+    # `up --wait`. on-failure makes each daemon restart a fresh boot window,
+    # retrying with backoff until redis is actually reachable. The redis
+    # outage face stays honest: workers crash (and now restart-loop) while
+    # redis is stopped; its own reconciling `up -d --wait redis worker`
+    # still lands the declared healthy shape (D4 drill-verified).
+    restart: on-failure
     environment:
       OTEL_ENABLED: "true"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318/v1/traces
