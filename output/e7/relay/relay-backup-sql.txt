@@ -1,0 +1,5 @@
+backup.sql sha256: 41b62f8e80dd2c01c195404d2926fb0718d19e819e790d6f2f88dabf0cc13507
+ls -l r1-prime/E7-10/backup.sql (excluded from zip; role proven by driver checksum/size assertions)
+-rw-r--r-- 1 16263 197609 210196 Oct 14 12:30 r1-prime/E7-10/backup.sql
+-rw-r--r-- 1 16263 197609 210196 Oct 14 12:40 r1-prime-s/E7-10/backup.sql
+r1-prime-s backup.sql sha256: 96c226c1b59c53d46cc1ef4ac40870d91e96b3ceb75816cbcfe4041babe02510
