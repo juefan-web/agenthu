@@ -111,6 +111,12 @@ def _container_logs(container: str, since: str) -> str:
         text=True,
         timeout=60.0,
     )
+    # D4 drill catch: with the reconcile `up` scaling worker back to the file
+    # default of 1, this read used to return the 70-byte "No such container"
+    # error string ITSELF as the scanned face — a vacuously green leak scan.
+    # A face that cannot be read now fails loud instead.
+    if proc.returncode != 0:
+        pytest.fail(f"docker logs {container} failed (rc={proc.returncode}): {proc.stderr}")
     return proc.stdout + proc.stderr
 
 
@@ -460,8 +466,10 @@ def test_e7_9_shared_multiprocess_observability(multi_stack: str, e7_world: Worl
 
         # --- redis outage face (frozen policy): fail closed, then recover --
         # Last traffic face by design: stopping the shared redis takes the
-        # workers' queue with it (arq workers exit without a restart policy),
-        # and nothing after this point needs a worker.
+        # workers' queue with it (arq workers die with redis; since D4 they
+        # carry restart: on-failure, so they restart-loop rather than stay
+        # dead — the reconcile below settles them), and nothing after this
+        # point needs a worker.
         stop = _compose("stop", "redis", timeout=60.0)
         if stop.returncode != 0:
             _fail_output(stop, "stop redis")
@@ -479,9 +487,20 @@ def test_e7_9_shared_multiprocess_observability(multi_stack: str, e7_world: Worl
             assert "rate_limit_unavailable" in refused.text, refused.text
             outage[tag] = {"health": liveness.status_code, "login": refused.status_code}
         # Restart the shared plane and reconcile the workers back to 2 (they
-        # die with redis; the stack must end in its declared shape for the
-        # B-side probe), then prove the limiter serves again.
-        start = _compose("up", "-d", "--wait", "redis", "worker", timeout=180.0)
+        # die with redis — with D4's restart: on-failure this exact `up --wait`
+        # is what the d3-full2 race failed on: a WinError-121-class bridge
+        # stall outlasted arq's ~6s boot budget and worker-1 exit(1) failed
+        # the whole up; the restart policy now turns each daemon restart into
+        # a fresh boot window, so this reconcile converges — D4 drill-verified),
+        # then prove the limiter serves again. The `--scale worker=2` is
+        # load-bearing: a bare `up worker` reconciles to the file default of
+        # 1, which silently dropped worker-2 in every prior green run (the
+        # leak scan then read a 70-byte "No such container" error instead of
+        # its logs — D4 drill catch). The stack must end in its declared
+        # shape for the B-side probe.
+        start = _compose(
+            "up", "-d", "--wait", "--scale", "worker=2", "redis", "worker", timeout=180.0
+        )
         if start.returncode != 0:
             _fail_output(start, "restart redis+worker")
         recovered: dict[str, int] = {}

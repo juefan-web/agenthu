@@ -121,7 +121,12 @@ node apps/desktop/tests/e2e/e6-replay.mjs &   # 容器内经 host.docker.interna
 注意：worker 的 dev bind mount 在 multi 形态被 `!override []` 撤除——证据
 栈跑镜像里烤进的已提交代码，不跑宿主工作树；api/worker 的
 OPENAI_BASE_URL 默认指 `host.docker.internal:9099/v1`（e6-replay 假件，
-沿用「证据期不接活 provider」纪律）。
+沿用「证据期不接活 provider」纪律）。起栈容错（D4）：worker/migrate 带
+`restart: on-failure`——d3-full2 实证的断流面竞态（`up -d --wait redis
+worker` 时 worker-1 exit(1)，arq 启动窗仅 conn_retries=5×1s≈6s，Windows
+桥接停滞超窗即整栈判负）；守护进程重启即新启动窗，断流面自身的
+reconcile up 因此收敛。零产品码：调大 arq 重试属 backend 侧改动，不在
+D4 范围。
 
 ## 7. E7-10 恢复演练 / key 轮换 / 许可门（驱动自管栈）
 

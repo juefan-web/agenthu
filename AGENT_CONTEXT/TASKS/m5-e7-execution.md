@@ -324,3 +324,34 @@ B 轮证据包、B 核 A 轮证据包，机械对照 manifest 与 runbook 口径
     13p+0s（568.8s，E7-9 multi 栈一次起绿）；invalid-basis-face
     证据三处落档、recovery.json 源栈面在案；CI 形态重放 554p+1s
     门 ok（skip 行逐字见上）；ruff/format/pyright 全 0。
+- **2026-10-14 D4 交付记录（A，compose multi 起栈容错，裁定③，
+    base a4a1f3d，零产品码）**：
+  - **失败点取证更正**：d3-full2 的竞态不在初次起栈，而在断流面的
+    reconcile `up -d --wait redis worker`——d3-full2/E7-9 证据停在
+    rate-limit.json（缺 redis-outage.json），失败于该面；机制 =
+    redis 重启后 worker 启动，arq 启动窗仅 conn_retries=5×
+    conn_timeout=1s≈6s（库默认；`_redis_settings()` 未覆写，且该文件
+    是产品码不在 D4 范围），WinError-121 同族桥接停滞超窗 → worker-1
+    exit(1) → `--wait` 整栈判负。
+  - **加固（compose 层）**：worker/migrate 加 `restart: on-failure`
+    ——守护进程重启即全新 arq 启动窗（无上限退避），一次坏启动不再
+    杀死整个 up；migrate 成功 exit(0) 后策略永不触发。api 未动
+    （断立面已证 api 随 redis 失联存活，启动期无硬连——无实证不加面）。
+  - **过程账（1 笔，演练即翻出——「绿但部分空转」又一例，与 B 的
+    D1 漏检、staging 误报同课同记）**：断流面 reconcile 裸 `up
+    worker` 会把 worker 收回 compose 文件默认 scale=1——D2 以来历轮
+    绿跑事后都只剩 1 worker，泄漏扫描的 worker-2 面读到的是 70 字节
+    "No such container" 错误串本身（d3fix-full faces_bytes
+    worker-2=70 即此），面空转但断言无从发觉。修正（驱动侧）：
+    reconcile 补 `--scale worker=2`（形状声明成立）+ `_container_logs`
+    读失败即 pytest.fail（缺容器不再静默降级为扫错误文本）。
+  - **验证（d4 轮本地）**：机制演练 stop redis→reconcile rc=0
+    （14-15s，worker 崩溃周期被 restart 策略真实吸收，RestartCount
+    0→3 观测在案；修正命令后 worker-2 重建 healthy、日志 471B 真实）；
+    3 连续全新起栈全绿（31/23/21s）+ 幂等 reconcile 绿（18s）；E7-9
+    全案门控 1p（74.6s），六证据面齐、redis-outage.json 在案、
+    worker-2 面 6387B 真实日志、verify 6 检查全过、事后栈形 2 worker
+    healthy；manifest `--check` up-to-date（零计数面变化）、
+    ruff/format/pyright 全 0。CI 预期不变（E7 驱动不在 CI 收集）：
+    555p+0s。
+
