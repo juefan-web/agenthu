@@ -128,8 +128,54 @@ B 轮证据包、B 核 A 轮证据包，机械对照 manifest 与 runbook 口径
 
 ## 6. 执行回填（双轮后填）
 
-（轮次 / 执行 SHA / 形态数字 / 不符预期对账 / 残差清单 / B 核账结论 /
-交叉复核记录 / E7-10 三分项状态——待填）
+- **轮次与执行 SHA**：r1（2026-10-12，过程账轮）与 r1'（2026-10-14，
+  收口证据轮），均形态 1（A 执行 + 证据包 + 栈保留，B 库面核账）。
+  r1' 冻结 head = `ac1e929`（#113 合并 commit，双 CI 绿 gate 555p+0s）；
+  证据 `output/e7/r1-prime{,-s}/` 与 r1 分离；冻结期间 main 零移动，
+  跑时 HEAD + 树净双源核验。
+- **形态数字**：门控全量 13p+0s（537.35s，junit 落档）+ standalone
+  逐案 13/13 rc=0（9–75s/案，逐案重播种）+ baseline 绿（90 行 2 用户）。
+  逐案检查数 = 通过数（E7-5 119 / E7-10 68 / E7-3b 67 / E7-6 66 /
+  E7-4b 65 / E7-3a 64 / E7-1/2/3c/4a 62 / E7-7/8 61 / E7-9 6 / 基线
+  82），standalone 与门控逐案完全一致。B 核账总计 **1732 项检查零
+  失败**（13 案 × 2 轮 + 基线）。夜窗纪律未触及（全程 11:5x–12:5x
+  北京日窗）。E7 驱动不在 CI 收集（AGENTHU_E7_STACK 门控），CI 侧
+  gate 555p+0s 与本地门控 13p 为正交事实。
+- **不符预期对账**：E7-10 RPO/RTO 每轮再生（24.9s/31.1s 与
+  3.4s/31.7s——RPO 随删前流量窗自然变化，RTO 由 maintenance ~29s
+  主导，符合「仅计时无 SLO」口径）；backup.sql 双轮异哈希（密码哈希
+  随机盐）与 invalid-basis 双轮同 uuid 互为内证；E7-9 审计运行期行
+  22（非空洞）零命中、限流 allowed 3+3 == max 6 精确边界、断供 503
+  → 恢复 429 双口、56 spans worker parent 在链。
+- **残差清单（backlog 转出，清单见 CURRENT_STATE 终态）**：宿主侧裸
+  worker 无监督（README §2.1 已补实战形态，系统化留 backlog）；rc=0
+  空文本读取未驱动内断言（核账轮以 faces_bytes 合理性补面）；migrate
+  on-failure 下坏迁移为慢败；db5 `arq:result:*` TTL 自然过期键判定
+  非缺陷（runbook「db5 全新」为 setup-flush 语义，驱动断言队列
+  llen==0 成立）。
+- **B 核账结论（2026-10-14，通过）**：四源绑定链闭合（zip sha256
+  `7afdccda…adbf6e`、证据件 parent = `ac1e929`、跑时 HEAD + porcelain
+  树净、junit `hostname=rotcar-laptop` / 12:29:44+08:00 / 13 tests /
+  537.3s）；五面全绿（族计数 before+deltas 逐表命中；marker 31 表
+  U/V 对称无越属；vector 14 == probe 合计；对象 4 键 + `exports/` 0；
+  redis dirty 空仅 arq 记账键）；E7-9 faces_bytes 5103B/4955B 对 70B
+  病理值 70 倍量级差（D4 非阻塞注记①兑现为绿）；E7-10 双库三段齐 +
+  双库拆除证明；respawn 时间线 5 起全对账（起栈前 ensure ×1 +
+  计划外死亡重生 ×3 各 +8s 内 + E7-6 案内恢复相位 ×1）；main 侧
+  op-4 零事后改动双源闭合（manifest/seed_spec 自 `226a39a` 至
+  `ac1e929` 逐字节相同）。
+- **交叉复核记录**：驱动四件套 D1 #110→`58bd3a9`（七动作驱动 +
+  standalone 语义）、D2 #111→`e2ddc37`（E7-9 多进程栈）、D3
+  #112→`a4a1f3d`（E7-10 机制面，含 must-fix 修正轮）、D4
+  #113→`ac1e929`（起栈容错 + worker-2 空转面清根）；每件作者交付 +
+  对侧 head-bound 批准（API 回读坐实后合并，批准均先于合并）；每合
+  双 CI 绿、gate 均 555p+0s、总量 555 四次精确恒定；must-fix 一件
+  （invalid_basis 三案注册零断言——注册绿缺陷类二现，#112 修正轮
+  三处补真断言清根）。
+- **E7-10 三分项状态**：机制面 ✓（四断言驱动真实现，r1' 双轮绿）；
+  license 门 ✓（分项 2 引用对账 8 面全 True，库内终态在案）；真实
+  key 证据位如实「未提供」——发布门 vs M5 出口门分离口径维持，
+  M5 出口门不阻，发布门后置。
 
 ## 7. 决议记录
 
@@ -350,8 +396,49 @@ B 轮证据包、B 核 A 轮证据包，机械对照 manifest 与 runbook 口径
     0→3 观测在案；修正命令后 worker-2 重建 healthy、日志 471B 真实）；
     3 连续全新起栈全绿（31/23/21s）+ 幂等 reconcile 绿（18s）；E7-9
     全案门控 1p（74.6s），六证据面齐、redis-outage.json 在案、
-    worker-2 面 6387B 真实日志、verify 6 检查全过、事后栈形 2 worker
-    healthy；manifest `--check` up-to-date（零计数面变化）、
-    ruff/format/pyright 全 0。CI 预期不变（E7 驱动不在 CI 收集）：
-    555p+0s。
+  worker-2 面 6387B 真实日志、verify 6 检查全过、事后栈形 2 worker
+  healthy；manifest `--check` up-to-date（零计数面变化）、
+  ruff/format/pyright 全 0。CI 预期不变（E7 驱动不在 CI 收集）：
+  555p+0s。
+- **2026-10-14 A 交付 r1'（形态 1 收口证据轮，@冻结 head `ac1e929`）**：
+  门控全量 13p+0s（537.35s）+ standalone 逐案 13/13 rc=0（9–75s/案，
+  逐案重播种）+ baseline 绿；证据 `output/e7/r1-prime{,-s}/` 与 r1
+  分离，栈全保留待核账（multi 栈 8 容器 healthy、单栈 uvicorn :8011
+  + 监督环 worker + e7-redis :6380、e6-replay :9099）。专项：E7-9
+  拓扑 2 api/2 worker/1 collector，worker-2 泄漏面 5103B/4955B 真实
+  日志；E7-10 双库面各自落档；夜窗未触及（全程 11:5x–12:5x 北京）。
+  过程账：首轮 12:05 因宿主↔Docker 回环停滞（WinError-121「信号灯
+  超时」）单栈 worker 读 :6380 超时 exit(1) 与 E7-10 setup 同窗双死，
+  整轮废弃清案重播（诊断轮 r1p-diag 1 案证明 E7-10 非结构性，不入
+  包）；单栈裸 worker 改会话内监督环（退出 2s 重启，respawn 落既有
+  `_worker-respawn.log`，conftest:216 先例，零文件改动）；此后同族
+  事件全被吸收（worker 计划外死亡 ×3 各 8 秒内拉回 + E7-6 案内恢复
+  相位 respawn ×1 + cron 对 s3mock 抖动 ×2 下轮自愈），两轮 13 案
+  照绿。宿主侧裸 worker 无监督为 runbook §2 形态已知缺口（D4 仅覆
+  盖 compose multi 栈），协调人裁定入收口文档（README §2.1）。
+- **2026-10-14 B 形态 1 核账通过（总判 + 三件非阻塞注记，详 §6）**：
+  1732 项检查零失败、五面全绿、standalone 与门控逐案对称一致、D4
+  加固在真实收口轮兑现（两轮起栈零竞态）。注记：① 包内
+  `baseline/verify.json` mtime 停 12:05（首轮产物，重播未重写——由
+  其 82 检查绿 + 活体重播种基线绿双覆盖，无实质缺口）；② db5 残留
+  1 键 `arq:result:*`（standalone E7-10 worker 记账、TTL 3600s 自然
+  过期）判定非缺陷；③ B 侧过程教训（空读家族第 4 例）：计数交叉首跑
+  误读我分支陈旧 manifest（E7-10 条目旧形），改锚 `ac1e929` 权威源
+  后全符——「读源必须锚定运行 head」。
+- **2026-10-14 协调人合规裁定（收口期发现，入台账）**：B 曾为核账
+  在 public 远端开证据分支 `evidence/r1-prime-b`（携带 64KB relay
+  zip + 5 行 backup.sql 排除说明）。**纪律违规成立**——既立纪律
+  「E6/E7 敏感证据本地受控、绝不推 public 仓库」，临时件不豁免，
+  「收口后可删」不构成理由。实际敏感面经协调人清点为低（zip 97 项
+  = 86 json + 1 junit + 10 log；无 dump/env/key/凭据类；backup.sql
+  已排除且说明仅含哈希；E7 为合成世界无真实 PII）。处置：远端分支
+  已删（分支清单 API + ls-remote 双路读确认）；GitHub 侧不可达对象
+  待其 GC，残余风险按低敏感记档。**规则成文**：证据传递走私有信道
+  + sha256 绑定即可；绝不在 public 远端开证据分支。
+- **2026-10-14 协调人收口（M5-E7 关账）**：§6 回填、README §2.1 补
+  宿主侧 worker 监督实战形态、CURRENT_STATE 终态条目 + backlog 转出、
+  过程台账归档（空读家族四例：协调人编码层 grep 假阴 #90、gh API
+  意外空读须双路径复query、worker-2 70B 错误串当内容、B 陈旧 manifest
+  锚；另含注册绿二现、B D1 漏检自披露、554p+1s 出处闭环、回环风暴
+  与监督环处置、本次合规事件）。**冻结解除**。
 

@@ -37,6 +37,16 @@ export OPENAI_BASE_URL=http://127.0.0.1:9099/v1 OPENAI_API_KEY=e7-replay  # 执�
 ./.venv/Scripts/python.exe -m arq backend.worker.settings.WorkerSettings &
 ```
 
+### 2.1 宿主侧 worker 监督（Windows 宿主已知缺口，r1' 实战形态）
+
+compose multi 栈（`docker-compose.multi.yml`）自 D4 起 worker/migrate 带
+`restart: on-failure`；宿主侧裸 arq worker 无此守护，宿主↔Docker 回环
+停滞（WinError-121「信号灯超时」同族）一次即 exit(1)（arq 启动窗约
+6s，库默认）。跑证据轮的实战形态：会话内监督环——worker 退出 2s 后
+重启，respawn 记录落既有 `_worker-respawn.log`（conftest 已维护该
+文件），驱动/文件零改动；r1' 收口轮中 3 起计划外死亡均 8 秒内拉回，
+两轮 13 案照绿。
+
 ## 3. Seed / verify / 门控套件
 
 ```bash

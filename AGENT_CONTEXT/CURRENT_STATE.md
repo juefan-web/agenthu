@@ -1653,3 +1653,46 @@ healthy 转 CI、debug 无 cookie 值断言）。转正门槛 = D9/D3 残留修�
   547）→ M5 收口归档。过程台账追加一案：B 审侧倒置口头表述
   （「B 解 A 核」用于 A 的 PR）——协调人当场纠正，未实际发生错向
   操作。
+
+- **M5-E7 收口关账（2026-10-14，协调人）**：E7 十三案全部真驱动、
+  证据双轮闭合（r1 过程账 + r1' 收口证据 @冻结 head `ac1e929`，冻结
+  期间 main 零移动）。审计通道最终形态 1（B 机无容器基础设施，双源
+  坐实后回裁；WSL 形态 2 留作用户授权后的可选补充轮，未执行）。
+  驱动四件套：D1 #110→`58bd3a9`（七动作驱动 + standalone 逐案重播
+  语义）、D2 #111→`e2ddc37`（E7-9 多进程栈 2API+2worker、共享限流
+  不加倍、trace 父子链、五面泄漏扫描）、D3 #112→`a4a1f3d`（E7-10
+  机制面四断言 + 四项 BLOCKED_INVARIANTS 同 hunk 移空；含 must-fix
+  修正轮：invalid_basis 三案注册零断言——注册绿缺陷类二现——三处
+  补真断言 + seed 读契约追平）、D4 #113→`ac1e929`（起栈容错
+  restart: on-failure + `--scale worker=2` 钉回 + fail-loud，worker-2
+  70B 空转面清根）；每件作者交付 + 对侧 head-bound 批准（API 回读
+  坐实后合并），每合双 CI 绿、gate 均 555p+0s，**总量 555 四次精确
+  恒定**（#108 闸门 floor 547/ceiling 8 在产；夜窗最深形态 547p+8s
+  恰在双边界绿，边际 8 裁定实战验证）。B 形态 1 核账通过：**1732
+  项检查零失败**，五面全绿，standalone 与门控逐案对称，四源绑定链
+  闭合（详 m5-e7-execution §6）。**终态基线：backend 555 / desktop
+  255 / contracts 17**。过程台账归档于 m5-e7-execution §7（空读
+  家族四例：编码层 grep 假阴 #90、gh API 意外空读双路径复query、
+  worker-2 70B 错误串当内容、B 陈旧 manifest 锚；另含 B D1 漏检
+  自披露与「不变量名↔断言位点」标准查点、554p+1s 出处闭环
+  （S3_ENDPOINT_URL 仅 CI 导出致本地 1 skip）、回环风暴与监督环
+  处置（README §2.1 落字）、合规事件：B 曾在 public 远端开证据分支
+  evidence/r1-prime-b——纪律违规成立、实际敏感面低（清点 97 项无
+  dump/env/key）、已删 + 规则成文「绝不在 public 远端开证据分支」）。
+  **冻结解除**。**M5 后 backlog（复核过才修，①建议优先）**：
+  ① secret_key 四绑修复轮（高——`data_operations.py:306` /
+  `write_guards.py:44` / `data_recovery.py:61` / `security.py:55,61`
+  四处同绑 `settings.secret_key`，SECRET_KEY 轮换即抑制 HMAC 全失配、
+  删除网静默失效；修法 = digest 密钥独立化 + 存量重算迁移 + 「轮换后
+  抑制仍命中」显式测试）；② restore pre-traffic 系统门（现 runbook
+  级，维护性重删放行前完成）；③ 外审 P2 余项 #21/#23/#24/#30 + P3
+  清单；④ 202-before-commit 竞态（FastAPI ≥0.106 yield 依赖 teardown
+  在响应后提交）；⑤ `sweep_data_operations` 无条件 `get_storage()` +
+  BotoCoreError 缺守卫；⑥ s3mock 无真实 403 面；⑦ E7-5 embed 点
+  主动注入针（产品修复期）；⑧ #103 floor 过宽僵尸方向对称不变量、
+  #106 SKIPPED/CANCELLED 复访；⑨ rc=0 空文本读取驱动内断言化
+  （核账轮以 faces_bytes 合理性补面）；⑩ 宿主侧 worker 监督系统化
+  （README §2.1 实战形态已落，产品/compose 级守护另议）。E7-10
+  license 门为库内终态引用对账、真实 key 轮换证据位如实未提供——
+  发布门后置（OneTHU BSL 1.1/LearnX 许可 P0-6 硬发布门未澄清不分发
+  口径不变）。**下一步**：M5 关账，下一切片由用户定夺。
