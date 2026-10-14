@@ -494,6 +494,9 @@ def _build_user(world: World, tag: str) -> None:
         },
     )
 
+    # checksums stay reachable for the answer citation below (D-031
+    # evidence shape: the citation pins the file version it was read from).
+    file_checksums: dict[str, str] = {}
     for name, filename, course, page_count in (
         ("f1", "线性代数讲义.pdf", "线性代数", 2),
         ("f2", "数据结构作业.pdf", "数据结构", 2),
@@ -505,6 +508,8 @@ def _build_user(world: World, tag: str) -> None:
             f"E7 fixture blob {filename} {blob_marker}\n"
             f"{course} 讲义内容占位，供泄漏扫描使用。\n" * page_count
         ).encode()
+        checksum = hashlib.sha256(content).hexdigest()
+        file_checksums[name] = checksum
         world.blobs[key] = content
         world.blob_names[f"{tag}:{name}"] = key
         R(
@@ -517,7 +522,7 @@ def _build_user(world: World, tag: str) -> None:
                 "filename": filename,
                 "content_type": "application/pdf",
                 "size_bytes": len(content),
-                "checksum_sha256": hashlib.sha256(content).hexdigest(),
+                "checksum_sha256": checksum,
                 "status": "active",
                 "course_name": course,
             },
@@ -548,18 +553,36 @@ def _build_user(world: World, tag: str) -> None:
             },
         )
         world.vector_names.append(f"{tag}:{name}")
+    # question/answer/quote stay hoisted in this exact order — marker()
+    # allocates tokens sequentially, so the call order is frozen.
+    question = f"行列式有哪些性质？{m(tag, 'a1.question')}"
+    answer = f"见讲义第一页：行列式基本性质共五条 {m(tag, 'a1.answer')}"
+    quote = m(tag, "a1.quote")
     R(
         "material_answers",
         {
             "id": a1,
             "user_id": uid,
             "course_name": "线性代数",
-            "question": f"行列式有哪些性质？{m(tag, 'a1.question')}",
-            "answer": f"见讲义第一页：行列式基本性质共五条 {m(tag, 'a1.answer')}",
+            "question": question,
+            "answer": answer,
             "grounded": True,
             # citations carry file_id — the closure links answers via
             # citations[].file_id (data_closure), chunk_ids alone would not.
-            "citations": [{"file_id": str(f1), "page": 1, "quote": m(tag, "a1.quote")}],
+            # D-031 evidence shape: MaterialCitationRead requires checksum
+            # and spans — the invalid-basis faces GET this row over HTTP,
+            # so the seed must satisfy the live read contract (synthetic
+            # offsets; the quote token stays fixture-only).
+            "citations": [
+                {
+                    "file_id": str(f1),
+                    "checksum": file_checksums["f1"],
+                    "page": 1,
+                    "span_start": 0,
+                    "span_end": len(quote),
+                    "quote": quote,
+                }
+            ],
             "chunk_ids": [str(c1), str(c2)],
             "memory_ids": [str(m2b)],
             "model_version": "e7-synthetic-1",
@@ -640,7 +663,9 @@ def _build_user(world: World, tag: str) -> None:
             "runner_version": "e7-seed-1",
             "tool_registry_version": "e7-seed-1",
             "prompt_version": "e7-1",
-            "provider": {"name": "e7-synthetic", "model": "e7-synthetic-1"},
+            # capability is required by ProviderInfo (agent-run read face);
+            # a SUCCEEDED run carrying tool_calls reads as "tools".
+            "provider": {"name": "e7-synthetic", "model": "e7-synthetic-1", "capability": "tools"},
             "context_snapshot": {
                 "summary": f"正在准备线性代数作业 {m(tag, 'r1.snapshot')}",
                 "task_id": str(t1),
@@ -680,9 +705,17 @@ def _build_user(world: World, tag: str) -> None:
             "runner_version": "e7-seed-1",
             "tool_registry_version": "e7-seed-1",
             "prompt_version": "e7-1",
-            "provider": {"name": "e7-synthetic", "model": "e7-synthetic-1"},
+            # Failed run: the failure path's capability face is "none"
+            # (agent_runner deterministic-failure shape).
+            "provider": {"name": "e7-synthetic", "model": "e7-synthetic-1", "capability": "none"},
             "context_snapshot": {"summary": m(tag, "r2.snapshot")},
-            "failure": {"code": "provider_unavailable", "message": "synthetic"},
+            # RunFailure contract: retryable + safe_message required on the
+            # read face; provider_unavailable is the retryable family.
+            "failure": {
+                "code": "provider_unavailable",
+                "retryable": True,
+                "safe_message": "synthetic provider unavailable",
+            },
             "started_at": at(210),
             "finished_at": at(211),
         },
@@ -1209,10 +1242,40 @@ EXPECTATIONS: dict[str, CaseExpectation] = {
     ),
     "E7-10": CaseExpectation(
         case_id="E7-10",
-        title="迁移恢复/隔离备份恢复/配置与 key/许可门",
-        operations=("待 P0-6 恢复/发布门就绪后执行",),
-        blocked_by="P0-6",
+        title="恢复演练/隔离恢复不复活/key 轮换/许可门（机制面）",
+        operations=(
+            "license 门引用对账（读库内终态文档，不重新普查）→ key 轮换假件语义"
+            "（隔离 scratch 栈 K_old→K_new：旧 JWT 401 / 新 JWT 业务读通）→ "
+            "源栈 pg_dump 备份（删除前）→ 删锚定事件 e1（真实 preview/confirm）→ "
+            "抑制账本+data_generation 独立导出（值键行，无 users FK）→ 隔离库恢复 "
+            "→ 先重放抑制再起栈 → 维护性重删（真实闭包执行器）→ 放行业务流量 → "
+            "同锚新 envelope 重采 409；Redis 永不恢复；全程计时记 RPO/RTO",
+        ),
+        # 源栈活面 = 锚定整删 e1（与 E7-3a 同一动作，deltas 因此镜像）；四项
+        # 机制不变量落在驱动自管的隔离栈（恢复库 :8013、轮换 scratch 库
+        # 8112/8113）与仓库文件引用面，单栈 verifier 不可达（E7-9 先例，
+        # DRIVER_INVARIANTS 形态）。op-4 注记：无额外 count 面——RPO/RTO、
+        # 重放行数、恢复库运行期操作数=1（仅维护重删）都在驱动断言与
+        # output/e7/<round>/E7-10/ 证据件。
+        count_deltas={"U": {"events": -1, "tasks": -1, "focus_sessions": -1, "current_states": -1}},
+        count_minimums={
+            "U": {
+                "data_operations": 1,
+                "data_previews": 1,
+                "data_barriers": 1,
+                "data_suppressions": 1,
+                "data_cleanup_items": 1,
+            }
+        },
+        marker_absence=("e1.title", "t1.title", "fs1.deviation"),
+        retained=(
+            "e4（manual 无锚）与 t3 存活、V 不变——同 E7-3a 形态",
+            "恢复库/轮换库为驱动自管独立库，不计入单栈账",
+            "真实 key 轮换证据位=未提供（分项 3，replay 不充数）",
+        ),
         invariants=(
+            "cleanup_ledger_drained",
+            "invalid_basis_no_original_text",
             "restore_replays_suppression",
             "rpo_rto_measured",
             "old_key_rejected_new_key_works",
